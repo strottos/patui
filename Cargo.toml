@@ -1,0 +1,32 @@
+[package]
+name = "patui"
+version = "0.1.0"
+edition = "2021"
+authors = ["Steven Trotter <stevetrot@gmail.com>"]
+description = "A TUI based powerful testing application built for portability and extensibility"
+license = "MIT"
+repository = "https://github.com/strottos/patui"
+homepage = "https://github.com/strottos/patui"
+
+[dependencies]
+better-panic = "0.3.0"
+chrono = "0.4.38"
+clap = { version = "4.5.4", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
+color-eyre = "0.6.3"
+crossterm = { version = "0.27.0", features = ["event-stream", "serde"] }
+etcetera = "0.8.0"
+futures = "0.3.30"
+human-panic = "2.0.0"
+lazy_static = "1.4.0"
+libc = "0.2.155"
+ratatui = "0.26.2"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+strip-ansi-escapes = "0.2.0"
+tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread", "time"] }
+tokio-rusqlite = "0.5.1"
+tokio-util = "0.7.11"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[build-dependencies]
+vergen = { version = "8.3.1", features = ["build", "cargo", "git", "gitoxide"] }
