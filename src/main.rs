@@ -3,6 +3,7 @@
 mod cli;
 mod db;
 mod tui;
+pub mod types;
 
 use std::{env, fs::create_dir_all, sync::Arc};
 
@@ -131,7 +132,7 @@ async fn do_main() -> Result<()> {
     let db = Arc::new(db::Database::new(&db_path).await?);
 
     if let Some(subcommand) = args.subcommand {
-        panic!("Subcommand not implemented: {:?}", subcommand);
+        subcommand.handle(db).await?;
     } else {
         // TUI time
         let mut app = tui::App::new(db)?;

@@ -1,6 +1,7 @@
 mod bottom_bar;
 mod error;
 mod main;
+mod tests;
 mod top_bar;
 mod widgets;
 

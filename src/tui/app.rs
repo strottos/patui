@@ -17,12 +17,18 @@ use super::{
 use crate::db::Database;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DbSelect {
+    Tests,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action {
     Tick,
     Render,
     Resize(u16, u16),
     Quit,
     Error(Error),
+    DbSelect(DbSelect),
 }
 
 #[derive(Debug)]
@@ -144,6 +150,8 @@ impl App {
     }
 
     async fn handle_action(&mut self, action: &Action, tui: &mut Tui) -> Result<Vec<Action>> {
+        let mut ret = vec![];
+
         match action {
             Action::Render => {
                 tui.draw(|f| self.render(f))?;
@@ -155,10 +163,28 @@ impl App {
             Action::Error(ref e) => {
                 self.main.add_error(e.clone());
             }
+            Action::DbSelect(ref db_select) => {
+                tracing::trace!("Got db select: {:?}", db_select);
+                match db_select {
+                    DbSelect::Tests => {
+                        self.main.update_tests(self.db.get_tests().await?);
+                    }
+                };
+            }
             _ => {}
         }
 
-        Ok(vec![])
+        for component in self.get_root_components() {
+            if let Some(action) = component.update(action)? {
+                ret.push(action);
+            }
+        }
+
+        Ok(ret)
+    }
+
+    fn get_root_components(&mut self) -> Vec<&mut dyn Component> {
+        vec![&mut self.top_bar, &mut self.main, &mut self.bottom_bar]
     }
 
     fn render(&mut self, f: &mut Frame) {

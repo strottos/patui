@@ -21,6 +21,8 @@ lazy_static = "1.4.0"
 libc = "0.2.155"
 ratatui = "0.26.2"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
+serde = "1.0.202"
+serde_json = "1.0.117"
 strip-ansi-escapes = "0.2.0"
 tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread", "time"] }
 tokio-rusqlite = "0.5.1"
@@ -30,3 +32,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [build-dependencies]
 vergen = { version = "8.3.1", features = ["build", "cargo", "git", "gitoxide"] }
+
+[dev-dependencies]
+assert_cmd = "2.0.14"
+tempfile = "3.10.1"
