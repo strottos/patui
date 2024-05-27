@@ -2,6 +2,7 @@ use std::path::Path;
 
 use color_eyre::Result;
 use tokio_rusqlite::Connection;
+use tracing::{debug, trace};
 
 use crate::types::PatuiTest;
 
@@ -18,6 +19,8 @@ impl Database {
     }
 
     pub async fn create_tables(&self) -> Result<()> {
+        debug!("Creating tables...");
+
         self.conn
             .call(|conn| {
                 conn.execute_batch(
@@ -48,6 +51,8 @@ impl Database {
     }
 
     pub async fn get_test(&self, id: i64) -> Result<PatuiTest> {
+        debug!("Getting test ({})...", id);
+
         let test = self
             .conn
             .call(move |conn| {
@@ -73,6 +78,8 @@ impl Database {
     }
 
     pub async fn get_tests(&self) -> Result<Vec<PatuiTest>> {
+        debug!("Getting tests...");
+
         let tests = self
             .conn
             .call(move |conn| {
@@ -100,6 +107,9 @@ impl Database {
     }
 
     pub async fn create_test(&self, test: PatuiTest) -> Result<i64> {
+        debug!("Create test...");
+        trace!("Create test {:?}...", test);
+
         let test_id = self.conn.call(move |conn| {
             let mut stmt = conn.prepare("INSERT INTO test (name, desc, creation_date, last_updated, last_used_date, times_used) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?;
             let test_id = stmt.insert((

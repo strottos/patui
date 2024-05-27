@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     tui::{
-        app::{Action, DbRead, TestMode},
+        app::{Action, DbRead, Mode, TestMode},
         components::Component,
     },
     types::PatuiTest,
@@ -199,20 +199,29 @@ impl<'a> TestComponent<'a> {
         self.initialized = true;
     }
 
-    pub fn set_select_mode(&mut self, test_mode: TestMode) {
+    pub fn set_select_mode(&mut self, test_mode: TestMode) -> Vec<Action> {
+        let mut ret = vec![];
+
         match test_mode {
             TestMode::Normal => {
                 self.create_test_component.set_root_test_mode(test_mode);
                 self.select_mode = SelectMode::Normal;
+                ret.push(Action::ChangeMode(Mode::Test(TestMode::Normal)));
             }
             TestMode::Select(idx) => {
                 self.create_test_component.set_root_test_mode(test_mode);
                 let selected_idx = (idx + self.tests.len() as isize) % self.tests.len() as isize;
                 self.selected_idx = selected_idx;
                 self.select_mode = SelectMode::Select;
+                ret.push(Action::ChangeMode(Mode::TestDetail(
+                    TestMode::Select(selected_idx),
+                    self.tests[selected_idx as usize].id.unwrap(),
+                )));
             }
             TestMode::Create => {}
         };
+
+        ret
     }
 
     pub fn set_popup_mode(&mut self, test_mode: TestMode) {
@@ -267,20 +276,20 @@ impl<'a> Component for TestComponent<'a> {
                 }
                 (KeyCode::Down, &KeyModifiers::NONE) => {
                     let selected_idx = (self.selected_idx + 1) % self.tests.len() as isize;
-                    self.set_select_mode(TestMode::Select(selected_idx));
+                    actions.extend(self.set_select_mode(TestMode::Select(selected_idx)));
                     actions.push(Action::ClearKeys);
                 }
                 (KeyCode::Up, &KeyModifiers::NONE) => {
                     let selected_idx = (self.selected_idx + self.tests.len() as isize - 1)
                         % self.tests.len() as isize;
-                    self.set_select_mode(TestMode::Select(selected_idx));
+                    actions.extend(self.set_select_mode(TestMode::Select(selected_idx)));
                     actions.push(Action::ClearKeys);
                 }
                 (KeyCode::Esc, &KeyModifiers::NONE) => {
-                    self.set_select_mode(TestMode::Normal);
+                    actions.extend(self.set_select_mode(TestMode::Normal));
                 }
                 (KeyCode::Enter, &KeyModifiers::NONE) => {
-                    self.set_select_mode(TestMode::Select(self.selected_idx));
+                    actions.extend(self.set_select_mode(TestMode::Select(self.selected_idx)));
                     actions.push(Action::ClearKeys);
                 }
                 _ => {}

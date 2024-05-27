@@ -26,11 +26,13 @@ pub enum TestMode {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Mode {
     Test(TestMode),
+    TestDetail(TestMode, i64),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DbRead {
     Test,
+    TestDetail(i64),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -67,7 +69,7 @@ impl<'a> App<'a> {
         let last_key_events = vec![];
 
         let top_bar = TopBar::new();
-        let main_app = MainComponent::new();
+        let main = MainComponent::new();
         let bottom_bar = BottomBar::new();
 
         Ok(Self {
@@ -76,7 +78,7 @@ impl<'a> App<'a> {
             db,
 
             top_bar,
-            main: main_app,
+            main,
             bottom_bar,
         })
     }
@@ -198,6 +200,9 @@ impl<'a> App<'a> {
                 match db_select {
                     DbRead::Test => {
                         self.main.update_tests(self.db.get_tests().await?);
+                    }
+                    DbRead::TestDetail(id) => {
+                        self.main.update_test_detail(self.db.get_test(*id).await?);
                     }
                 };
             }
