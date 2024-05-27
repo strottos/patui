@@ -1,7 +1,8 @@
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct PatuiTest {
+    pub id: Option<i64>,
     pub name: String,
     pub description: String,
     pub creation_date: String,
@@ -11,7 +12,7 @@ pub struct PatuiTest {
     pub steps: Vec<PatuiStep>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct PatuiStep {}
 
 #[derive(Debug, Serialize)]

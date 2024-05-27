@@ -51,15 +51,16 @@ impl Database {
         let test = self
             .conn
             .call(move |conn| {
-                let mut stmt = conn.prepare("SELECT name, desc, creation_date, last_updated, last_used_date, times_used FROM test WHERE id = ?1")?;
+                let mut stmt = conn.prepare("SELECT id, name, desc, creation_date, last_updated, last_used_date, times_used FROM test WHERE id = ?1")?;
                 let test = stmt.query_row([id], |row| {
                     Ok(PatuiTest {
-                        name: row.get(0)?,
-                        description: row.get(1)?,
-                        creation_date: row.get(2)?,
-                        last_updated: row.get(3)?,
-                        last_used_date: row.get(4)?,
-                        times_used: row.get(5)?,
+                        id: Some(row.get(0)?),
+                        name: row.get(1)?,
+                        description: row.get(2)?,
+                        creation_date: row.get(3)?,
+                        last_updated: row.get(4)?,
+                        last_used_date: row.get(5)?,
+                        times_used: row.get(6)?,
                         steps: vec![],
                     })
                 })?;
@@ -75,16 +76,17 @@ impl Database {
         let tests = self
             .conn
             .call(move |conn| {
-                let mut stmt = conn.prepare("SELECT name, desc, creation_date, last_updated, last_used_date, times_used FROM test")?;
+                let mut stmt = conn.prepare("SELECT id, name, desc, creation_date, last_updated, last_used_date, times_used FROM test")?;
                 let tests = stmt
                     .query_map([], |row| {
                         Ok(PatuiTest {
-                            name: row.get(0)?,
-                            description: row.get(1)?,
-                            creation_date: row.get(2)?,
-                            last_updated: row.get(3)?,
-                            last_used_date: row.get(4)?,
-                            times_used: row.get(5)?,
+                            id: Some(row.get(0)?),
+                            name: row.get(1)?,
+                            description: row.get(2)?,
+                            creation_date: row.get(3)?,
+                            last_updated: row.get(4)?,
+                            last_used_date: row.get(5)?,
+                            times_used: row.get(6)?,
                             steps: vec![],
                         })
                     })?
@@ -101,12 +103,12 @@ impl Database {
         let test_id = self.conn.call(move |conn| {
             let mut stmt = conn.prepare("INSERT INTO test (name, desc, creation_date, last_updated, last_used_date, times_used) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?;
             let test_id = stmt.insert((
-                    test.name.clone(),
-                    test.description.clone(),
-                    test.creation_date.clone(),
-                    test.last_updated.clone(),
-                    test.last_used_date.clone(),
-                    test.times_used,
+                test.name.clone(),
+                test.description.clone(),
+                test.creation_date.clone(),
+                test.last_updated.clone(),
+                test.last_used_date.clone(),
+                test.times_used,
             ))?;
 
             Ok(test_id)

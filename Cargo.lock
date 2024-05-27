@@ -1557,6 +1557,7 @@ dependencies = [
  "etcetera",
  "futures",
  "human-panic",
+ "indexmap",
  "lazy_static",
  "libc",
  "ratatui",
@@ -1570,6 +1571,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "tui-textarea",
  "vergen",
 ]
 
@@ -2224,6 +2226,17 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tui-textarea"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3e38ced1f941a9cfc923fbf2fe6858443c42cc5220bfd35bdd3648371e7bd8e"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "unicode-width",
 ]
 
 [[package]]

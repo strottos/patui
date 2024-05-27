@@ -6,8 +6,8 @@ use ratatui::{
 };
 
 #[derive(Debug, Default, Clone)]
-pub struct Button<'a> {
-    text: &'a str,
+pub struct Button {
+    text: String,
     state: State,
 }
 
@@ -19,10 +19,12 @@ pub enum State {
     Pressed,
 }
 
-impl<'a> Button<'a> {
-    pub fn text(mut self, text: &'a str) -> Self {
-        self.text = text;
-        self
+impl Button {
+    pub fn new(text: String) -> Self {
+        Self {
+            text,
+            state: State::Normal,
+        }
     }
 
     pub fn selected(&mut self, selected: bool) {
@@ -37,9 +39,9 @@ impl<'a> Button<'a> {
         self.state = State::Pressed;
     }
 
-    pub(crate) fn widget(&'a self) -> impl Widget + 'a {
+    pub fn widget(&self) -> impl Widget {
         ButtonWidget {
-            text: Paragraph::new(self.text),
+            text: Paragraph::new(self.text.clone()),
             style: match self.state {
                 State::Normal => Style::default().fg(Color::DarkGray),
                 State::Selected => Style::default().fg(Color::White),

@@ -37,7 +37,7 @@ impl ErrorComponent {
 }
 
 impl Component for ErrorComponent {
-    fn render(&mut self, f: &mut Frame, r: Rect) {
+    fn render(&self, f: &mut Frame, r: Rect) {
         if let Some(next_error) = self.errors.front() {
             let layout = Layout::default()
                 .direction(Direction::Horizontal)
@@ -90,7 +90,7 @@ impl Component for ErrorComponent {
                 )
                 .split(layout[1]);
 
-            let mut ok_button = Button::default().text("OK");
+            let mut ok_button = Button::new("OK".to_string());
             ok_button.selected(true);
             f.render_widget(ok_button.widget(), layout[1]);
         }

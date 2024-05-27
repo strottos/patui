@@ -12,7 +12,7 @@ impl BottomBar {
 }
 
 impl Component for BottomBar {
-    fn render(&mut self, f: &mut Frame, rect: Rect) {
+    fn render(&self, f: &mut Frame, rect: Rect) {
         f.render_widget(Paragraph::new("Bottom Bar"), rect);
     }
 }

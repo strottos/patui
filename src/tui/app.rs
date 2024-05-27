@@ -14,35 +14,55 @@ use super::{
     error::{Error, ErrorType},
     terminal::{Event, Tui},
 };
-use crate::db::Database;
+use crate::{db::Database, types::PatuiTest};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DbSelect {
-    Tests,
+pub enum TestMode {
+    Normal,
+    Select(isize),
+    Create,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Mode {
+    Test(TestMode),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DbRead {
+    Test,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DbChange {
+    Test(PatuiTest),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action {
     Tick,
     Render,
+    ClearKeys,
     Resize(u16, u16),
     Quit,
     Error(Error),
-    DbSelect(DbSelect),
+    ChangeMode(Mode),
+    DbRead(DbRead),
+    DbChange(DbChange),
 }
 
 #[derive(Debug)]
-pub struct App {
+pub struct App<'a> {
     should_quit: bool,
     last_key_events: Vec<KeyEvent>,
     db: Arc<Database>,
 
     top_bar: TopBar,
-    main: MainComponent,
+    main: MainComponent<'a>,
     bottom_bar: BottomBar,
 }
 
-impl App {
+impl<'a> App<'a> {
     pub fn new(db: Arc<Database>) -> Result<Self> {
         let last_key_events = vec![];
 
@@ -144,6 +164,12 @@ impl App {
             ]
         {
             self.last_key_events.clear();
+        } else {
+            for component in self.get_root_components_mut() {
+                for action in component.input(key)?.into_iter() {
+                    action_tx.send(action)?;
+                }
+            }
         }
 
         Ok(())
@@ -156,6 +182,7 @@ impl App {
             Action::Render => {
                 tui.draw(|f| self.render(f))?;
             }
+            Action::Tick => {}
             Action::Resize(w, h) => {
                 tui.resize(Rect::new(0, 0, *w, *h))?;
             }
@@ -163,19 +190,31 @@ impl App {
             Action::Error(ref e) => {
                 self.main.add_error(e.clone());
             }
-            Action::DbSelect(ref db_select) => {
+            Action::ChangeMode(ref mode) => {
+                self.main.change_mode(mode);
+            }
+            Action::DbRead(ref db_select) => {
                 tracing::trace!("Got db select: {:?}", db_select);
                 match db_select {
-                    DbSelect::Tests => {
+                    DbRead::Test => {
                         self.main.update_tests(self.db.get_tests().await?);
                     }
                 };
             }
-            _ => {}
+            Action::DbChange(ref db_change) => {
+                tracing::trace!("Got db change: {:?}", db_change);
+                match db_change {
+                    DbChange::Test(test) => {
+                        self.db.create_test(test.clone()).await?;
+                        self.main.update_tests(self.db.get_tests().await?);
+                    }
+                };
+            }
+            Action::ClearKeys => self.last_key_events.clear(),
         }
 
-        for component in self.get_root_components() {
-            if let Some(action) = component.update(action)? {
+        for component in self.get_root_components_mut() {
+            for action in component.update(action)?.into_iter() {
                 ret.push(action);
             }
         }
@@ -183,7 +222,7 @@ impl App {
         Ok(ret)
     }
 
-    fn get_root_components(&mut self) -> Vec<&mut dyn Component> {
+    fn get_root_components_mut(&mut self) -> Vec<&mut dyn Component> {
         vec![&mut self.top_bar, &mut self.main, &mut self.bottom_bar]
     }
 

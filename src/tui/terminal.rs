@@ -6,7 +6,7 @@ use std::{
 
 use color_eyre::Result;
 use crossterm::{
-    event::{KeyEvent, KeyEventKind},
+    event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, KeyEventKind},
     terminal::LeaveAlternateScreen,
     ExecutableCommand,
 };
@@ -92,7 +92,9 @@ impl Tui {
 
     pub fn enter(&mut self) -> Result<()> {
         crossterm::terminal::enable_raw_mode()?;
-        stdout().execute(LeaveAlternateScreen)?;
+        let mut stdout = stdout();
+        stdout.execute(LeaveAlternateScreen)?;
+        stdout.execute(EnableMouseCapture)?;
         self.terminal.hide_cursor()?;
         self.terminal.clear()?;
 
@@ -102,11 +104,15 @@ impl Tui {
     }
 
     pub fn exit(&mut self) -> Result<()> {
+        // Clear the screen
         self.stop()?;
         if crossterm::terminal::is_raw_mode_enabled()? {
-            self.flush()?;
-            stdout().execute(LeaveAlternateScreen)?;
+            self.terminal.clear()?;
             crossterm::terminal::disable_raw_mode()?;
+            let mut stdout = stdout();
+            stdout.execute(LeaveAlternateScreen)?;
+            stdout.execute(DisableMouseCapture)?;
+            self.terminal.show_cursor()?;
         }
         Ok(())
     }
@@ -165,11 +171,11 @@ async fn handle_events(
                     Some(Ok(event)) => {
                         match event {
                             crossterm::event::Event::Key(key) => handle_key(key, event_tx.clone()).await?,
-                            crossterm::event::Event::Mouse(_) => todo!(),
+                            crossterm::event::Event::Mouse(_) => {},
                             crossterm::event::Event::Resize(x, y) => event_tx.send(Event::Resize(x, y))?,
-                            crossterm::event::Event::FocusGained => todo!(),
-                            crossterm::event::Event::FocusLost => todo!(),
-                            crossterm::event::Event::Paste(_) => todo!(),
+                            crossterm::event::Event::FocusGained => {},
+                            crossterm::event::Event::FocusLost => {},
+                            crossterm::event::Event::Paste(_) => {},
                         }
                     }
                     Some(Err(_)) => {

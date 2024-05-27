@@ -60,7 +60,7 @@ fn initialise_logging() -> Result<()> {
     Ok(())
 }
 
-fn initialise_panic_handler() -> Result<()> {
+fn initialise_panic_handler(is_tui: bool) -> Result<()> {
     let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
         .panic_section(format!(
             "This is a bug. Consider reporting it at {}",
@@ -72,7 +72,11 @@ fn initialise_panic_handler() -> Result<()> {
         .into_hooks();
     eyre_hook.install()?;
     std::panic::set_hook(Box::new(move |panic_info| {
-        // TODO: TUI exit when relevant
+        if is_tui {
+            if let Err(r) = crate::tui::exit() {
+                error!("Unable to exit Terminal: {:?}", r);
+            }
+        }
 
         #[cfg(not(debug_assertions))]
         {
@@ -113,6 +117,12 @@ async fn do_main() -> Result<()> {
     info!("Starting Patui");
 
     let args = Cli::parse();
+    if args.subcommand.is_some() {
+        initialise_panic_handler(false)?;
+    } else {
+        initialise_panic_handler(true)?;
+    }
+
     let strategy = choose_app_strategy(AppStrategyArgs {
         top_level_domain: "rs".to_string(),
         author: "strottos".to_string(),
@@ -145,7 +155,6 @@ async fn do_main() -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     initialise_logging()?;
-    initialise_panic_handler()?;
 
     do_main().await
 }

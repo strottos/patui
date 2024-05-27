@@ -25,6 +25,7 @@ impl NewTest {
 
         let id = db
             .create_test(PatuiTest {
+                id: None,
                 name: self.name.clone(),
                 description: self.description.clone(),
                 creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
