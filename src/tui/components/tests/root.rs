@@ -258,7 +258,7 @@ impl<'a> Component for TestComponent<'a> {
         Ok(ret)
     }
 
-    fn input(&mut self, key: KeyEvent) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
         let mut actions = vec![];
 
         if self.popup_mode == PopupMode::Create {
@@ -269,26 +269,26 @@ impl<'a> Component for TestComponent<'a> {
                 actions.extend(self.create_test_component.input(key)?);
             }
         } else {
-            match (&key.code, &key.modifiers) {
-                (KeyCode::Char('n'), &KeyModifiers::CONTROL) => {
+            match (key.code, key.modifiers) {
+                (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
                     self.set_popup_mode(TestMode::Create);
                     actions.push(Action::ClearKeys);
                 }
-                (KeyCode::Down, &KeyModifiers::NONE) => {
+                (KeyCode::Down, KeyModifiers::NONE) => {
                     let selected_idx = (self.selected_idx + 1) % self.tests.len() as isize;
                     actions.extend(self.set_select_mode(TestMode::Select(selected_idx)));
                     actions.push(Action::ClearKeys);
                 }
-                (KeyCode::Up, &KeyModifiers::NONE) => {
+                (KeyCode::Up, KeyModifiers::NONE) => {
                     let selected_idx = (self.selected_idx + self.tests.len() as isize - 1)
                         % self.tests.len() as isize;
                     actions.extend(self.set_select_mode(TestMode::Select(selected_idx)));
                     actions.push(Action::ClearKeys);
                 }
-                (KeyCode::Esc, &KeyModifiers::NONE) => {
+                (KeyCode::Esc, KeyModifiers::NONE) => {
                     actions.extend(self.set_select_mode(TestMode::Normal));
                 }
-                (KeyCode::Enter, &KeyModifiers::NONE) => {
+                (KeyCode::Enter, KeyModifiers::NONE) => {
                     actions.extend(self.set_select_mode(TestMode::Select(self.selected_idx)));
                     actions.push(Action::ClearKeys);
                 }

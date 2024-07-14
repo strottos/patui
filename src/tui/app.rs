@@ -168,7 +168,7 @@ impl<'a> App<'a> {
             self.last_key_events.clear();
         } else {
             for component in self.get_root_components_mut() {
-                for action in component.input(key)?.into_iter() {
+                for action in component.input(&key)?.into_iter() {
                     action_tx.send(action)?;
                 }
             }

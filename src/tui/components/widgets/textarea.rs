@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     prelude::Style,
     style::{Color, Modifier},
@@ -90,7 +90,7 @@ impl<'a> TextArea<'a> {
         self.inner.delete_line_by_head();
     }
 
-    pub fn input(&mut self, key: crossterm::event::KeyEvent) -> bool {
+    pub fn input(&mut self, key: &KeyEvent) -> bool {
         if !self.valid_entries.is_empty() {
             match &key.code {
                 KeyCode::Up => {
@@ -117,7 +117,7 @@ impl<'a> TextArea<'a> {
                 _ => {}
             }
         }
-        let result = self.inner.input(key);
+        let result = self.inner.input(*key);
         if result {
             self.validate();
         }

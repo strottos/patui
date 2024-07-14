@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use color_eyre::Result;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     text::Text,
@@ -7,9 +9,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::error::Error;
-
 use super::{widgets::Button, Component};
+use crate::tui::{app::Action, error::Error};
 
 #[derive(Debug, Default)]
 pub struct ErrorComponent {
@@ -93,6 +94,18 @@ impl Component for ErrorComponent {
             let mut ok_button = Button::new("OK".to_string());
             ok_button.selected(true);
             f.render_widget(ok_button.widget(), layout[1]);
+        }
+    }
+
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL)
+            | (KeyCode::Enter, KeyModifiers::NONE)
+            | (KeyCode::Enter, KeyModifiers::CONTROL) => {
+                self.ack_error();
+                Ok(vec![])
+            }
+            _ => Ok(vec![]),
         }
     }
 }

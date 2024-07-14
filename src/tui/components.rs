@@ -20,7 +20,7 @@ pub trait Component: std::fmt::Debug {
     fn render(&self, f: &mut Frame, rect: Rect);
 
     /// Take input for the component and optionally send back an action to perform
-    fn input(&mut self, _key: KeyEvent) -> Result<Vec<Action>> {
+    fn input(&mut self, _key: &KeyEvent) -> Result<Vec<Action>> {
         Ok(vec![])
     }
 

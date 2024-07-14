@@ -95,8 +95,12 @@ impl<'a> Component for MainComponent<'a> {
         }
     }
 
-    fn input(&mut self, key: KeyEvent) -> Result<Vec<Action>> {
-        self.test_component.input(key)
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
+        if self.error_component.has_error() {
+            self.error_component.input(key)
+        } else {
+            self.test_component.input(key)
+        }
     }
 
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {

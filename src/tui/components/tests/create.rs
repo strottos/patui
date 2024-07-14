@@ -245,27 +245,27 @@ impl<'a> Component for TestComponentCreate<'a> {
         f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
     }
 
-    fn input(&mut self, key: KeyEvent) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        match (&key.code, &key.modifiers) {
-            (KeyCode::Tab, &KeyModifiers::NONE) => {
+        match (key.code, key.modifiers) {
+            (KeyCode::Tab, KeyModifiers::NONE) => {
                 self.selected_component_idx =
                     (self.selected_component_idx + 1) % self.num_components();
                 self.activate_selected();
                 ret.push(Action::ClearKeys);
             }
-            (KeyCode::BackTab, &KeyModifiers::SHIFT) => {
+            (KeyCode::BackTab, KeyModifiers::SHIFT) => {
                 self.selected_component_idx = (self.selected_component_idx + self.num_components()
                     - 1)
                     % self.num_components();
                 self.activate_selected();
                 ret.push(Action::ClearKeys);
             }
-            (KeyCode::Enter, &KeyModifiers::CONTROL) => {
+            (KeyCode::Enter, KeyModifiers::CONTROL) => {
                 ret.extend(self.create_test());
             }
-            (KeyCode::Enter, &KeyModifiers::NONE) => {
+            (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.is_ok_button() {
                     self.create_button.pressed();
                     ret.extend(self.create_test());
