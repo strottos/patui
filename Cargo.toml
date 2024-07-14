@@ -11,7 +11,7 @@ homepage = "https://github.com/strottos/patui"
 [dependencies]
 better-panic = "0.3.0"
 chrono = "0.4.38"
-clap = { version = "4.5.4", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
+clap = { version = "4.5.9", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
 color-eyre = "0.6.3"
 crossterm = { version = "0.27.0", features = ["event-stream", "serde"] }
 etcetera = "0.8.0"
@@ -20,20 +20,17 @@ human-panic = "2.0.0"
 indexmap = "2.2.6"
 lazy_static = "1.4.0"
 libc = "0.2.155"
-ratatui = "0.26.2"
+ratatui = "0.27.0"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
-serde = "1.0.202"
-serde_json = "1.0.117"
+serde = "1.0.204"
+serde_json = "1.0.120"
 strip-ansi-escapes = "0.2.0"
-tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread", "time"] }
 tokio-rusqlite = "0.5.1"
 tokio-util = "0.7.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tui-textarea = "0.4.0"
-
-[build-dependencies]
-vergen = { version = "8.3.1", features = ["build", "cargo", "git", "gitoxide"] }
+tui-textarea = "0.5.1"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"

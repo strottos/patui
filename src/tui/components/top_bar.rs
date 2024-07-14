@@ -35,7 +35,7 @@ impl TopBar {
 
 impl Component for TopBar {
     fn render(&self, f: &mut Frame, rect: Rect) {
-        let rect = rect.inner(&Margin {
+        let rect = rect.inner(Margin {
             vertical: 0,
             horizontal: 1,
         });

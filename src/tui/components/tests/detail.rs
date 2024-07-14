@@ -2,6 +2,7 @@ use crate::{
     tui::{
         app::{Action, DbRead, Mode},
         components::Component,
+        error::{Error, ErrorType},
     },
     types::PatuiTest,
 };
@@ -72,6 +73,10 @@ impl Component for TestDetailComponent {
                     ret.push(Action::DbRead(DbRead::TestDetail(*id)));
                 }
             }
+            ret.push(Action::Error(Error::new(
+                ErrorType::Error,
+                "Test detail not found.".to_string(),
+            )));
         }
 
         Ok(ret)
