@@ -1,10 +1,17 @@
 use std::path::Path;
 
 use color_eyre::Result;
+use phf::phf_map;
 use tokio_rusqlite::Connection;
 use tracing::{debug, trace};
 
-use crate::types::PatuiTest;
+use crate::types::{PatuiStep, PatuiStepDetails, PatuiTest};
+
+// Never reuse or change ID's after they're in main, always add new and delete old.
+static STEP_TYPE_TO_TYPE_ID: phf::Map<&'static str, i64> = phf_map! {
+    "shell" => 1,
+    "assertion" => 2,
+};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -38,8 +45,27 @@ impl Database {
                     CREATE TABLE IF NOT EXISTS step (
                         id INTEGER PRIMARY KEY,
                         test_id INTEGER NOT NULL,
+                        type_id INTEGER NOT NULL,
                         FOREIGN KEY (test_id) REFERENCES test (id)
-                    )
+                    );
+
+                    CREATE TABLE IF NOT EXISTS step_script (
+                        id INTEGER PRIMARY KEY,
+                        step_id INTEGER NOT NULL,
+                        shell TEXT,
+                        script TEXT,
+                        location TEXT,
+                        FOREIGN KEY (step_id) REFERENCES step (id)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS step_assertion (
+                        id INTEGER PRIMARY KEY,
+                        step_id INTEGER NOT NULL,
+                        type_id INTEGER NOT NULL,
+                        lhs TEXT NOT NULL,
+                        rhs TEXT NOT NULL,
+                        FOREIGN KEY (step_id) REFERENCES step (id)
+                    );
                     "#,
                 )?;
 
@@ -125,5 +151,128 @@ impl Database {
         }).await?;
 
         Ok(test_id)
+    }
+
+    pub async fn create_step(&self, step: PatuiStep) -> Result<i64> {
+        debug!("Create step...");
+        trace!("Create step {:?}...", step);
+
+        let step_id = self
+            .conn
+            .call(move |conn| {
+                let mut stmt =
+                    conn.prepare("INSERT INTO step (test_id, type_id) VALUES (?1, ?2)")?;
+                let step_id = stmt.insert((step.test_id, step_type_to_type_id(&step.details)))?;
+
+                Ok(step_id)
+            })
+            .await?;
+
+        Ok(step_id)
+    }
+}
+
+fn step_type_to_type_id(type_: &PatuiStepDetails) -> i64 {
+    match type_ {
+        PatuiStepDetails::Shell(_) => *STEP_TYPE_TO_TYPE_ID.get("shell").unwrap(),
+        PatuiStepDetails::Assertion(_) => *STEP_TYPE_TO_TYPE_ID.get("assertion").unwrap(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assertor::*;
+    use tempfile::tempdir;
+
+    use crate::types::{PatuiStep, PatuiStepDetails, PatuiStepShell, PatuiTest};
+
+    use super::Database;
+
+    async fn setup_db() -> (Database, tempfile::TempDir) {
+        let tmpdir = tempdir().unwrap();
+        let mut db_path = tmpdir.path().to_path_buf();
+        db_path.push("test.db");
+
+        let db = Database::new(&db_path).await.unwrap();
+        db.create_tables().await.unwrap();
+        (db, tmpdir)
+    }
+
+    #[tokio::test]
+    async fn test_create_and_read_test() {
+        let (db, _tmpdir) = setup_db().await;
+
+        let res = db
+            .create_test(PatuiTest {
+                id: None,
+                name: "test name".to_string(),
+                description: "test description".to_string(),
+                creation_date: "2021-01-01 00:00:00".to_string(),
+                last_updated: "2021-01-01 00:00:00".to_string(),
+                last_used_date: None,
+                times_used: 0,
+                steps: vec![],
+            })
+            .await;
+
+        assert_that!(res).is_ok();
+        let test_id = res.unwrap();
+        assert_that!(test_id).is_greater_than(0);
+
+        let test = db.get_test(test_id).await.unwrap();
+        assert_that!(test.name).is_equal_to("test name".to_string());
+        assert_that!(test.description).is_equal_to("test description".to_string());
+        assert_that!(test.creation_date).is_equal_to("2021-01-01 00:00:00".to_string());
+        assert_that!(test.last_updated).is_equal_to("2021-01-01 00:00:00".to_string());
+        assert_that!(test.last_used_date).is_none();
+        assert_that!(test.times_used).is_equal_to(0);
+        assert_that!(test.id).is_equal_to(Some(test_id));
+
+        let tests = db.get_tests().await.unwrap();
+        assert_that!(tests).has_length(1);
+        assert_that!(tests[0].name).is_equal_to("test name".to_string());
+        assert_that!(tests[0].description).is_equal_to("test description".to_string());
+        assert_that!(tests[0].creation_date).is_equal_to("2021-01-01 00:00:00".to_string());
+        assert_that!(tests[0].last_updated).is_equal_to("2021-01-01 00:00:00".to_string());
+        assert_that!(tests[0].last_used_date).is_none();
+        assert_that!(tests[0].times_used).is_equal_to(0);
+        assert_that!(tests[0].id).is_equal_to(Some(test_id));
+    }
+
+    #[tokio::test]
+    async fn test_create_and_read_test_with_shell_step() {
+        let (db, _tmpdir) = setup_db().await;
+
+        let res = db
+            .create_test(PatuiTest {
+                id: None,
+                name: "test name".to_string(),
+                description: "test description".to_string(),
+                creation_date: "2021-01-01 00:00:00".to_string(),
+                last_updated: "2021-01-01 00:00:00".to_string(),
+                last_used_date: None,
+                times_used: 0,
+                steps: vec![],
+            })
+            .await;
+
+        assert_that!(res).is_ok();
+        let test_id = res.unwrap();
+        assert_that!(test_id).is_greater_than(0);
+
+        let res = db
+            .create_step(PatuiStep {
+                id: None,
+                test_id,
+                details: PatuiStepDetails::Shell(PatuiStepShell {
+                    shell: None,
+                    text: "echo 'hello'".to_string(),
+                }),
+            })
+            .await;
+
+        assert_that!(res).is_ok();
+        let step_id = res.unwrap();
+        assert_that!(step_id).is_greater_than(0);
     }
 }

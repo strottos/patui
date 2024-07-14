@@ -20,6 +20,7 @@ human-panic = "2.0.0"
 indexmap = "2.2.6"
 lazy_static = "1.4.0"
 libc = "0.2.155"
+phf = { version = "0.11.2", features = ["macros"] }
 ratatui = "0.27.0"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 serde = "1.0.204"
@@ -34,4 +35,5 @@ tui-textarea = "0.5.1"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
+assertor = "0.0.2"
 tempfile = "3.10.1"

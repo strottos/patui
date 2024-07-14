@@ -46,3 +46,60 @@ impl NewTest {
         Ok(())
     }
 }
+
+#[derive(Parser, Debug)]
+#[command(about = "Create a new step for a given test")]
+pub struct NewStep {
+    #[clap(short, long)]
+    pub test_id: i64,
+
+    #[command(subcommand)]
+    command: NewStepType,
+}
+
+impl NewStep {
+    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub enum NewStepType {
+    Shell(NewStepShell),
+    Assertion(NewStepAssertion),
+}
+
+#[derive(Parser, Debug)]
+#[command(about = "Create a new step for a given test")]
+pub struct NewStepShell {
+    #[clap(short, long)]
+    pub shell: Option<String>,
+
+    #[clap(short, long)]
+    pub text: String,
+}
+
+impl NewStepShell {
+    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command(about = "Create a new step for a given test")]
+pub struct NewStepAssertion {
+    #[clap(short, long)]
+    pub type_: String,
+
+    #[clap(short, long)]
+    pub lhs: String,
+
+    #[clap(short, long)]
+    pub rhs: String,
+}
+
+impl NewStepAssertion {
+    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+        Ok(())
+    }
+}

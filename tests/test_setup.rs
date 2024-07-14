@@ -1,6 +1,7 @@
 use std::process::Output;
 
 use assert_cmd::Command;
+use assertor::*;
 use serde::Deserialize;
 use tempfile::tempdir;
 
@@ -50,12 +51,12 @@ fn test_new_test() {
 
     let success = output.status.success();
 
-    assert!(success);
+    assert_that!(success);
 
     let insert_output: InsertOutput = serde_json::from_slice(&output.stdout).unwrap();
     let id = insert_output.id;
 
-    assert_eq!(insert_output.status, "ok");
+    assert_that!(insert_output.status).is_equal_to("ok".to_string());
 
     let db = rusqlite::Connection::open(db_path).unwrap();
     let mut stmt = db
@@ -64,11 +65,11 @@ fn test_new_test() {
     let mut rows = stmt.query(rusqlite::params![id]).unwrap();
     let row = rows.next();
 
-    assert!(row.is_ok());
+    assert_that!(row.is_ok());
     assert!(row.as_ref().unwrap().is_some());
     let row = row.unwrap().unwrap();
-    assert_eq!(row.get(0), Ok("test name".to_string()));
-    assert_eq!(row.get(1), Ok("test description".to_string()));
+    assert_that!(row.get(0)).is_equal_to(Ok("test name".to_string()));
+    assert_that!(row.get(1)).is_equal_to(Ok("test description".to_string()));
     let row = rows.next().unwrap();
     assert!(row.is_none());
 }
@@ -110,11 +111,9 @@ fn test_get_tests() {
 
     let tests: Vec<PatuiTest> = serde_json::from_slice(&output.stdout).unwrap();
 
-    assert_eq!(tests.len(), 1);
-    assert_eq!(
-        tests.iter().map(|x| &x.name[..]).collect::<Vec<&str>>(),
-        vec!["test name 1",]
-    );
+    assert_that!(tests.len()).is_equal_to(1);
+    assert_that!(tests.iter().map(|x| &x.name[..]).collect::<Vec<&str>>())
+        .is_equal_to(vec!["test name 1"]);
 
     // Get all tests
     let output = run_patui(&["--db", db_path.to_str().unwrap(), "get", "test"]);
@@ -123,15 +122,54 @@ fn test_get_tests() {
 
     let tests: Vec<PatuiTest> = serde_json::from_slice(&output.stdout).unwrap();
 
-    assert_eq!(tests.len(), 5);
-    assert_eq!(
-        tests.iter().map(|x| &x.name[..]).collect::<Vec<&str>>(),
-        vec![
-            "test name 1",
-            "test name 2",
-            "test name 3",
-            "test name 4",
-            "test name 5"
-        ]
-    );
+    assert_that!(tests.len()).is_equal_to(5);
+    assert_that!(tests.iter().map(|x| &x.name[..]).collect::<Vec<&str>>()).is_equal_to(vec![
+        "test name 1",
+        "test name 2",
+        "test name 3",
+        "test name 4",
+        "test name 5",
+    ]);
+}
+
+#[test]
+fn test_new_test_with_shell() {
+    let tmpdir = tempdir().unwrap();
+    let mut db_path = tmpdir.path().to_path_buf();
+    db_path.push("test.db");
+
+    let output = run_patui(&[
+        "--db",
+        db_path.to_str().unwrap(),
+        "new",
+        "test",
+        "--name",
+        "test name",
+        "--description",
+        "test description",
+    ]);
+
+    let success = output.status.success();
+    assert!(success);
+
+    // Get first test
+    let output = run_patui(&["--db", db_path.to_str().unwrap(), "get", "test"]);
+    let success = output.status.success();
+    assert!(success);
+
+    let tests: Vec<PatuiTest> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_that!(tests.len()).is_equal_to(1);
+    let id = tests[0].id;
+
+    let output = run_patui(&[
+        "--db",
+        db_path.to_str().unwrap(),
+        "new",
+        "step",
+        "--test-id",
+        &id.to_string(),
+        "shell",
+        "--shell",
+        "hello",
+    ]);
 }
