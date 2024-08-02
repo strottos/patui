@@ -24,6 +24,7 @@ const SHORT_WIDTH_DISPLAY: u16 = 60;
 enum SelectMode {
     Normal,
     Select,
+    Detail,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -63,11 +64,19 @@ impl<'a> TestComponent<'a> {
     }
 
     fn render_table(&self, f: &mut Frame, r: Rect) {
+        let style =
+            if self.select_mode == SelectMode::Normal || self.select_mode == SelectMode::Select {
+                Style::default().fg(Color::White).bg(Color::Black)
+            } else {
+                Style::default()
+            };
+
         let block = Block::default()
             .borders(Borders::ALL)
             .padding(Padding::proportional(1))
             .title("Tests")
-            .title_alignment(Alignment::Center);
+            .title_alignment(Alignment::Center)
+            .style(style);
 
         if self.loading {
             f.render_widget(Paragraph::new("Retrieving data...").block(block), r);

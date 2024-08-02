@@ -1,4 +1,5 @@
 use serde::Serialize;
+use strum::{EnumDiscriminants, EnumIter, VariantArray, VariantNames};
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct PatuiTest {
@@ -19,23 +20,42 @@ pub struct PatuiStep {
     pub details: PatuiStepDetails,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, EnumIter, EnumDiscriminants, VariantNames)]
+#[strum(serialize_all = "snake_case")]
 pub enum PatuiStepDetails {
     Shell(PatuiStepShell),
     Assertion(PatuiStepAssertion),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
-pub struct PatuiStepShell {
-    pub shell: Option<String>,
-    pub text: String,
+impl PatuiStepDetails {
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            PatuiStepDetails::Shell(_) => "shell",
+            PatuiStepDetails::Assertion(_) => "assertion",
+        }
+    }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
+pub struct PatuiStepShell {
+    pub shell: Option<String>,
+    pub contents: String,
+    pub location: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
 pub struct PatuiStepAssertion {
-    pub assertion: String,
+    pub assertion: PatuiStepAssertionType,
+    pub negate: bool,
     pub lhs: String,
     pub rhs: String,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, EnumIter, VariantArray)]
+pub enum PatuiStepAssertionType {
+    #[default]
+    Equal,
+    Contains,
 }
 
 #[derive(Debug, Serialize)]

@@ -27,6 +27,7 @@ pub enum TestMode {
 pub enum Mode {
     Test(TestMode),
     TestDetail(TestMode, i64),
+    TestDetailSelected(TestMode, i64),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -1,12 +1,13 @@
 use crate::{
     tui::{
-        app::{Action, DbRead, Mode},
+        app::{Action, DbRead, Mode, TestMode},
         components::Component,
     },
     types::PatuiTest,
 };
 
 use color_eyre::Result;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Alignment,
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
@@ -14,16 +15,20 @@ use ratatui::{
 
 #[derive(Debug)]
 pub struct TestDetailComponent {
-    details: Option<PatuiTest>,
+    test: Option<PatuiTest>,
+    step_highlight: Option<i64>,
 }
 
 impl TestDetailComponent {
     pub fn new() -> Self {
-        Self { details: None }
+        Self {
+            test: None,
+            step_highlight: None,
+        }
     }
 
     pub fn update_test_detail(&mut self, test: PatuiTest) {
-        self.details = Some(test);
+        self.test = Some(test);
     }
 }
 
@@ -35,7 +40,7 @@ impl Component for TestDetailComponent {
             .title_alignment(Alignment::Center)
             .title("Test Details");
 
-        let details = match &self.details {
+        let details = match &self.test {
             Some(details) => {
                 let mut items: Vec<String> = vec![];
                 if let Some(id) = details.id {
@@ -44,9 +49,9 @@ impl Component for TestDetailComponent {
                 items.push(format!("Name: {}", details.name));
                 items.push(format!("Description: {}", details.description));
 
-                // for (key, value) in details.key_values.iter() {
-                //     items.push(format!("{}: {}", key, value));
-                // }
+                for step in details.steps.iter() {
+                    items.push(format!("{:#?}", step.details));
+                }
 
                 items.join("\n")
             }
@@ -63,11 +68,11 @@ impl Component for TestDetailComponent {
         let mut ret = vec![];
 
         if let Action::ChangeMode(Mode::TestDetail(_, id)) = action {
-            if self.details.is_none() {
+            if self.test.is_none() {
                 ret.push(Action::DbRead(DbRead::TestDetail(*id)));
             }
 
-            if let Some(test) = &self.details {
+            if let Some(test) = &self.test {
                 if test.id != Some(*id) {
                     ret.push(Action::DbRead(DbRead::TestDetail(*id)));
                 }
@@ -75,5 +80,15 @@ impl Component for TestDetailComponent {
         }
 
         Ok(ret)
+    }
+
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
+        let mut actions = vec![];
+
+        match (key.code, key.modifiers) {
+            _ => {}
+        }
+
+        Ok(actions)
     }
 }

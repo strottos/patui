@@ -1,30 +1,12 @@
+mod types;
+
 use std::process::Output;
 
 use assert_cmd::Command;
 use assertor::*;
-use serde::Deserialize;
 use tempfile::tempdir;
 
-#[derive(Debug, Deserialize)]
-struct InsertOutput {
-    id: i64,
-    status: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PatuiStep {}
-
-#[derive(Debug, Deserialize)]
-struct PatuiTest {
-    pub id: i64,
-    pub name: String,
-    pub description: String,
-    pub creation_date: String,
-    pub last_updated: String,
-    pub last_used_date: Option<String>,
-    pub times_used: u32,
-    pub steps: Vec<PatuiStep>,
-}
+use self::types::{InsertTestStatus, PatuiStep, PatuiTest};
 
 fn run_patui(args: &[&str]) -> Output {
     let mut cmd = Command::cargo_bin("patui").unwrap();
@@ -53,7 +35,7 @@ fn test_new_test() {
 
     assert_that!(success);
 
-    let insert_output: InsertOutput = serde_json::from_slice(&output.stdout).unwrap();
+    let insert_output: InsertTestStatus = serde_json::from_slice(&output.stdout).unwrap();
     let id = insert_output.id;
 
     assert_that!(insert_output.status).is_equal_to("ok".to_string());
@@ -171,5 +153,25 @@ fn test_new_test_with_shell() {
         "shell",
         "--shell",
         "hello",
+        "--contents",
+        "#!/bin/bash\necho 'hello, world!'",
     ]);
+    let success = output.status.success();
+    assert!(success);
+
+    // Get all steps for test
+    let output = run_patui(&[
+        "--db",
+        db_path.to_str().unwrap(),
+        "get",
+        "steps",
+        "--test-id",
+        &id.to_string(),
+    ]);
+    let success = output.status.success();
+    assert!(success);
+
+    let tests: Vec<PatuiStep> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_that!(tests.len()).is_equal_to(1);
+    let id = tests[0].id;
 }

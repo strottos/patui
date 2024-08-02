@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Frame,
@@ -23,6 +23,33 @@ use super::{
 pub enum MainMode {
     Test,
     TestDetail(i64),
+    TestDetailSelected(i64),
+}
+
+impl MainMode {
+    fn is_test(&self) -> bool {
+        if let MainMode::Test = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_test_detail(&self) -> bool {
+        if let MainMode::TestDetail(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_test_detail_selected(&self) -> bool {
+        if let MainMode::TestDetailSelected(_) = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -73,13 +100,14 @@ impl<'a> MainComponent<'a> {
                 self.test_component.set_select_mode(test_mode.clone());
                 self.test_component.set_popup_mode(test_mode.clone());
             }
+            Mode::TestDetailSelected(_, _) => todo!(),
         }
     }
 }
 
 impl<'a> Component for MainComponent<'a> {
     fn render(&self, f: &mut Frame, rect: Rect) {
-        if let MainMode::TestDetail(_) = self.main_mode {
+        if self.main_mode.is_test_detail() || self.main_mode.is_test_detail_selected() {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -97,10 +125,24 @@ impl<'a> Component for MainComponent<'a> {
 
     fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
         if self.error_component.has_error() {
-            self.error_component.input(key)
-        } else {
-            self.test_component.input(key)
+            return self.error_component.input(key);
+        } else if let MainMode::TestDetailSelected(id) = self.main_mode {
+            if let (KeyCode::Esc, KeyModifiers::NONE) = (key.code, key.modifiers) {
+                self.main_mode = MainMode::TestDetailSelected(id);
+                return Ok(vec![]);
+            }
+            let ret = self.test_detail_component.input(key)?;
+            if !ret.is_empty() {
+                return Ok(ret);
+            }
+        } else if let MainMode::TestDetail(id) = self.main_mode {
+            if let (KeyCode::Enter, KeyModifiers::NONE) = (key.code, key.modifiers) {
+                self.main_mode = MainMode::TestDetailSelected(id);
+                return Ok(vec![]);
+            }
         }
+
+        self.test_component.input(key)
     }
 
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {

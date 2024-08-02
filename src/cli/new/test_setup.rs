@@ -2,11 +2,14 @@ use std::{io::Write, sync::Arc};
 
 use chrono::{DateTime, Local};
 use clap::Parser;
-use color_eyre::Result;
+use color_eyre::{eyre::bail, Result};
 
 use crate::{
     db::Database,
-    types::{InsertTestStatus, PatuiTest},
+    types::{
+        InsertTestStatus, PatuiStep, PatuiStepAssertion, PatuiStepAssertionType, PatuiStepDetails,
+        PatuiStepShell, PatuiTest,
+    },
 };
 
 #[derive(Parser, Debug)]
@@ -59,6 +62,11 @@ pub struct NewStep {
 
 impl NewStep {
     pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+        match &self.command {
+            NewStepType::Shell(step) => step.handle(self.test_id, db).await?,
+            NewStepType::Assertion(step) => step.handle(self.test_id, db).await?,
+        }
+
         Ok(())
     }
 }
@@ -70,23 +78,36 @@ pub enum NewStepType {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Create a new step for a given test")]
+#[command(about = "Create a new step for running a shell")]
 pub struct NewStepShell {
     #[clap(short, long)]
     pub shell: Option<String>,
 
     #[clap(short, long)]
-    pub text: String,
+    pub location: Option<String>,
+
+    #[clap(short, long)]
+    pub contents: String,
 }
 
 impl NewStepShell {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+    pub async fn handle(&self, test_id: i64, db: Arc<Database>) -> Result<()> {
+        db.create_step(PatuiStep {
+            id: None,
+            test_id,
+            details: PatuiStepDetails::Shell(PatuiStepShell {
+                shell: self.shell.clone(),
+                contents: self.contents.clone(),
+                location: self.location.clone(),
+            }),
+        })
+        .await?;
         Ok(())
     }
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Create a new step for a given test")]
+#[command(about = "Create a new step for doing an assertion on something")]
 pub struct NewStepAssertion {
     #[clap(short, long)]
     pub type_: String,
@@ -99,7 +120,23 @@ pub struct NewStepAssertion {
 }
 
 impl NewStepAssertion {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+    pub async fn handle(&self, test_id: i64, db: Arc<Database>) -> Result<()> {
+        db.create_step(PatuiStep {
+            id: None,
+            test_id,
+            details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                assertion: match &self.type_[..] {
+                    "equal" => PatuiStepAssertionType::Equal,
+                    "contains" => PatuiStepAssertionType::Contains,
+                    _ => bail!("Invalid assertion type"),
+                },
+                negate: false,
+                lhs: self.lhs.clone(),
+                rhs: self.rhs.clone(),
+            }),
+        })
+        .await?;
+
         Ok(())
     }
 }
