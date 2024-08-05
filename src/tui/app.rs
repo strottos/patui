@@ -10,24 +10,78 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tracing::{debug, trace};
 
 use super::{
-    components::{BottomBar, Component, MainComponent, TopBar},
+    components::{BottomBar, Component, ErrorComponent, MainComponent, TopBar},
     error::{Error, ErrorType},
     terminal::{Event, Tui},
 };
 use crate::{db::Database, types::PatuiTest};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum TestMode {
-    Normal,
-    Select(isize),
-    Create,
+pub enum MainMode {
+    Test,
+    TestDetail(i64),
+    TestDetailSelected(i64),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Mode {
-    Test(TestMode),
-    TestDetail(TestMode, i64),
-    TestDetailSelected(TestMode, i64),
+pub enum PopupMode {
+    CreateTest,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AppMode {
+    main: MainMode,
+    popup: Option<PopupMode>,
+}
+
+impl AppMode {
+    pub fn create_normal() -> Self {
+        Self {
+            main: MainMode::Test,
+            popup: None,
+        }
+    }
+
+    pub fn create_test_detail(id: i64) -> Self {
+        Self {
+            main: MainMode::TestDetail(id),
+            popup: None,
+        }
+    }
+
+    pub fn create_test_detail_with_selected_id(id: i64) -> Self {
+        Self {
+            main: MainMode::TestDetailSelected(id),
+            popup: None,
+        }
+    }
+
+    pub fn clone_with_popup(&self, popup: PopupMode) -> Self {
+        Self {
+            main: self.main.clone(),
+            popup: Some(popup),
+        }
+    }
+
+    pub fn is_test(&self) -> bool {
+        matches!(self.main, MainMode::Test)
+    }
+
+    pub fn is_test_detail(&self) -> bool {
+        matches!(self.main, MainMode::TestDetail(_))
+    }
+
+    pub fn is_test_detail_selected(&self) -> bool {
+        matches!(self.main, MainMode::TestDetailSelected(_))
+    }
+
+    pub fn main_mode(&self) -> &MainMode {
+        &self.main
+    }
+
+    pub fn popup_mode(&self) -> Option<&PopupMode> {
+        self.popup.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -49,7 +103,7 @@ pub enum Action {
     Resize(u16, u16),
     Quit,
     Error(Error),
-    ChangeMode(Mode),
+    ModeChange(AppMode),
     DbRead(DbRead),
     DbChange(DbChange),
 }
@@ -60,9 +114,12 @@ pub struct App<'a> {
     last_key_events: Vec<KeyEvent>,
     db: Arc<Database>,
 
+    mode: AppMode,
+
     top_bar: TopBar,
     main: MainComponent<'a>,
     bottom_bar: BottomBar,
+    error_component: ErrorComponent,
 }
 
 impl<'a> App<'a> {
@@ -72,15 +129,22 @@ impl<'a> App<'a> {
         let top_bar = TopBar::new();
         let main = MainComponent::new();
         let bottom_bar = BottomBar::new();
+        let error_component = ErrorComponent::new();
 
         Ok(Self {
             should_quit: false,
             last_key_events,
             db,
 
+            mode: AppMode {
+                main: MainMode::Test,
+                popup: None,
+            },
+
             top_bar,
             main,
             bottom_bar,
+            error_component,
         })
     }
 
@@ -106,6 +170,11 @@ impl<'a> App<'a> {
                 }
             }
         });
+
+        self.error_component.add_error(Error::new(
+            ErrorType::Info,
+            "Welcome to Patui! Press 'n' to create a new test".to_string(),
+        ));
 
         let mut tui = Tui::new()?;
         tui.enter()?;
@@ -167,9 +236,12 @@ impl<'a> App<'a> {
             ]
         {
             self.last_key_events.clear();
+        } else if self.error_component.has_error() {
+            self.error_component.input(&key, &self.mode)?;
         } else {
+            let mode = self.mode.clone();
             for component in self.get_root_components_mut() {
-                for action in component.input(&key)?.into_iter() {
+                for action in component.input(&key, &mode)?.into_iter() {
                     action_tx.send(action)?;
                 }
             }
@@ -190,11 +262,9 @@ impl<'a> App<'a> {
                 tui.resize(Rect::new(0, 0, *w, *h))?;
             }
             Action::Quit => self.should_quit = true,
-            Action::Error(ref e) => {
-                self.main.add_error(e.clone());
-            }
-            Action::ChangeMode(ref mode) => {
-                self.main.change_mode(mode);
+            Action::Error(ref e) => self.error_component.add_error(e.clone()),
+            Action::ModeChange(ref mode) => {
+                self.mode = mode.clone();
             }
             Action::DbRead(ref db_select) => {
                 tracing::trace!("Got db select: {:?}", db_select);
@@ -248,7 +318,11 @@ impl<'a> App<'a> {
             .split(fsize);
 
         self.top_bar.render(f, chunks_main[0]);
-        self.main.render(f, chunks_main[1]);
+        self.main.render(f, chunks_main[1], &self.mode);
         self.bottom_bar.render(f, chunks_main[2]);
+
+        if self.error_component.has_error() {
+            self.error_component.render(f, chunks_main[1]);
+        }
     }
 }

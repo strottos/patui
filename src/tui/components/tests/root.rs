@@ -1,75 +1,51 @@
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Rect},
     style::{Color, Style},
     text::Text,
-    widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table},
     Frame,
 };
 
 use crate::{
     tui::{
-        app::{Action, DbRead, Mode, TestMode},
+        app::{Action, AppMode, DbRead, PopupMode},
         components::Component,
     },
     types::PatuiTest,
 };
 
-use super::create::TestComponentCreate;
-
 const SHORT_WIDTH_DISPLAY: u16 = 60;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum SelectMode {
-    Normal,
-    Select,
-    Detail,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum PopupMode {
-    Normal,
-    Create,
-}
-
 #[derive(Debug)]
-pub struct TestComponent<'a> {
+pub struct TestComponent {
     initialized: bool,
     loading: bool,
 
     selected_idx: isize,
-    select_mode: SelectMode,
-    popup_mode: PopupMode,
 
     tests: Vec<PatuiTest>,
-
-    create_test_component: TestComponentCreate<'a>,
 }
 
-impl<'a> TestComponent<'a> {
+impl TestComponent {
     pub fn new() -> Self {
         Self {
             initialized: false,
             loading: false,
 
             selected_idx: -1,
-            select_mode: SelectMode::Normal,
-            popup_mode: PopupMode::Normal,
 
             tests: vec![],
-
-            create_test_component: TestComponentCreate::new(),
         }
     }
 
-    fn render_table(&self, f: &mut Frame, r: Rect) {
-        let style =
-            if self.select_mode == SelectMode::Normal || self.select_mode == SelectMode::Select {
-                Style::default().fg(Color::White).bg(Color::Black)
-            } else {
-                Style::default()
-            };
+    fn render_table(&self, f: &mut Frame, r: Rect, mode: &AppMode) {
+        let style = if mode.is_test_detail_selected() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -138,12 +114,11 @@ impl<'a> TestComponent<'a> {
             })
             .enumerate()
             .map(|(i, row)| {
-                let style =
-                    if self.selected_idx == i as isize && self.select_mode != SelectMode::Normal {
-                        Style::default().fg(Color::Black).bg(Color::White)
-                    } else {
-                        Style::default()
-                    };
+                let style = if self.selected_idx == i as isize && mode.is_test_detail() {
+                    Style::default().fg(Color::Black).bg(Color::White)
+                } else {
+                    Style::default()
+                };
 
                 Row::new(
                     row.into_iter()
@@ -182,24 +157,8 @@ impl<'a> TestComponent<'a> {
         f.render_widget(table, r);
     }
 
-    fn render_create_popup(&self, f: &mut Frame, r: Rect) {
-        let popup_layout = Layout::vertical([
-            Constraint::Percentage(20),
-            Constraint::Percentage(60),
-            Constraint::Percentage(20),
-        ])
-        .split(r);
-
-        let area = Layout::horizontal([
-            Constraint::Percentage(10),
-            Constraint::Percentage(80),
-            Constraint::Percentage(10),
-        ])
-        .split(popup_layout[1])[1];
-
-        f.render_widget(Clear, area);
-
-        self.create_test_component.render(f, area);
+    pub fn render(&self, f: &mut Frame, r: Rect, mode: &AppMode) {
+        self.render_table(f, r, mode);
     }
 
     pub fn update_tests(&mut self, tests: Vec<PatuiTest>) {
@@ -207,53 +166,9 @@ impl<'a> TestComponent<'a> {
         self.loading = false;
         self.initialized = true;
     }
-
-    pub fn set_select_mode(&mut self, test_mode: TestMode) -> Vec<Action> {
-        let mut ret = vec![];
-
-        match test_mode {
-            TestMode::Normal => {
-                self.create_test_component.set_root_test_mode(test_mode);
-                self.select_mode = SelectMode::Normal;
-                ret.push(Action::ChangeMode(Mode::Test(TestMode::Normal)));
-            }
-            TestMode::Select(idx) => {
-                self.create_test_component.set_root_test_mode(test_mode);
-                let selected_idx = (idx + self.tests.len() as isize) % self.tests.len() as isize;
-                self.selected_idx = selected_idx;
-                self.select_mode = SelectMode::Select;
-                ret.push(Action::ChangeMode(Mode::TestDetail(
-                    TestMode::Select(selected_idx),
-                    self.tests[selected_idx as usize].id.unwrap(),
-                )));
-            }
-            TestMode::Create => {}
-        };
-
-        ret
-    }
-
-    pub fn set_popup_mode(&mut self, test_mode: TestMode) {
-        match test_mode {
-            TestMode::Create => {
-                self.popup_mode = PopupMode::Create;
-            }
-            _ => {
-                self.popup_mode = PopupMode::Normal;
-            }
-        };
-    }
 }
 
-impl<'a> Component for TestComponent<'a> {
-    fn render(&self, f: &mut Frame, r: Rect) {
-        self.render_table(f, r);
-
-        if self.popup_mode == PopupMode::Create {
-            self.render_create_popup(f, r);
-        }
-    }
-
+impl Component for TestComponent {
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
@@ -267,43 +182,51 @@ impl<'a> Component for TestComponent<'a> {
         Ok(ret)
     }
 
-    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent, mode: &AppMode) -> Result<Vec<Action>> {
         let mut actions = vec![];
 
-        if self.popup_mode == PopupMode::Create {
-            if key.code == KeyCode::Esc {
-                self.set_popup_mode(TestMode::Normal);
+        // if self.popup_mode == PopupMode::Create {
+        //     if key.code == KeyCode::Esc {
+        //         // self.set_popup_mode(TestMode::Normal);
+        //         actions.push(Action::ClearKeys);
+        //     } else {
+        //         actions.extend(self.create_test_component.input(key, mode)?);
+        //     }
+        // } else {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                actions.push(Action::ModeChange(
+                    mode.clone_with_popup(PopupMode::CreateTest),
+                ));
                 actions.push(Action::ClearKeys);
-            } else {
-                actions.extend(self.create_test_component.input(key)?);
             }
-        } else {
-            match (key.code, key.modifiers) {
-                (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                    self.set_popup_mode(TestMode::Create);
-                    actions.push(Action::ClearKeys);
-                }
-                (KeyCode::Down, KeyModifiers::NONE) => {
-                    let selected_idx = (self.selected_idx + 1) % self.tests.len() as isize;
-                    actions.extend(self.set_select_mode(TestMode::Select(selected_idx)));
-                    actions.push(Action::ClearKeys);
-                }
-                (KeyCode::Up, KeyModifiers::NONE) => {
-                    let selected_idx = (self.selected_idx + self.tests.len() as isize - 1)
-                        % self.tests.len() as isize;
-                    actions.extend(self.set_select_mode(TestMode::Select(selected_idx)));
-                    actions.push(Action::ClearKeys);
-                }
-                (KeyCode::Esc, KeyModifiers::NONE) => {
-                    actions.extend(self.set_select_mode(TestMode::Normal));
-                }
-                (KeyCode::Enter, KeyModifiers::NONE) => {
-                    actions.extend(self.set_select_mode(TestMode::Select(self.selected_idx)));
-                    actions.push(Action::ClearKeys);
-                }
-                _ => {}
+            (KeyCode::Down, KeyModifiers::NONE) => {
+                let selected_idx = (self.selected_idx + 1) % self.tests.len() as isize;
+                self.selected_idx = selected_idx;
+                actions.push(Action::ModeChange(AppMode::create_test_detail(
+                    self.tests[selected_idx as usize].id.unwrap(),
+                )));
+                actions.push(Action::ClearKeys);
             }
+            (KeyCode::Up, KeyModifiers::NONE) => {
+                let selected_idx =
+                    (self.selected_idx + self.tests.len() as isize - 1) % self.tests.len() as isize;
+                self.selected_idx = selected_idx;
+                actions.push(Action::ModeChange(AppMode::create_test_detail(
+                    self.tests[selected_idx as usize].id.unwrap(),
+                )));
+                actions.push(Action::ClearKeys);
+            }
+            (KeyCode::Esc, KeyModifiers::NONE) => {
+                actions.push(Action::ModeChange(AppMode::create_normal()));
+            }
+            (KeyCode::Enter, KeyModifiers::NONE) => {
+                // actions.extend(self.set_select_mode(TestMode::Select(self.selected_idx)));
+                actions.push(Action::ClearKeys);
+            }
+            _ => {}
         }
+        // }
 
         Ok(actions)
     }

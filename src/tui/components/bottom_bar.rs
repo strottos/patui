@@ -9,10 +9,10 @@ impl BottomBar {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-impl Component for BottomBar {
-    fn render(&self, f: &mut Frame, rect: Rect) {
+    pub fn render(&self, f: &mut Frame, rect: Rect) {
         f.render_widget(Paragraph::new("Bottom Bar"), rect);
     }
 }
+
+impl Component for BottomBar {}

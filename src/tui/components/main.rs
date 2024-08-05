@@ -2,82 +2,38 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    widgets::Clear,
     Frame,
 };
 
 use crate::{
-    tui::{
-        app::{Action, Mode},
-        error::Error,
-    },
+    tui::app::{Action, AppMode, MainMode, PopupMode},
     types::PatuiTest,
 };
 
 use super::{
-    error::ErrorComponent,
-    tests::{TestComponent, TestDetailComponent},
+    tests::{TestComponent, TestComponentCreate, TestDetailComponent},
     Component,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum MainMode {
-    Test,
-    TestDetail(i64),
-    TestDetailSelected(i64),
-}
-
-impl MainMode {
-    fn is_test(&self) -> bool {
-        if let MainMode::Test = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn is_test_detail(&self) -> bool {
-        if let MainMode::TestDetail(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn is_test_detail_selected(&self) -> bool {
-        if let MainMode::TestDetailSelected(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct MainComponent<'a> {
-    main_mode: MainMode,
-
-    error_component: ErrorComponent,
-    test_component: TestComponent<'a>,
+    test_component: TestComponent,
     test_detail_component: TestDetailComponent,
+    test_create_component: TestComponentCreate<'a>,
 }
 
 impl<'a> MainComponent<'a> {
     pub fn new() -> Self {
-        let error_component = ErrorComponent::new();
         let test_component = TestComponent::new();
         let test_detail_component = TestDetailComponent::new();
+        let test_create_component = TestComponentCreate::new();
 
         Self {
-            main_mode: MainMode::Test,
-
-            error_component,
             test_component,
             test_detail_component,
+            test_create_component,
         }
-    }
-
-    pub fn add_error(&mut self, error: Error) {
-        self.error_component.add_error(error)
     }
 
     pub fn update_tests(&mut self, tests: Vec<PatuiTest>) {
@@ -88,68 +44,76 @@ impl<'a> MainComponent<'a> {
         self.test_detail_component.update_test_detail(test);
     }
 
-    pub fn change_mode(&mut self, mode: &Mode) {
-        match mode {
-            Mode::Test(test_mode) => {
-                self.main_mode = MainMode::Test;
-                self.test_component.set_select_mode(test_mode.clone());
-                self.test_component.set_popup_mode(test_mode.clone());
-            }
-            Mode::TestDetail(test_mode, id) => {
-                self.main_mode = MainMode::TestDetail(*id);
-                self.test_component.set_select_mode(test_mode.clone());
-                self.test_component.set_popup_mode(test_mode.clone());
-            }
-            Mode::TestDetailSelected(_, _) => todo!(),
+    fn render_create_popup(&self, f: &mut Frame, r: Rect) {
+        let popup_layout = Layout::vertical([
+            Constraint::Percentage(20),
+            Constraint::Percentage(60),
+            Constraint::Percentage(20),
+        ])
+        .split(r);
+
+        let area = Layout::horizontal([
+            Constraint::Percentage(10),
+            Constraint::Percentage(80),
+            Constraint::Percentage(10),
+        ])
+        .split(popup_layout[1])[1];
+
+        f.render_widget(Clear, area);
+
+        self.test_create_component.render(f, area);
+    }
+
+    pub fn render(&self, f: &mut Frame, rect: Rect, mode: &AppMode) {
+        if mode.is_test_detail() || mode.is_test_detail_selected() {
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(rect);
+            self.test_component.render(f, chunks[0], mode);
+            self.test_detail_component.render(f, chunks[1], mode);
+        } else {
+            self.test_component.render(f, rect, mode);
+        }
+
+        if let Some(PopupMode::CreateTest) = mode.popup_mode() {
+            self.render_create_popup(f, rect);
         }
     }
 }
 
 impl<'a> Component for MainComponent<'a> {
-    fn render(&self, f: &mut Frame, rect: Rect) {
-        if self.main_mode.is_test_detail() || self.main_mode.is_test_detail_selected() {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rect);
-            self.test_component.render(f, chunks[0]);
-            self.test_detail_component.render(f, chunks[1]);
-        } else {
-            self.test_component.render(f, rect);
-        }
-
-        if self.error_component.has_error() {
-            self.error_component.render(f, rect);
-        }
-    }
-
-    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
-        if self.error_component.has_error() {
-            return self.error_component.input(key);
-        } else if let MainMode::TestDetailSelected(id) = self.main_mode {
+    fn input(&mut self, key: &KeyEvent, mode: &AppMode) -> Result<Vec<Action>> {
+        if let Some(PopupMode::CreateTest) = mode.popup_mode() {
+            return self.test_create_component.input(key, mode);
+        } else if let MainMode::TestDetailSelected(id) = mode.main_mode() {
             if let (KeyCode::Esc, KeyModifiers::NONE) = (key.code, key.modifiers) {
-                self.main_mode = MainMode::TestDetailSelected(id);
-                return Ok(vec![]);
+                return Ok(vec![Action::ModeChange(
+                    AppMode::create_test_detail_with_selected_id(*id),
+                )]);
             }
-            let ret = self.test_detail_component.input(key)?;
+            let ret = self.test_detail_component.input(key, mode)?;
             if !ret.is_empty() {
                 return Ok(ret);
             }
-        } else if let MainMode::TestDetail(id) = self.main_mode {
+        } else if let MainMode::TestDetail(id) = mode.main_mode() {
             if let (KeyCode::Enter, KeyModifiers::NONE) = (key.code, key.modifiers) {
-                self.main_mode = MainMode::TestDetailSelected(id);
-                return Ok(vec![]);
+                return Ok(vec![Action::ModeChange(
+                    AppMode::create_test_detail_with_selected_id(*id),
+                )]);
             }
         }
 
-        self.test_component.input(key)
+        self.test_component.input(key, mode)
     }
 
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        if let Action::ChangeMode(Mode::TestDetail(_, _)) = action {
-            ret.extend(self.test_detail_component.update(action)?);
+        if let Action::ModeChange(mode) = action {
+            if mode.is_test_detail() {
+                ret.extend(self.test_detail_component.update(action)?);
+            }
         }
 
         ret.extend(self.test_component.update(action)?);

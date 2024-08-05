@@ -2,7 +2,7 @@
 pub enum ErrorType {
     Error,
     // Warning,
-    // Info,
+    Info,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -20,7 +20,7 @@ impl Error {
         match self.type_ {
             ErrorType::Error => "Error",
             // ErrorType::Warning => "Warning",
-            // ErrorType::Info => "Info",
+            ErrorType::Info => "Info",
         }
     }
 

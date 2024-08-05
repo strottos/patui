@@ -7,20 +7,17 @@ mod widgets;
 
 use color_eyre::Result;
 use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
 
-use super::app::Action;
+use super::app::{Action, AppMode};
 
 pub use bottom_bar::BottomBar;
+pub use error::ErrorComponent;
 pub use main::MainComponent;
 pub use top_bar::TopBar;
 
 pub trait Component: std::fmt::Debug {
-    /// Render a component, must not fail in case we need to display errors
-    fn render(&self, f: &mut Frame, rect: Rect);
-
     /// Take input for the component and optionally send back an action to perform
-    fn input(&mut self, _key: &KeyEvent) -> Result<Vec<Action>> {
+    fn input(&mut self, _key: &KeyEvent, _mode: &AppMode) -> Result<Vec<Action>> {
         Ok(vec![])
     }
 

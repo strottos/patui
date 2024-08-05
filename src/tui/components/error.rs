@@ -10,7 +10,10 @@ use ratatui::{
 };
 
 use super::{widgets::Button, Component};
-use crate::tui::{app::Action, error::Error};
+use crate::tui::{
+    app::{Action, AppMode},
+    error::Error,
+};
 
 #[derive(Debug, Default)]
 pub struct ErrorComponent {
@@ -35,10 +38,8 @@ impl ErrorComponent {
     pub fn has_error(&self) -> bool {
         !self.errors.is_empty()
     }
-}
 
-impl Component for ErrorComponent {
-    fn render(&self, f: &mut Frame, r: Rect) {
+    pub fn render(&self, f: &mut Frame, r: Rect) {
         if let Some(next_error) = self.errors.front() {
             let layout = Layout::default()
                 .direction(Direction::Horizontal)
@@ -96,8 +97,10 @@ impl Component for ErrorComponent {
             f.render_widget(ok_button.widget(), layout[1]);
         }
     }
+}
 
-    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
+impl Component for ErrorComponent {
+    fn input(&mut self, key: &KeyEvent, _mode: &AppMode) -> Result<Vec<Action>> {
         match (key.code, key.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL)
             | (KeyCode::Enter, KeyModifiers::NONE)

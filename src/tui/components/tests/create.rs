@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     tui::{
-        app::{Action, DbChange, Mode, TestMode},
+        app::{Action, AppMode, DbChange},
         components::{
             widgets::{Button, TextArea},
             Component,
@@ -28,8 +28,6 @@ pub struct TestComponentCreate<'a> {
     extra_components: IndexMap<String, TextArea<'a>>,
     create_button: Button,
     cancel_button: Button,
-
-    root_test_mode: TestMode,
 }
 
 impl<'a> TestComponentCreate<'a> {
@@ -58,8 +56,6 @@ impl<'a> TestComponentCreate<'a> {
             extra_components: IndexMap::new(),
             create_button,
             cancel_button,
-
-            root_test_mode: TestMode::Normal,
         }
     }
 
@@ -149,25 +145,27 @@ impl<'a> TestComponentCreate<'a> {
         })
     }
 
-    pub fn set_root_test_mode(&mut self, root_test_mode: TestMode) {
-        self.root_test_mode = root_test_mode;
-    }
-
-    fn create_test(&mut self) -> Vec<Action> {
+    fn create_test(&mut self, mode: &AppMode) -> Vec<Action> {
         if !self.is_valid() {
             return vec![];
         }
         match self.get_test_details() {
             Ok(test) => {
                 self.clear_components();
-                vec![
-                    Action::DbChange(DbChange::Test(test)),
-                    Action::ChangeMode(Mode::Test(match self.root_test_mode {
-                        TestMode::Select(_) => TestMode::Select(-1),
-                        _ => TestMode::Normal,
-                    })),
-                    Action::ClearKeys,
-                ]
+                let mut ret = vec![Action::DbChange(DbChange::Test(test))];
+                match mode.main_mode() {
+                    crate::tui::app::MainMode::Test => {
+                        ret.push(Action::ModeChange(AppMode::create_normal()))
+                    }
+                    crate::tui::app::MainMode::TestDetail(id) => {
+                        ret.push(Action::ModeChange(AppMode::create_test_detail(*id)))
+                    }
+                    crate::tui::app::MainMode::TestDetailSelected(id) => ret.push(
+                        Action::ModeChange(AppMode::create_test_detail_with_selected_id(*id)),
+                    ),
+                }
+                ret.push(Action::ClearKeys);
+                ret
             }
             Err(e) => {
                 vec![Action::Error(Error::new(
@@ -180,10 +178,8 @@ impl<'a> TestComponentCreate<'a> {
             }
         }
     }
-}
 
-impl<'a> Component for TestComponentCreate<'a> {
-    fn render(&self, f: &mut Frame, rect: Rect) {
+    pub fn render(&self, f: &mut Frame, rect: Rect) {
         let block = Block::bordered().title("Create Test");
 
         f.render_widget(block, rect);
@@ -244,8 +240,10 @@ impl<'a> Component for TestComponentCreate<'a> {
         f.render_widget(self.create_button.widget(), buttons_inner[1]);
         f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
     }
+}
 
-    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
+impl<'a> Component for TestComponentCreate<'a> {
+    fn input(&mut self, key: &KeyEvent, mode: &AppMode) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
         match (key.code, key.modifiers) {
@@ -263,15 +261,15 @@ impl<'a> Component for TestComponentCreate<'a> {
                 ret.push(Action::ClearKeys);
             }
             (KeyCode::Enter, KeyModifiers::CONTROL) => {
-                ret.extend(self.create_test());
+                ret.extend(self.create_test(mode));
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.is_ok_button() {
                     self.create_button.pressed();
-                    ret.extend(self.create_test());
+                    ret.extend(self.create_test(mode));
                 } else if self.is_cancel_button() {
                     self.clear_components();
-                    ret.push(Action::ChangeMode(Mode::Test(self.root_test_mode.clone())));
+                    // ret.push(Action::ChangeMode(Mode::Test(self.root_test_mode.clone())));
                     ret.push(Action::ClearKeys);
                 }
             }

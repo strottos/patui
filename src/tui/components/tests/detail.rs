@@ -1,44 +1,47 @@
 use crate::{
     tui::{
-        app::{Action, DbRead, Mode, TestMode},
+        app::{Action, AppMode, DbRead, MainMode},
         components::Component,
     },
     types::PatuiTest,
 };
 
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Alignment,
+    prelude::{Frame, Rect},
+    style::{Color, Style},
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
 };
 
 #[derive(Debug)]
 pub struct TestDetailComponent {
     test: Option<PatuiTest>,
-    step_highlight: Option<i64>,
 }
 
 impl TestDetailComponent {
     pub fn new() -> Self {
-        Self {
-            test: None,
-            step_highlight: None,
-        }
+        Self { test: None }
     }
 
     pub fn update_test_detail(&mut self, test: PatuiTest) {
         self.test = Some(test);
     }
-}
 
-impl Component for TestDetailComponent {
-    fn render(&self, f: &mut ratatui::prelude::Frame, rect: ratatui::prelude::Rect) {
+    pub fn render(&self, f: &mut Frame, rect: Rect, mode: &AppMode) {
+        let style = if !mode.is_test_detail_selected() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        };
+
         let block = Block::new()
             .borders(Borders::ALL)
             .padding(Padding::symmetric(2, 1))
             .title_alignment(Alignment::Center)
-            .title("Test Details");
+            .title("Test Details")
+            .style(style);
 
         let details = match &self.test {
             Some(details) => {
@@ -63,18 +66,22 @@ impl Component for TestDetailComponent {
 
         f.render_widget(paragraphs, rect);
     }
+}
 
+impl Component for TestDetailComponent {
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        if let Action::ChangeMode(Mode::TestDetail(_, id)) = action {
-            if self.test.is_none() {
-                ret.push(Action::DbRead(DbRead::TestDetail(*id)));
-            }
-
-            if let Some(test) = &self.test {
-                if test.id != Some(*id) {
+        if let Action::ModeChange(mode) = action {
+            if let MainMode::TestDetail(id) = mode.main_mode() {
+                if self.test.is_none() {
                     ret.push(Action::DbRead(DbRead::TestDetail(*id)));
+                }
+
+                if let Some(test) = &self.test {
+                    if test.id != Some(*id) {
+                        ret.push(Action::DbRead(DbRead::TestDetail(*id)));
+                    }
                 }
             }
         }
@@ -82,12 +89,8 @@ impl Component for TestDetailComponent {
         Ok(ret)
     }
 
-    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
-        let mut actions = vec![];
-
-        match (key.code, key.modifiers) {
-            _ => {}
-        }
+    fn input(&mut self, _key: &KeyEvent, _mode: &AppMode) -> Result<Vec<Action>> {
+        let actions = vec![];
 
         Ok(actions)
     }

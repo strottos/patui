@@ -31,10 +31,8 @@ impl TopBar {
     pub fn new_root(&mut self, path: String) {
         self.breadcrumb = vec![path];
     }
-}
 
-impl Component for TopBar {
-    fn render(&self, f: &mut Frame, rect: Rect) {
+    pub fn render(&self, f: &mut Frame, rect: Rect) {
         let rect = rect.inner(Margin {
             vertical: 0,
             horizontal: 1,
@@ -68,3 +66,5 @@ impl Component for TopBar {
         f.render_widget(right, chunks[1]);
     }
 }
+
+impl Component for TopBar {}
