@@ -1,6 +1,6 @@
 use crate::{
     tui::{
-        app::{Action, AppMode, DbRead, MainMode},
+        app::{Action, DbRead, MainMode},
         components::Component,
     },
     types::PatuiTest,
@@ -29,7 +29,7 @@ impl TestDetailComponent {
         self.test = Some(test);
     }
 
-    pub fn render(&self, f: &mut Frame, rect: Rect, mode: &AppMode) {
+    pub fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
         let style = if !mode.is_test_detail_selected() {
             Style::default().fg(Color::DarkGray)
         } else {
@@ -72,16 +72,18 @@ impl Component for TestDetailComponent {
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        if let Action::ModeChange(mode) = action {
-            if let MainMode::TestDetail(id) = mode.main_mode() {
-                if self.test.is_none() {
-                    ret.push(Action::DbRead(DbRead::TestDetail(*id)));
-                }
+        if let Action::ModeChange {
+            mode: MainMode::TestDetail(id),
+            ..
+        } = action
+        {
+            if self.test.is_none() {
+                ret.push(Action::DbRead(DbRead::TestDetail(*id)));
+            }
 
-                if let Some(test) = &self.test {
-                    if test.id != Some(*id) {
-                        ret.push(Action::DbRead(DbRead::TestDetail(*id)));
-                    }
+            if let Some(test) = &self.test {
+                if test.id != Some(*id) {
+                    ret.push(Action::DbRead(DbRead::TestDetail(*id)));
                 }
             }
         }
@@ -89,9 +91,19 @@ impl Component for TestDetailComponent {
         Ok(ret)
     }
 
-    fn input(&mut self, _key: &KeyEvent, _mode: &AppMode) -> Result<Vec<Action>> {
+    fn input(&mut self, _key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
         let actions = vec![];
 
         Ok(actions)
+    }
+
+    fn keys(&self, _mode: &MainMode) -> Vec<(&str, &str)> {
+        vec![
+            ("n", "New Test"),
+            ("u", "Update Test"),
+            ("d", "Delete Test"),
+            ("↑ | ↓", "Navigate"),
+            ("<Enter>", "Select Test"),
+        ]
     }
 }

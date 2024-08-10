@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     tui::{
-        app::{Action, AppMode, DbRead, PopupMode},
+        app::{Action, BreadcrumbDirection, DbRead, MainMode, PopupMode},
         components::Component,
     },
     types::PatuiTest,
@@ -40,7 +40,7 @@ impl TestComponent {
         }
     }
 
-    fn render_table(&self, f: &mut Frame, r: Rect, mode: &AppMode) {
+    fn render_table(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
         let style = if mode.is_test_detail_selected() {
             Style::default().fg(Color::DarkGray)
         } else {
@@ -157,14 +157,14 @@ impl TestComponent {
         f.render_widget(table, r);
     }
 
-    pub fn render(&self, f: &mut Frame, r: Rect, mode: &AppMode) {
-        self.render_table(f, r, mode);
-    }
-
     pub fn update_tests(&mut self, tests: Vec<PatuiTest>) {
         self.tests = tests;
         self.loading = false;
         self.initialized = true;
+    }
+
+    pub fn render(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
+        self.render_table(f, r, mode);
     }
 }
 
@@ -182,7 +182,7 @@ impl Component for TestComponent {
         Ok(ret)
     }
 
-    fn input(&mut self, key: &KeyEvent, mode: &AppMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
         let mut actions = vec![];
 
         // if self.popup_mode == PopupMode::Create {
@@ -195,30 +195,41 @@ impl Component for TestComponent {
         // } else {
         match (key.code, key.modifiers) {
             (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                actions.push(Action::ModeChange(
-                    mode.clone_with_popup(PopupMode::CreateTest),
-                ));
+                actions.push(Action::PopupCreate(PopupMode::CreateTest));
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Down, KeyModifiers::NONE) => {
-                let selected_idx = (self.selected_idx + 1) % self.tests.len() as isize;
-                self.selected_idx = selected_idx;
-                actions.push(Action::ModeChange(AppMode::create_test_detail(
-                    self.tests[selected_idx as usize].id.unwrap(),
-                )));
+                if !self.tests.is_empty() {
+                    let selected_idx = (self.selected_idx + 1) % self.tests.len() as isize;
+                    self.selected_idx = selected_idx;
+                    actions.push(Action::ModeChange {
+                        mode: MainMode::create_test_detail(
+                            self.tests[selected_idx as usize].id.unwrap(),
+                        ),
+                        breadcrumb_direction: BreadcrumbDirection::Forward,
+                    });
+                }
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Up, KeyModifiers::NONE) => {
-                let selected_idx =
-                    (self.selected_idx + self.tests.len() as isize - 1) % self.tests.len() as isize;
-                self.selected_idx = selected_idx;
-                actions.push(Action::ModeChange(AppMode::create_test_detail(
-                    self.tests[selected_idx as usize].id.unwrap(),
-                )));
+                if !self.tests.is_empty() {
+                    let selected_idx = (self.selected_idx + self.tests.len() as isize - 1)
+                        % self.tests.len() as isize;
+                    self.selected_idx = selected_idx;
+                    actions.push(Action::ModeChange {
+                        mode: MainMode::create_test_detail(
+                            self.tests[selected_idx as usize].id.unwrap(),
+                        ),
+                        breadcrumb_direction: BreadcrumbDirection::Forward,
+                    });
+                }
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                actions.push(Action::ModeChange(AppMode::create_normal()));
+                actions.push(Action::ModeChange {
+                    mode: MainMode::create_normal(),
+                    breadcrumb_direction: BreadcrumbDirection::Backward,
+                });
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 // actions.extend(self.set_select_mode(TestMode::Select(self.selected_idx)));
@@ -229,5 +240,14 @@ impl Component for TestComponent {
         // }
 
         Ok(actions)
+    }
+
+    fn keys(&self, _mode: &MainMode) -> Vec<(&str, &str)> {
+        vec![
+            ("n", "New Test"),
+            ("u", "Update Test"),
+            ("d", "Delete Test"),
+            ("↑ | ↓ | j | k", "Navigate"),
+        ]
     }
 }

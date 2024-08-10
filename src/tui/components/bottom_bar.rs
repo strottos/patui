@@ -10,8 +10,13 @@ impl BottomBar {
         Self {}
     }
 
-    pub fn render(&self, f: &mut Frame, rect: Rect) {
-        f.render_widget(Paragraph::new("Bottom Bar"), rect);
+    pub fn render(&self, f: &mut Frame, rect: Rect, mut keys: Vec<(&str, &str)>) {
+        keys.push(("<C-c> <C-c>", "Quit"));
+        let keys = keys
+            .iter()
+            .map(|(key, desc)| format!("{}: {}", key, desc))
+            .collect::<Vec<_>>();
+        f.render_widget(Paragraph::new(keys.join(", ")), rect);
     }
 }
 

@@ -48,13 +48,18 @@ impl Database {
         Ok(Self { conn })
     }
 
-    pub async fn create_tables(&self) -> Result<()> {
+    pub async fn create_tables(&self) -> Result<bool> {
         debug!("Creating tables...");
 
-        self.conn
+        let ret = self
+            .conn
             .call(|conn| {
                 conn.execute_batch(
                     r#"
+                    CREATE TABLE IF NOT EXISTS setup (
+                        id INTEGER PRIMARY KEY
+                    );
+
                     CREATE TABLE IF NOT EXISTS test (
                         id INTEGER PRIMARY KEY,
                         name TEXT NOT NULL,
@@ -92,11 +97,16 @@ impl Database {
                     "#,
                 )?;
 
-                Ok(())
+                let mut stmt = conn.prepare(
+                    "INSERT INTO setup (id) SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM setup);",
+                )?;
+                let id = stmt.insert(());
+
+                Ok(matches!(id, Ok(1)))
             })
             .await?;
 
-        Ok(())
+        Ok(ret)
     }
 
     pub async fn get_test(&self, id: i64) -> Result<PatuiTest> {

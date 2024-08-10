@@ -10,10 +10,10 @@ use ratatui::{
 
 use crate::{
     tui::{
-        app::{Action, AppMode, DbChange},
+        app::{Action, BreadcrumbDirection, DbChange, MainMode},
         components::{
             widgets::{Button, TextArea},
-            Component,
+            Component, PopupComponent,
         },
         error::{Error, ErrorType},
     },
@@ -145,7 +145,7 @@ impl<'a> TestComponentCreate<'a> {
         })
     }
 
-    fn create_test(&mut self, mode: &AppMode) -> Vec<Action> {
+    fn create_test(&mut self, mode: &MainMode) -> Vec<Action> {
         if !self.is_valid() {
             return vec![];
         }
@@ -153,16 +153,21 @@ impl<'a> TestComponentCreate<'a> {
             Ok(test) => {
                 self.clear_components();
                 let mut ret = vec![Action::DbChange(DbChange::Test(test))];
-                match mode.main_mode() {
-                    crate::tui::app::MainMode::Test => {
-                        ret.push(Action::ModeChange(AppMode::create_normal()))
+                match mode {
+                    MainMode::Test => ret.push(Action::ModeChange {
+                        mode: MainMode::create_normal(),
+                        breadcrumb_direction: BreadcrumbDirection::None,
+                    }),
+                    MainMode::TestDetail(id) => ret.push(Action::ModeChange {
+                        mode: MainMode::create_test_detail(*id),
+                        breadcrumb_direction: BreadcrumbDirection::None,
+                    }),
+                    MainMode::TestDetailSelected(id) | MainMode::TestSelectedFull(id) => {
+                        ret.push(Action::ModeChange {
+                            mode: MainMode::create_test_detail_with_selected_id(*id),
+                            breadcrumb_direction: BreadcrumbDirection::None,
+                        })
                     }
-                    crate::tui::app::MainMode::TestDetail(id) => {
-                        ret.push(Action::ModeChange(AppMode::create_test_detail(*id)))
-                    }
-                    crate::tui::app::MainMode::TestDetailSelected(id) => ret.push(
-                        Action::ModeChange(AppMode::create_test_detail_with_selected_id(*id)),
-                    ),
                 }
                 ret.push(Action::ClearKeys);
                 ret
@@ -178,8 +183,64 @@ impl<'a> TestComponentCreate<'a> {
             }
         }
     }
+}
 
-    pub fn render(&self, f: &mut Frame, rect: Rect) {
+impl<'a> Component for TestComponentCreate<'a> {
+    fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
+        let mut ret = vec![];
+
+        match (key.code, key.modifiers) {
+            (KeyCode::Tab, KeyModifiers::NONE) => {
+                self.selected_component_idx =
+                    (self.selected_component_idx + 1) % self.num_components();
+                self.activate_selected();
+                ret.push(Action::ClearKeys);
+            }
+            (KeyCode::BackTab, KeyModifiers::SHIFT) => {
+                self.selected_component_idx = (self.selected_component_idx + self.num_components()
+                    - 1)
+                    % self.num_components();
+                self.activate_selected();
+                ret.push(Action::ClearKeys);
+            }
+            (KeyCode::Enter, KeyModifiers::CONTROL) => {
+                ret.extend(self.create_test(mode));
+            }
+            (KeyCode::Enter, KeyModifiers::NONE) => {
+                if self.is_ok_button() {
+                    self.create_button.pressed();
+                    ret.extend(self.create_test(mode));
+                } else if self.is_cancel_button() {
+                    self.clear_components();
+                    // ret.push(Action::ChangeMode(Mode::Test(self.root_test_mode.clone())));
+                    ret.push(Action::ClearKeys);
+                }
+            }
+            _ => {
+                if let Some(selected_component) = self.selected_component() {
+                    if selected_component.input(key) {
+                        ret.push(Action::ClearKeys);
+                    }
+                }
+            }
+        }
+
+        Ok(ret)
+    }
+
+    fn keys(&self, _mode: &MainMode) -> Vec<(&str, &str)> {
+        vec![
+            ("<C-c> | <Esc>", "Cancel"),
+            ("<C-Enter>", "Submit"),
+            ("<Tab>", "Next Field"),
+            ("<S-Tab>", "Previous Field"),
+            ("Enter", "Select"),
+        ]
+    }
+}
+
+impl<'a> PopupComponent for TestComponentCreate<'a> {
+    fn render(&self, f: &mut Frame, rect: Rect) {
         let block = Block::bordered().title("Create Test");
 
         f.render_widget(block, rect);
@@ -239,49 +300,5 @@ impl<'a> TestComponentCreate<'a> {
 
         f.render_widget(self.create_button.widget(), buttons_inner[1]);
         f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
-    }
-}
-
-impl<'a> Component for TestComponentCreate<'a> {
-    fn input(&mut self, key: &KeyEvent, mode: &AppMode) -> Result<Vec<Action>> {
-        let mut ret = vec![];
-
-        match (key.code, key.modifiers) {
-            (KeyCode::Tab, KeyModifiers::NONE) => {
-                self.selected_component_idx =
-                    (self.selected_component_idx + 1) % self.num_components();
-                self.activate_selected();
-                ret.push(Action::ClearKeys);
-            }
-            (KeyCode::BackTab, KeyModifiers::SHIFT) => {
-                self.selected_component_idx = (self.selected_component_idx + self.num_components()
-                    - 1)
-                    % self.num_components();
-                self.activate_selected();
-                ret.push(Action::ClearKeys);
-            }
-            (KeyCode::Enter, KeyModifiers::CONTROL) => {
-                ret.extend(self.create_test(mode));
-            }
-            (KeyCode::Enter, KeyModifiers::NONE) => {
-                if self.is_ok_button() {
-                    self.create_button.pressed();
-                    ret.extend(self.create_test(mode));
-                } else if self.is_cancel_button() {
-                    self.clear_components();
-                    // ret.push(Action::ChangeMode(Mode::Test(self.root_test_mode.clone())));
-                    ret.push(Action::ClearKeys);
-                }
-            }
-            _ => {
-                if let Some(selected_component) = self.selected_component() {
-                    if selected_component.input(key) {
-                        ret.push(Action::ClearKeys);
-                    }
-                }
-            }
-        }
-
-        Ok(ret)
     }
 }

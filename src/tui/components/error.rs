@@ -5,13 +5,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     text::Text,
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
 use super::{widgets::Button, Component};
 use crate::tui::{
-    app::{Action, AppMode},
+    app::{Action, MainMode},
     error::Error,
 };
 
@@ -71,7 +71,8 @@ impl ErrorComponent {
                     Block::default()
                         .title(next_error.title())
                         .borders(Borders::ALL),
-                );
+                )
+                .wrap(Wrap { trim: false });
 
             f.render_widget(Clear, layout[1]);
             f.render_widget(error_widget, layout[1]);
@@ -100,7 +101,7 @@ impl ErrorComponent {
 }
 
 impl Component for ErrorComponent {
-    fn input(&mut self, key: &KeyEvent, _mode: &AppMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
         match (key.code, key.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL)
             | (KeyCode::Enter, KeyModifiers::NONE)
