@@ -56,17 +56,9 @@ impl Middle {
 
 impl Component for Middle {
     fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
-        if let MainMode::TestDetailSelected(id) = mode {
-            if let (KeyCode::Esc, KeyModifiers::NONE) = (key.code, key.modifiers) {
-                return Ok(vec![Action::ModeChange {
-                    mode: MainMode::create_test_detail_with_selected_id(*id),
-                    breadcrumb_direction: BreadcrumbDirection::Backward,
-                }]);
-            }
+        if let MainMode::TestDetailSelected(_) = mode {
             let ret = self.test_detail_component.input(key, mode)?;
-            if !ret.is_empty() {
-                return Ok(ret);
-            }
+            return Ok(ret);
         } else if let MainMode::TestDetail(id) = mode {
             if let (KeyCode::Enter, KeyModifiers::NONE) = (key.code, key.modifiers) {
                 return Ok(vec![Action::ModeChange {

@@ -52,7 +52,9 @@ impl TopBar {
             self.breadcrumb_name.pop();
             self.breadcrumb_mode.pop();
 
-            self.selected_idx -= 1;
+            if self.selected_idx > 0 {
+                self.selected_idx -= 1;
+            }
         }
 
         assert!(self.breadcrumb_name.len() == self.breadcrumb_mode.len());
@@ -121,10 +123,11 @@ impl Component for TopBar {
             KeyCode::Char('7') => 7,
             KeyCode::Char('8') => 8,
             KeyCode::Char('9') => 9,
+            KeyCode::Esc => self.breadcrumb_name.len() - 1,
             _ => return Ok(vec![]),
         };
 
-        if level >= self.breadcrumb_name.len() {
+        if level >= self.breadcrumb_name.len() || level == 0 {
             return Ok(vec![]);
         }
 
@@ -132,6 +135,8 @@ impl Component for TopBar {
             self.breadcrumb_name.pop();
             self.breadcrumb_mode.pop();
         }
+
+        self.selected_idx = if level > 0 { level - 1 } else { 0 };
 
         Ok(vec![])
     }

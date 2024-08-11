@@ -135,7 +135,6 @@ pub struct App {
     last_key_events: Vec<KeyEvent>,
     db: Arc<Database>,
 
-    mode: MainMode,
     popups: Vec<Popup>,
 
     top_bar: TopBar,
@@ -158,7 +157,6 @@ impl App {
             last_key_events,
             db,
 
-            mode: MainMode::Test,
             popups: vec![],
 
             top_bar,
@@ -262,9 +260,10 @@ impl App {
         {
             self.last_key_events.clear();
         } else if self.error_component.has_error() {
-            self.error_component.input(&key, &self.mode)?;
+            let main_mode = self.main_mode().clone();
+            self.error_component.input(&key, &main_mode)?;
         } else {
-            let mode = self.mode.clone();
+            let mode = self.main_mode().clone();
             if let Some(popup) = self.popups.last_mut() {
                 for action in popup.component.input(&key, &mode)?.into_iter() {
                     action_tx.send(action)?;
@@ -301,7 +300,6 @@ impl App {
                 ref mode,
                 ref breadcrumb_direction,
             } => {
-                self.mode = mode.clone();
                 if *breadcrumb_direction == BreadcrumbDirection::Forward {
                     self.top_bar.push(
                         match mode {
@@ -367,18 +365,23 @@ impl App {
     }
 
     fn get_help(&self) -> Vec<HelpItem> {
+        let main_mode = &self.main_mode();
         let mut keys = if self.error_component.has_error() {
-            self.error_component.keys(&self.mode)
+            self.error_component.keys(main_mode)
         } else if let Some(popup) = self.popups.last() {
-            popup.component.keys(&self.mode)
+            popup.component.keys(main_mode)
         } else {
-            self.middle.keys(&self.mode)
+            self.middle.keys(main_mode)
         };
 
-        keys.extend(self.top_bar.keys(&self.mode));
-        keys.extend(self.bottom_bar.keys(&self.mode));
+        keys.extend(self.top_bar.keys(main_mode));
+        keys.extend(self.bottom_bar.keys(main_mode));
 
         keys
+    }
+
+    fn main_mode(&self) -> &MainMode {
+        self.top_bar.get_main_mode().unwrap()
     }
 
     fn render(&mut self, f: &mut Frame) {
@@ -396,10 +399,8 @@ impl App {
             )
             .split(fsize);
 
-        let main_mode = &self.mode;
-
         self.top_bar.render(f, chunks_main[0]);
-        self.middle.render(f, chunks_main[1], main_mode);
+        self.middle.render(f, chunks_main[1], self.main_mode());
 
         if self.error_component.has_error() {
             self.error_component.render(f, chunks_main[1]);
