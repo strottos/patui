@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use indexmap::IndexMap;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    widgets::Block,
     Frame,
 };
 
@@ -13,7 +12,7 @@ use crate::{
         app::{Action, BreadcrumbDirection, DbChange, MainMode},
         components::{
             widgets::{Button, TextArea},
-            Component, PopupComponent,
+            Component, HelpItem, PopupComponent,
         },
         error::{Error, ErrorType},
     },
@@ -216,6 +215,11 @@ impl<'a> Component for TestComponentCreate<'a> {
                     ret.push(Action::ClearKeys);
                 }
             }
+            (KeyCode::Esc, KeyModifiers::NONE) => {
+                self.clear_components();
+                ret.push(Action::PopupClose);
+                ret.push(Action::ClearKeys);
+            }
             _ => {
                 if let Some(selected_component) = self.selected_component() {
                     if selected_component.input(key) {
@@ -228,47 +232,19 @@ impl<'a> Component for TestComponentCreate<'a> {
         Ok(ret)
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<(&str, &str)> {
+    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
         vec![
-            ("<C-c> | <Esc>", "Cancel"),
-            ("<C-Enter>", "Submit"),
-            ("<Tab>", "Next Field"),
-            ("<S-Tab>", "Previous Field"),
-            ("Enter", "Select"),
+            HelpItem::new("<C-c> | <Esc>", "Cancel", "Cancel"),
+            HelpItem::new("<C-Enter>", "Submit", "Submit"),
+            HelpItem::new("<Tab>", "Next Field", "Next Field"),
+            HelpItem::new("<S-Tab>", "Previous Field", "Previous Field"),
+            HelpItem::new("Enter", "Select", "Select"),
         ]
     }
 }
 
 impl<'a> PopupComponent for TestComponentCreate<'a> {
-    fn render(&self, f: &mut Frame, rect: Rect) {
-        let block = Block::bordered().title("Create Test");
-
-        f.render_widget(block, rect);
-
-        let inner = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Length(2),
-                    Constraint::Min(1),
-                    Constraint::Length(1),
-                ]
-                .as_ref(),
-            )
-            .split(rect)[1];
-
-        let inner = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(
-                [
-                    Constraint::Length(2),
-                    Constraint::Min(1),
-                    Constraint::Length(2),
-                ]
-                .as_ref(),
-            )
-            .split(inner)[1];
-
+    fn render_inner(&self, f: &mut Frame, rect: Rect) {
         let inner = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
@@ -280,7 +256,7 @@ impl<'a> PopupComponent for TestComponentCreate<'a> {
                 ]
                 .as_ref(),
             )
-            .split(inner);
+            .split(rect);
 
         f.render_widget(self.name_component.widget(), inner[0]);
         f.render_widget(self.desc_component.widget(), inner[1]);

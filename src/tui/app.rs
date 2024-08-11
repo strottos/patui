@@ -12,7 +12,8 @@ use tracing::{debug, trace};
 
 use super::{
     components::{
-        BottomBar, Component, ErrorComponent, Middle, PopupComponent, TestComponentCreate, TopBar,
+        BottomBar, Component, ErrorComponent, HelpComponent, HelpItem, Middle, PopupComponent,
+        TestComponentCreate, TopBar,
     },
     error::{Error, ErrorType},
     terminal::{Event, Tui},
@@ -87,6 +88,27 @@ pub enum BreadcrumbDirection {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum PopupMode {
     CreateTest,
+    Help,
+}
+
+impl PopupMode {
+    fn title(&self) -> &str {
+        match self {
+            PopupMode::CreateTest => "Create Test",
+            PopupMode::Help => "Help",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Popup {
+    mode: PopupMode,
+    component: Box<dyn PopupComponent>,
+}
+impl Popup {
+    fn new(mode: PopupMode, component: Box<dyn PopupComponent>) -> Self {
+        Self { mode, component }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -102,6 +124,7 @@ pub enum Action {
         breadcrumb_direction: BreadcrumbDirection,
     },
     PopupCreate(PopupMode),
+    PopupClose,
     DbRead(DbRead),
     DbChange(DbChange),
 }
@@ -113,7 +136,7 @@ pub struct App {
     db: Arc<Database>,
 
     mode: MainMode,
-    popup: Option<Box<dyn PopupComponent>>,
+    popups: Vec<Popup>,
 
     top_bar: TopBar,
     middle: Middle,
@@ -136,7 +159,7 @@ impl App {
             db,
 
             mode: MainMode::Test,
-            popup: None,
+            popups: vec![],
 
             top_bar,
             middle,
@@ -242,9 +265,18 @@ impl App {
             self.error_component.input(&key, &self.mode)?;
         } else {
             let mode = self.mode.clone();
-            for component in self.get_root_components_mut() {
-                for action in component.input(&key, &mode)?.into_iter() {
+            if let Some(popup) = self.popups.last_mut() {
+                for action in popup.component.input(&key, &mode)?.into_iter() {
                     action_tx.send(action)?;
+                }
+                for action in self.bottom_bar.input(&key, &mode)?.into_iter() {
+                    action_tx.send(action)?;
+                }
+            } else {
+                for component in self.get_root_components_mut() {
+                    for action in component.input(&key, &mode)?.into_iter() {
+                        action_tx.send(action)?;
+                    }
                 }
             }
         }
@@ -286,14 +318,18 @@ impl App {
                 } else if *breadcrumb_direction == BreadcrumbDirection::Backward {
                     self.top_bar.pop();
                 }
-                self.popup = None;
+                self.popups.clear();
             }
-            Action::PopupCreate(popup) => match popup {
-                PopupMode::CreateTest => {
-                    let test_create_component = TestComponentCreate::new();
-                    self.popup = Some(Box::new(test_create_component));
-                }
-            },
+            Action::PopupCreate(popup) => {
+                let component: Box<dyn PopupComponent> = match popup {
+                    PopupMode::CreateTest => Box::new(TestComponentCreate::new()),
+                    PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
+                };
+                self.popups.push(Popup::new(PopupMode::Help, component));
+            }
+            Action::PopupClose => {
+                self.popups.pop();
+            }
             Action::DbRead(ref db_select) => {
                 tracing::trace!("Got db select: {:?}", db_select);
                 match db_select {
@@ -330,6 +366,21 @@ impl App {
         vec![&mut self.top_bar, &mut self.middle, &mut self.bottom_bar]
     }
 
+    fn get_help(&self) -> Vec<HelpItem> {
+        let mut keys = if self.error_component.has_error() {
+            self.error_component.keys(&self.mode)
+        } else if let Some(popup) = self.popups.last() {
+            popup.component.keys(&self.mode)
+        } else {
+            self.middle.keys(&self.mode)
+        };
+
+        keys.extend(self.top_bar.keys(&self.mode));
+        keys.extend(self.bottom_bar.keys(&self.mode));
+
+        keys
+    }
+
     fn render(&mut self, f: &mut Frame) {
         let fsize = f.size();
 
@@ -350,24 +401,16 @@ impl App {
         self.top_bar.render(f, chunks_main[0]);
         self.middle.render(f, chunks_main[1], main_mode);
 
-        let mut keys;
         if self.error_component.has_error() {
             self.error_component.render(f, chunks_main[1]);
-            keys = self.error_component.keys(main_mode);
-        } else if let Some(popup) = self.popup.as_ref() {
-            self.render_create_popup(f, chunks_main[1], &**popup);
-            keys = popup.keys(main_mode);
-        } else {
-            keys = self.middle.keys(main_mode);
+        } else if let Some(popup) = self.popups.last() {
+            self.render_create_popup(f, chunks_main[1], popup);
         }
 
-        keys.extend(self.top_bar.keys(main_mode));
-        keys.extend(self.bottom_bar.keys(main_mode));
-
-        self.bottom_bar.render(f, chunks_main[2], keys);
+        self.bottom_bar.render(f, chunks_main[2], self.get_help());
     }
 
-    fn render_create_popup(&self, f: &mut Frame, r: Rect, popup: &dyn PopupComponent) {
+    fn render_create_popup(&self, f: &mut Frame, r: Rect, popup: &Popup) {
         let popup_layout = Layout::vertical([
             Constraint::Percentage(20),
             Constraint::Percentage(60),
@@ -384,6 +427,8 @@ impl App {
 
         f.render_widget(Clear, area);
 
-        popup.render(f, area);
+        let title = popup.mode.title();
+
+        popup.component.render(f, area, title);
     }
 }

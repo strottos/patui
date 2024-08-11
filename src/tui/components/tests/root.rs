@@ -11,7 +11,7 @@ use ratatui::{
 use crate::{
     tui::{
         app::{Action, BreadcrumbDirection, DbRead, MainMode, PopupMode},
-        components::Component,
+        components::{Component, HelpItem},
     },
     types::PatuiTest,
 };
@@ -242,12 +242,12 @@ impl Component for TestComponent {
         Ok(actions)
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<(&str, &str)> {
+    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
         vec![
-            ("n", "New Test"),
-            ("u", "Update Test"),
-            ("d", "Delete Test"),
-            ("↑ | ↓ | j | k", "Navigate"),
+            HelpItem::new("n", "New Test", "New Test"),
+            HelpItem::new("u", "Update Test", "Update Test"),
+            HelpItem::new("d", "Delete Test", "Delete Test"),
+            HelpItem::new("↑ | ↓ | j | k", "Navigate", "Navigate"),
         ]
     }
 }

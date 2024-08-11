@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     tests::{TestComponent, TestDetailComponent},
-    Component,
+    Component, HelpItem,
 };
 
 #[derive(Debug)]
@@ -93,7 +93,7 @@ impl Component for Middle {
         Ok(ret)
     }
 
-    fn keys(&self, mode: &MainMode) -> Vec<(&str, &str)> {
+    fn keys(&self, mode: &MainMode) -> Vec<HelpItem> {
         match mode {
             MainMode::Test => self.test_component.keys(mode),
             MainMode::TestDetail(_) => self.test_detail_component.keys(mode),

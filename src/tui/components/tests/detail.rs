@@ -1,7 +1,7 @@
 use crate::{
     tui::{
         app::{Action, DbRead, MainMode},
-        components::Component,
+        components::{Component, HelpItem},
     },
     types::PatuiTest,
 };
@@ -97,13 +97,13 @@ impl Component for TestDetailComponent {
         Ok(actions)
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<(&str, &str)> {
+    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
         vec![
-            ("n", "New Test"),
-            ("u", "Update Test"),
-            ("d", "Delete Test"),
-            ("↑ | ↓", "Navigate"),
-            ("<Enter>", "Select Test"),
+            HelpItem::new("n", "New Test", "New Test"),
+            HelpItem::new("u", "Update Test", "Update Test"),
+            HelpItem::new("d", "Delete Test", "Delete Test"),
+            HelpItem::new("↑ | ↓", "Navigate", "Navigate"),
+            HelpItem::new("<Enter>", "Select Test", "Select Test"),
         ]
     }
 }
