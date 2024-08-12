@@ -185,18 +185,16 @@ impl Component for TestComponent {
     fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
         let mut actions = vec![];
 
-        // if self.popup_mode == PopupMode::Create {
-        //     if key.code == KeyCode::Esc {
-        //         // self.set_popup_mode(TestMode::Normal);
-        //         actions.push(Action::ClearKeys);
-        //     } else {
-        //         actions.extend(self.create_test_component.input(key, mode)?);
-        //     }
-        // } else {
         match (key.code, key.modifiers) {
-            (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 actions.push(Action::PopupCreate(PopupMode::CreateTest));
                 actions.push(Action::ClearKeys);
+            }
+            (KeyCode::Char('u'), KeyModifiers::NONE) => {
+                if let Some(test) = self.tests.get(self.selected_idx as usize) {
+                    actions.push(Action::PopupCreate(PopupMode::UpdateTest(test.id.unwrap())));
+                    actions.push(Action::ClearKeys);
+                }
             }
             (KeyCode::Down, KeyModifiers::NONE) => {
                 if !self.tests.is_empty() {
@@ -225,19 +223,12 @@ impl Component for TestComponent {
                 }
                 actions.push(Action::ClearKeys);
             }
-            (KeyCode::Esc, KeyModifiers::NONE) => {
-                actions.push(Action::ModeChange {
-                    mode: MainMode::create_normal(),
-                    breadcrumb_direction: BreadcrumbDirection::Backward,
-                });
-            }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 // actions.extend(self.set_select_mode(TestMode::Select(self.selected_idx)));
                 actions.push(Action::ClearKeys);
             }
             _ => {}
         }
-        // }
 
         Ok(actions)
     }
@@ -245,8 +236,6 @@ impl Component for TestComponent {
     fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
         vec![
             HelpItem::new("n", "New Test", "New Test"),
-            HelpItem::new("u", "Update Test", "Update Test"),
-            HelpItem::new("d", "Delete Test", "Delete Test"),
             HelpItem::new("↑ | ↓ | j | k", "Navigate", "Navigate"),
         ]
     }

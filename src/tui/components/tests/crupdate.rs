@@ -1,7 +1,6 @@
 use chrono::{DateTime, Local};
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use indexmap::IndexMap;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Frame,
@@ -20,16 +19,16 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct TestComponentCreate<'a> {
+pub struct TestComponentCrupdate<'a> {
+    test: Option<PatuiTest>,
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
     selected_component_idx: usize,
-    extra_components: IndexMap<String, TextArea<'a>>,
-    create_button: Button,
+    crupdate_button: Button,
     cancel_button: Button,
 }
 
-impl<'a> TestComponentCreate<'a> {
+impl<'a> TestComponentCrupdate<'a> {
     pub fn new() -> Self {
         let mut name_component = TextArea::new(
             "Name".to_string(),
@@ -45,17 +44,45 @@ impl<'a> TestComponentCreate<'a> {
 
         let desc_component = TextArea::new("Description".to_string(), vec![]);
 
-        let create_button = Button::new("Create".to_string());
-        let cancel_button = Button::new("Cancel".to_string());
+        let crupdate_button = Button::new("Create".to_string());
+        let clear_button = Button::new("Clear".to_string());
 
         Self {
+            test: None,
             name_component,
             desc_component,
             selected_component_idx: 0,
-            extra_components: IndexMap::new(),
-            create_button,
-            cancel_button,
+            crupdate_button,
+            cancel_button: clear_button,
         }
+    }
+
+    pub fn new_update(test: PatuiTest) -> Result<Self> {
+        let mut name_component = TextArea::new(
+            "Name".to_string(),
+            vec![Box::new(|x| {
+                let text = x.get_text();
+                if text.contains('\n') || text.contains('\r') || text.is_empty() {
+                    return false;
+                }
+                true
+            })],
+        );
+        name_component.selected(true);
+
+        let desc_component = TextArea::new("Description".to_string(), vec![]);
+
+        let crupdate_button = Button::new("Update".to_string());
+        let cancel_button = Button::new("Cancel".to_string());
+
+        Ok(Self {
+            test: Some(test),
+            name_component,
+            desc_component,
+            selected_component_idx: 0,
+            crupdate_button,
+            cancel_button,
+        })
     }
 
     fn activate_selected(&mut self) {
@@ -67,21 +94,20 @@ impl<'a> TestComponentCreate<'a> {
             }
         }
 
-        self.create_button
+        self.crupdate_button
             .selected(selected_component_idx == num_components - 2);
         self.cancel_button
             .selected(selected_component_idx == num_components - 1);
     }
 
     fn num_components(&self) -> usize {
-        4 + self.extra_components.len()
+        4
     }
 
     fn get_component(&mut self, idx: usize) -> Option<&mut TextArea<'a>> {
         match idx {
             0 => Some(&mut self.name_component),
-            1 => Some(&mut self.desc_component),
-            _ => self.extra_components.get_index_mut(idx - 2).map(|x| x.1),
+            _ => Some(&mut self.desc_component),
         }
     }
 
@@ -118,33 +144,38 @@ impl<'a> TestComponentCreate<'a> {
     fn clear_components(&mut self) {
         self.name_component.clear();
         self.desc_component.clear();
-        self.extra_components.clear();
         self.selected_component_idx = 0;
         self.activate_selected();
     }
 
     fn get_test_details(&self) -> Result<PatuiTest> {
-        let now: DateTime<Local> = Local::now();
+        match self.test {
+            Some(ref test) => {
+                let now: DateTime<Local> = Local::now();
+                let mut new_test = test.clone();
+                new_test.name = self.name_component.get_text().clone();
+                new_test.description = self.desc_component.get_text().clone();
+                new_test.last_updated = now.format("%Y-%m-%d %H:%M:%S").to_string();
+                Ok(new_test)
+            }
+            None => {
+                let now: DateTime<Local> = Local::now();
 
-        let mut key_values = IndexMap::new();
-
-        for (name, component) in self.extra_components.iter() {
-            key_values.insert(name.clone(), component.get_text());
+                Ok(PatuiTest {
+                    id: None,
+                    name: self.name_component.get_text().clone(),
+                    description: self.desc_component.get_text().clone(),
+                    creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    last_updated: now.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    last_used_date: None,
+                    times_used: 0,
+                    steps: vec![],
+                })
+            }
         }
-
-        Ok(PatuiTest {
-            id: None,
-            name: self.name_component.get_text().clone(),
-            description: self.desc_component.get_text().clone(),
-            creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
-            last_updated: now.format("%Y-%m-%d %H:%M:%S").to_string(),
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![],
-        })
     }
 
-    fn create_test(&mut self, mode: &MainMode) -> Vec<Action> {
+    fn crupdate_test(&mut self, mode: &MainMode) -> Vec<Action> {
         if !self.is_valid() {
             return vec![];
         }
@@ -184,7 +215,7 @@ impl<'a> TestComponentCreate<'a> {
     }
 }
 
-impl<'a> Component for TestComponentCreate<'a> {
+impl<'a> Component for TestComponentCrupdate<'a> {
     fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
@@ -203,12 +234,12 @@ impl<'a> Component for TestComponentCreate<'a> {
                 ret.push(Action::ClearKeys);
             }
             (KeyCode::Enter, KeyModifiers::CONTROL) => {
-                ret.extend(self.create_test(mode));
+                ret.extend(self.crupdate_test(mode));
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.is_ok_button() {
-                    self.create_button.pressed();
-                    ret.extend(self.create_test(mode));
+                    self.crupdate_button.pressed();
+                    ret.extend(self.crupdate_test(mode));
                 } else if self.is_cancel_button() {
                     self.clear_components();
                     // ret.push(Action::ChangeMode(Mode::Test(self.root_test_mode.clone())));
@@ -243,7 +274,7 @@ impl<'a> Component for TestComponentCreate<'a> {
     }
 }
 
-impl<'a> PopupComponent for TestComponentCreate<'a> {
+impl<'a> PopupComponent for TestComponentCrupdate<'a> {
     fn render_inner(&self, f: &mut Frame, rect: Rect) {
         let inner = Layout::default()
             .direction(Direction::Vertical)
@@ -274,7 +305,7 @@ impl<'a> PopupComponent for TestComponentCreate<'a> {
             )
             .split(inner[3]);
 
-        f.render_widget(self.create_button.widget(), buttons_inner[1]);
+        f.render_widget(self.crupdate_button.widget(), buttons_inner[1]);
         f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
     }
 }

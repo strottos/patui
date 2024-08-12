@@ -20,7 +20,7 @@ pub use bottom_bar::BottomBar;
 pub use error::ErrorComponent;
 pub use middle::Middle;
 pub use misc::HelpComponent;
-pub use tests::TestComponentCreate;
+pub use tests::TestComponentCrupdate;
 pub use top_bar::TopBar;
 
 #[derive(Debug)]

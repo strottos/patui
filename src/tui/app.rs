@@ -13,7 +13,7 @@ use tracing::{debug, trace};
 use super::{
     components::{
         BottomBar, Component, ErrorComponent, HelpComponent, HelpItem, Middle, PopupComponent,
-        TestComponentCreate, TopBar,
+        TestComponentCrupdate, TopBar,
     },
     error::{Error, ErrorType},
     terminal::{Event, Tui},
@@ -88,6 +88,7 @@ pub enum BreadcrumbDirection {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum PopupMode {
     CreateTest,
+    UpdateTest(i64),
     Help,
 }
 
@@ -95,6 +96,7 @@ impl PopupMode {
     fn title(&self) -> &str {
         match self {
             PopupMode::CreateTest => "Create Test",
+            PopupMode::UpdateTest(_) => "Update Test",
             PopupMode::Help => "Help",
         }
     }
@@ -318,12 +320,15 @@ impl App {
                 }
                 self.popups.clear();
             }
-            Action::PopupCreate(popup) => {
-                let component: Box<dyn PopupComponent> = match popup {
-                    PopupMode::CreateTest => Box::new(TestComponentCreate::new()),
+            Action::PopupCreate(ref popup_mode) => {
+                let component: Box<dyn PopupComponent> = match popup_mode {
+                    PopupMode::CreateTest => Box::new(TestComponentCrupdate::new()),
+                    PopupMode::UpdateTest(id) => Box::new(TestComponentCrupdate::new_update(
+                        self.db.get_test(*id).await?,
+                    )?),
                     PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
                 };
-                self.popups.push(Popup::new(PopupMode::Help, component));
+                self.popups.push(Popup::new(popup_mode.clone(), component));
             }
             Action::PopupClose => {
                 self.popups.pop();
@@ -343,7 +348,14 @@ impl App {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change {
                     DbChange::Test(test) => {
-                        self.db.create_test(test.clone()).await?;
+                        match test.id {
+                            Some(id) => {
+                                self.db.update_test(test.clone()).await?;
+                            }
+                            None => {
+                                self.db.create_test(test.clone()).await?;
+                            }
+                        }
                         self.middle.update_tests(self.db.get_tests().await?);
                     }
                 };

@@ -113,6 +113,8 @@ impl TopBar {
 
 impl Component for TopBar {
     fn input(&mut self, key: &crossterm::event::KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+        let mut ret = vec![];
+
         let level = match key.code {
             KeyCode::Char('1') => 1,
             KeyCode::Char('2') => 2,
@@ -123,7 +125,10 @@ impl Component for TopBar {
             KeyCode::Char('7') => 7,
             KeyCode::Char('8') => 8,
             KeyCode::Char('9') => 9,
-            KeyCode::Esc => self.breadcrumb_name.len() - 1,
+            KeyCode::Esc => {
+                ret.push(Action::ClearKeys);
+                self.breadcrumb_name.len() - 1
+            }
             _ => return Ok(vec![]),
         };
 
@@ -138,6 +143,6 @@ impl Component for TopBar {
 
         self.selected_idx = if level > 0 { level - 1 } else { 0 };
 
-        Ok(vec![])
+        Ok(ret)
     }
 }

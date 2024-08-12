@@ -310,6 +310,27 @@ impl Database {
         Ok(test_id)
     }
 
+    pub async fn update_test(&self, test: PatuiTest) -> Result<i64> {
+        debug!("Update test...");
+        trace!("Update test {:?}...", test);
+
+        let test_id = self.conn.call(move |conn| {
+            let mut stmt = conn.prepare("INSERT INTO test (name, desc, creation_date, last_updated, last_used_date, times_used) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?;
+            let test_id = stmt.insert((
+                test.name.clone(),
+                test.description.clone(),
+                test.creation_date.clone(),
+                test.last_updated.clone(),
+                test.last_used_date.clone(),
+                test.times_used,
+            ))?;
+
+            Ok(test_id)
+        }).await?;
+
+        Ok(test_id)
+    }
+
     pub async fn create_step(&self, step: PatuiStep) -> Result<i64> {
         debug!("Create step...");
         trace!("Create step {:?}...", step);
