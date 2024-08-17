@@ -19,7 +19,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct TestComponentCrupdate<'a> {
+pub struct TestComponentEdit<'a> {
     test: Option<PatuiTest>,
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
@@ -28,7 +28,7 @@ pub struct TestComponentCrupdate<'a> {
     cancel_button: Button,
 }
 
-impl<'a> TestComponentCrupdate<'a> {
+impl<'a> TestComponentEdit<'a> {
     pub fn new() -> Self {
         let mut name_component = TextArea::new(
             "Name".to_string(),
@@ -215,7 +215,7 @@ impl<'a> TestComponentCrupdate<'a> {
     }
 }
 
-impl<'a> Component for TestComponentCrupdate<'a> {
+impl<'a> Component for TestComponentEdit<'a> {
     fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
@@ -274,7 +274,7 @@ impl<'a> Component for TestComponentCrupdate<'a> {
     }
 }
 
-impl<'a> PopupComponent for TestComponentCrupdate<'a> {
+impl<'a> PopupComponent for TestComponentEdit<'a> {
     fn render_inner(&self, f: &mut Frame, rect: Rect) {
         let inner = Layout::default()
             .direction(Direction::Vertical)

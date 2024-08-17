@@ -9,42 +9,36 @@ use crate::db::Database;
 #[command(about = "Get an entity")]
 pub struct Command {
     #[command(subcommand)]
-    command: GetCommand,
+    command: DescribeCommand,
 }
 
 impl Command {
     pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
         match &self.command {
-            GetCommand::Test(get_test) | GetCommand::Tests(get_test) => get_test.handle(db).await,
+            DescribeCommand::Test(describe_test) | DescribeCommand::Tests(describe_test) => {
+                describe_test.handle(db).await
+            }
         }
     }
 }
 
 #[derive(Parser, Debug)]
-pub enum GetCommand {
-    Test(GetTest),
+pub enum DescribeCommand {
+    Test(DescribeTest),
     // Alias for Test
-    Tests(GetTest),
+    Tests(DescribeTest),
 }
 
 #[derive(Parser, Debug)]
 #[command(about = "Get test details")]
-pub struct GetTest {
+pub struct DescribeTest {
     #[clap(short, long)]
-    pub id: Option<i64>,
+    pub id: i64,
 }
 
-impl GetTest {
+impl DescribeTest {
     pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let tests = match self.id {
-            Some(id) => vec![db.get_test(id).await?.to_display_test()?],
-            None => db
-                .get_tests()
-                .await?
-                .iter()
-                .map(|x| x.to_display_test().unwrap())
-                .collect::<Vec<_>>(),
-        };
+        let tests = db.get_test(self.id).await?;
 
         std::io::stdout().write_all(&serde_json::to_vec(&tests)?)?;
         std::io::stdout().write_all(b"\n")?;

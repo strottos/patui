@@ -53,7 +53,7 @@ impl TestDetailComponent {
                 items.push(format!("Description: {}", details.description));
 
                 for step in details.steps.iter() {
-                    items.push(format!("{:#?}", step.details));
+                    items.push(format!("{:#?}", step));
                 }
 
                 items.join("\n")

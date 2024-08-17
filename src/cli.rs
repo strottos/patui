@@ -1,5 +1,8 @@
+mod describe;
+mod edit;
 mod get;
 mod new;
+mod resources;
 
 use std::sync::Arc;
 
@@ -19,8 +22,16 @@ const VERSION_MESSAGE: &str = concat!(
 
 #[derive(Debug, Parser)]
 pub enum Command {
-    /// Adds files to myapp
+    /// Describe specific resource
+    Describe(describe::Command),
+
+    /// Create a new resource in a YAML file
     New(new::Command),
+
+    /// Edit YAML configs in a file for resources
+    Edit(edit::Command),
+
+    /// Gets generic details about resource requested
     Get(get::Command),
 }
 
@@ -31,8 +42,10 @@ impl Command {
         }
 
         match self {
-            Command::New(subcommand) => subcommand.handle(db).await,
+            Command::Describe(subcommand) => subcommand.handle(db).await,
+            Command::Edit(subcommand) => subcommand.handle(db).await,
             Command::Get(subcommand) => subcommand.handle(db).await,
+            Command::New(subcommand) => subcommand.handle(db).await,
         }
     }
 }

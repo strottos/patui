@@ -13,7 +13,7 @@ use tracing::{debug, trace};
 use super::{
     components::{
         BottomBar, Component, ErrorComponent, HelpComponent, HelpItem, Middle, PopupComponent,
-        TestComponentCrupdate, TopBar,
+        TestComponentEdit, TopBar,
     },
     error::{Error, ErrorType},
     terminal::{Event, Tui},
@@ -322,10 +322,10 @@ impl App {
             }
             Action::PopupCreate(ref popup_mode) => {
                 let component: Box<dyn PopupComponent> = match popup_mode {
-                    PopupMode::CreateTest => Box::new(TestComponentCrupdate::new()),
-                    PopupMode::UpdateTest(id) => Box::new(TestComponentCrupdate::new_update(
-                        self.db.get_test(*id).await?,
-                    )?),
+                    PopupMode::CreateTest => Box::new(TestComponentEdit::new()),
+                    PopupMode::UpdateTest(id) => {
+                        Box::new(TestComponentEdit::new_update(self.db.get_test(*id).await?)?)
+                    }
                     PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
                 };
                 self.popups.push(Popup::new(popup_mode.clone(), component));
@@ -348,14 +348,7 @@ impl App {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change {
                     DbChange::Test(test) => {
-                        match test.id {
-                            Some(id) => {
-                                self.db.update_test(test.clone()).await?;
-                            }
-                            None => {
-                                self.db.create_test(test.clone()).await?;
-                            }
-                        }
+                        self.db.edit_test(test.clone()).await?;
                         self.middle.update_tests(self.db.get_tests().await?);
                     }
                 };

@@ -173,5 +173,5 @@ fn test_new_test_with_shell() {
 
     let tests: Vec<PatuiStep> = serde_json::from_slice(&output.stdout).unwrap();
     assert_that!(tests.len()).is_equal_to(1);
-    let id = tests[0].id;
+    // TODO: Finish
 }

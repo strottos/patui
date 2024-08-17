@@ -1,8 +1,7 @@
-mod crupdate;
 mod detail;
+mod edit;
 mod root;
-mod update;
 
-pub use crupdate::TestComponentCrupdate;
 pub use detail::TestDetailComponent;
+pub use edit::TestComponentEdit;
 pub use root::TestComponent;
