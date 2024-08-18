@@ -7,18 +7,18 @@ use tracing::{debug, trace};
 use crate::types::{PatuiStepDetails, PatuiTest};
 
 #[derive(Debug, Clone)]
-pub struct Database {
+pub(crate) struct Database {
     conn: Connection,
 }
 
 impl Database {
-    pub async fn new(path: &Path) -> Result<Self> {
+    pub(crate) async fn new(path: &Path) -> Result<Self> {
         let conn = Connection::open(path).await?;
 
         Ok(Self { conn })
     }
 
-    pub async fn create_tables(&self) -> Result<bool> {
+    pub(crate) async fn create_tables(&self) -> Result<bool> {
         debug!("Creating tables...");
 
         let ret = self
@@ -55,7 +55,7 @@ impl Database {
         Ok(ret)
     }
 
-    pub async fn get_test(&self, id: i64) -> Result<PatuiTest> {
+    pub(crate) async fn get_test(&self, id: i64) -> Result<PatuiTest> {
         debug!("Getting test ({})...", id);
 
         let test = self
@@ -86,7 +86,7 @@ impl Database {
         Ok(test)
     }
 
-    pub async fn get_tests(&self) -> Result<Vec<PatuiTest>> {
+    pub(crate) async fn get_tests(&self) -> Result<Vec<PatuiTest>> {
         debug!("Getting tests...");
 
         let tests = self
@@ -117,42 +117,49 @@ impl Database {
         Ok(tests)
     }
 
-    pub async fn edit_test(&self, test: PatuiTest) -> Result<i64> {
+    pub(crate) async fn edit_test(&self, test: &mut PatuiTest) -> Result<i64> {
         debug!("Edit test...");
         trace!("Edit test {:?}...", test);
 
-        let test_id = self.conn.call(move |conn| {
-            if let Some(test_id) = test.id {
-                let mut stmt = conn.prepare("UPDATE test SET name = ?1, desc = ?2, creation_date = ?3, last_updated = ?4, last_used_date = ?5, times_used = ?6, steps = ?7 WHERE id = ?8")?;
+        let test_clone = test.clone();
 
-                stmt.execute((
-                    test.name.clone(),
-                    test.description.clone(),
-                    test.creation_date.clone(),
-                    test.last_updated.clone(),
-                    test.last_used_date.clone(),
-                    test.times_used,
-                    serde_json::to_string(&test.steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
-                    test_id,
-                ))?;
+        let test_id = self
+            .conn
+            .call(move |conn| {
+                if let Some(test_id) = test_clone.id {
+                    let mut stmt = conn.prepare("UPDATE test SET name = ?1, desc = ?2, creation_date = ?3, last_updated = ?4, last_used_date = ?5, times_used = ?6, steps = ?7 WHERE id = ?8")?;
 
-                Ok(test_id)
-            } else {
-                let mut stmt = conn.prepare("INSERT INTO test (name, desc, creation_date, last_updated, last_used_date, times_used, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
+                    stmt.execute((
+                        test_clone.name,
+                        test_clone.description,
+                        test_clone.creation_date,
+                        test_clone.last_updated,
+                        test_clone.last_used_date,
+                        test_clone.times_used,
+                        serde_json::to_string(&test_clone.steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                        test_id,
+                    ))?;
 
-                let test_id = stmt.insert((
-                    test.name.clone(),
-                    test.description.clone(),
-                    test.creation_date.clone(),
-                    test.last_updated.clone(),
-                    test.last_used_date.clone(),
-                    test.times_used,
-                    serde_json::to_string(&test.steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
-                ))?;
+                    Ok(test_id)
+                } else {
+                     let mut stmt = conn.prepare("INSERT INTO test (name, desc, creation_date, last_updated, last_used_date, times_used, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
 
-                Ok(test_id)
-            }
-        }).await?;
+                     let test_id = stmt.insert((
+                         test_clone.name,
+                         test_clone.description,
+                         test_clone.creation_date,
+                         test_clone.last_updated,
+                         test_clone.last_used_date,
+                         test_clone.times_used,
+                         serde_json::to_string(&test_clone.steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                     ))?;
+
+                     Ok(test_id)
+                }
+            })
+            .await?;
+
+        test.id = Some(test_id);
 
         Ok(test_id)
     }
@@ -188,7 +195,7 @@ mod tests {
         let (db, db_test, _tmpdir) = setup_db().await;
 
         let res = db
-            .edit_test(PatuiTest {
+            .edit_test(&mut PatuiTest {
                 id: None,
                 name: "test name".to_string(),
                 description: "test description".to_string(),
@@ -243,7 +250,7 @@ mod tests {
         let (db, db_test, _tmpdir) = setup_db().await;
 
         let res = db
-            .edit_test(PatuiTest {
+            .edit_test(&mut PatuiTest {
                 id: None,
                 name: "test name".to_string(),
                 description: "test description".to_string(),

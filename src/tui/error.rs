@@ -1,22 +1,22 @@
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ErrorType {
+pub(crate) enum ErrorType {
     Error,
     // Warning,
     Info,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Error {
+pub(crate) struct Error {
     type_: ErrorType,
     display: String,
 }
 
 impl Error {
-    pub fn new(type_: ErrorType, display: String) -> Self {
+    pub(crate) fn new(type_: ErrorType, display: String) -> Self {
         Self { type_, display }
     }
 
-    pub fn title(&self) -> &str {
+    pub(crate) fn title(&self) -> &str {
         match self.type_ {
             ErrorType::Error => "Error",
             // ErrorType::Warning => "Warning",
@@ -24,7 +24,7 @@ impl Error {
         }
     }
 
-    pub fn display(&self) -> &str {
+    pub(crate) fn display(&self) -> &str {
         &self.display
     }
 }

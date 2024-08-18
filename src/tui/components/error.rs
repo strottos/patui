@@ -16,30 +16,30 @@ use crate::tui::{
 };
 
 #[derive(Debug, Default)]
-pub struct ErrorComponent {
+pub(crate) struct ErrorComponent {
     errors: VecDeque<Error>,
 }
 
 impl ErrorComponent {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             errors: VecDeque::new(),
         }
     }
 
-    pub fn add_error(&mut self, error: Error) {
+    pub(crate) fn add_error(&mut self, error: Error) {
         self.errors.push_back(error);
     }
 
-    pub fn ack_error(&mut self) {
+    pub(crate) fn ack_error(&mut self) {
         self.errors.pop_front();
     }
 
-    pub fn has_error(&self) -> bool {
+    pub(crate) fn has_error(&self) -> bool {
         !self.errors.is_empty()
     }
 
-    pub fn render(&self, f: &mut Frame, r: Rect) {
+    pub(crate) fn render(&self, f: &mut Frame, r: Rect) {
         if let Some(next_error) = self.errors.front() {
             let layout = Layout::default()
                 .direction(Direction::Horizontal)

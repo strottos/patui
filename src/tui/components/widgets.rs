@@ -1,5 +1,5 @@
 mod button;
 mod textarea;
 
-pub use button::Button;
-pub use textarea::TextArea;
+pub(crate) use button::Button;
+pub(crate) use textarea::TextArea;

@@ -14,14 +14,14 @@ use ratatui::{
 };
 
 #[derive(Debug)]
-pub struct BottomBar {}
+pub(crate) struct BottomBar {}
 
 impl BottomBar {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 
-    pub fn render(&self, f: &mut Frame, rect: Rect, mut keys: Vec<HelpItem>) {
+    pub(crate) fn render(&self, f: &mut Frame, rect: Rect, mut keys: Vec<HelpItem>) {
         keys.push(HelpItem::new("<C-c> <C-c>", "Quit", "Quit"));
         let keys = keys
             .iter()

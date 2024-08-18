@@ -19,7 +19,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct TestComponentEdit<'a> {
+pub(crate) struct TestComponentEdit<'a> {
     test: Option<PatuiTest>,
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
@@ -29,7 +29,7 @@ pub struct TestComponentEdit<'a> {
 }
 
 impl<'a> TestComponentEdit<'a> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut name_component = TextArea::new(
             "Name".to_string(),
             vec![Box::new(|x| {
@@ -57,7 +57,7 @@ impl<'a> TestComponentEdit<'a> {
         }
     }
 
-    pub fn new_update(test: PatuiTest) -> Result<Self> {
+    pub(crate) fn new_update(test: PatuiTest) -> Result<Self> {
         let mut name_component = TextArea::new(
             "Name".to_string(),
             vec![Box::new(|x| {
@@ -192,12 +192,10 @@ impl<'a> TestComponentEdit<'a> {
                         mode: MainMode::create_test_detail(*id),
                         breadcrumb_direction: BreadcrumbDirection::None,
                     }),
-                    MainMode::TestDetailSelected(id) | MainMode::TestSelectedFull(id) => {
-                        ret.push(Action::ModeChange {
-                            mode: MainMode::create_test_detail_with_selected_id(*id),
-                            breadcrumb_direction: BreadcrumbDirection::None,
-                        })
-                    }
+                    MainMode::TestDetailSelected(id) => ret.push(Action::ModeChange {
+                        mode: MainMode::create_test_detail_with_selected_id(*id),
+                        breadcrumb_direction: BreadcrumbDirection::None,
+                    }),
                 }
                 ret.push(Action::ClearKeys);
                 ret

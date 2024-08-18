@@ -4,7 +4,7 @@
 mod cli;
 mod db;
 mod tui;
-pub mod types;
+pub(crate) mod types;
 
 use std::{env, fs::create_dir_all, sync::Arc};
 
@@ -21,11 +21,11 @@ use crate::cli::Cli;
 
 lazy_static! {
     /// Various constants used in the root application code
-    pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
+    pub(crate) static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
     /// Various constants used in the root application code
-    pub static ref LOG_ENV: String = format!("{}_LOG", PROJECT_NAME.clone());
+    pub(crate) static ref LOG_ENV: String = format!("{}_LOG", PROJECT_NAME.clone());
     /// Various constants used in the root application code
-    pub static ref LOG_FILE_ENV: String = format!("{}_LOG_FILE", PROJECT_NAME.clone());
+    pub(crate) static ref LOG_FILE_ENV: String = format!("{}_LOG_FILE", PROJECT_NAME.clone());
 }
 
 fn initialise_logging() -> Result<()> {
@@ -139,7 +139,7 @@ async fn do_main() -> Result<()> {
             path
         }
     };
-    // });
+
     let db = Arc::new(db::Database::new(&db_path).await?);
 
     if let Some(subcommand) = args.subcommand {

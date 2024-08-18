@@ -2,6 +2,6 @@ mod detail;
 mod edit;
 mod root;
 
-pub use detail::TestDetailComponent;
-pub use edit::TestComponentEdit;
-pub use root::TestComponent;
+pub(crate) use detail::TestDetailComponent;
+pub(crate) use edit::TestComponentEdit;
+pub(crate) use root::TestComponent;

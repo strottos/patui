@@ -21,72 +21,70 @@ use super::{
 use crate::{db::Database, types::PatuiTest};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum MainMode {
+pub(crate) enum MainMode {
     Test,
     TestDetail(i64),
     TestDetailSelected(i64),
-    TestSelectedFull(i64),
 }
 
 impl MainMode {
-    pub fn is_test(&self) -> bool {
+    pub(crate) fn is_test(&self) -> bool {
         matches!(self, MainMode::Test)
     }
 
-    pub fn is_test_detail(&self) -> bool {
+    pub(crate) fn is_test_detail(&self) -> bool {
         matches!(self, MainMode::TestDetail(_))
     }
 
-    pub fn is_test_detail_selected(&self) -> bool {
+    pub(crate) fn is_test_detail_selected(&self) -> bool {
         matches!(self, MainMode::TestDetailSelected(_))
     }
 
-    pub fn matched(&self, other_mode: &MainMode) -> bool {
+    pub(crate) fn matched(&self, other_mode: &MainMode) -> bool {
         match self {
             MainMode::Test => *other_mode == MainMode::Test,
             MainMode::TestDetail(_) => {
                 matches!(other_mode, MainMode::TestDetail(_))
             }
-            MainMode::TestDetailSelected(_) | MainMode::TestSelectedFull(_) => {
+            MainMode::TestDetailSelected(_) => {
                 matches!(other_mode, MainMode::TestDetailSelected(_))
-                    || matches!(other_mode, MainMode::TestSelectedFull(_))
             }
         }
     }
 
-    pub fn create_normal() -> Self {
+    pub(crate) fn create_normal() -> Self {
         MainMode::Test
     }
 
-    pub fn create_test_detail(id: i64) -> Self {
+    pub(crate) fn create_test_detail(id: i64) -> Self {
         MainMode::TestDetail(id)
     }
 
-    pub fn create_test_detail_with_selected_id(id: i64) -> Self {
+    pub(crate) fn create_test_detail_with_selected_id(id: i64) -> Self {
         MainMode::TestDetailSelected(id)
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DbRead {
+pub(crate) enum DbRead {
     Test,
     TestDetail(i64),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DbChange {
+pub(crate) enum DbChange {
     Test(PatuiTest),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum BreadcrumbDirection {
+pub(crate) enum BreadcrumbDirection {
     Forward,
     None,
     Backward,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum PopupMode {
+pub(crate) enum PopupMode {
     CreateTest,
     UpdateTest(i64),
     Help,
@@ -103,7 +101,7 @@ impl PopupMode {
 }
 
 #[derive(Debug)]
-pub struct Popup {
+pub(crate) struct Popup {
     mode: PopupMode,
     component: Box<dyn PopupComponent>,
 }
@@ -114,7 +112,7 @@ impl Popup {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Action {
+pub(crate) enum Action {
     Tick,
     Render,
     ClearKeys,
@@ -132,7 +130,7 @@ pub enum Action {
 }
 
 #[derive(Debug)]
-pub struct App {
+pub(crate) struct App {
     should_quit: bool,
     last_key_events: Vec<KeyEvent>,
     db: Arc<Database>,
@@ -146,7 +144,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(db: Arc<Database>) -> Result<Self> {
+    pub(crate) fn new(db: Arc<Database>) -> Result<Self> {
         let last_key_events = vec![];
 
         let top_bar = TopBar::new();
@@ -168,7 +166,7 @@ impl App {
         })
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub(crate) async fn run(&mut self) -> Result<()> {
         let db = self.db.clone();
 
         let (action_tx, mut action_rx) = mpsc::unbounded_channel();
@@ -309,8 +307,8 @@ impl App {
                             MainMode::TestDetail(id) => {
                                 format!("Test {}", id)
                             }
-                            MainMode::TestDetailSelected(id) | MainMode::TestSelectedFull(id) => {
-                                format!("Test {} (selected)", id)
+                            MainMode::TestDetailSelected(id) => {
+                                format!("Test Details {}", id)
                             }
                         },
                         mode.clone(),
@@ -346,9 +344,9 @@ impl App {
             }
             Action::DbChange(ref db_change) => {
                 tracing::trace!("Got db change: {:?}", db_change);
-                match db_change {
-                    DbChange::Test(test) => {
-                        self.db.edit_test(test.clone()).await?;
+                match db_change.clone() {
+                    DbChange::Test(mut test) => {
+                        self.db.edit_test(&mut test).await?;
                         self.middle.update_tests(self.db.get_tests().await?);
                     }
                 };

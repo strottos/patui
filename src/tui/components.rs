@@ -16,22 +16,22 @@ use ratatui::{
 
 use super::app::{Action, MainMode};
 
-pub use bottom_bar::BottomBar;
-pub use error::ErrorComponent;
-pub use middle::Middle;
-pub use misc::HelpComponent;
-pub use tests::TestComponentEdit;
-pub use top_bar::TopBar;
+pub(crate) use bottom_bar::BottomBar;
+pub(crate) use error::ErrorComponent;
+pub(crate) use middle::Middle;
+pub(crate) use misc::HelpComponent;
+pub(crate) use tests::TestComponentEdit;
+pub(crate) use top_bar::TopBar;
 
 #[derive(Debug)]
-pub struct HelpItem {
-    pub keys: &'static str,
-    pub minidesc: &'static str,
-    pub desc: &'static str,
+pub(crate) struct HelpItem {
+    pub(crate) keys: &'static str,
+    pub(crate) minidesc: &'static str,
+    pub(crate) desc: &'static str,
 }
 
 impl HelpItem {
-    pub fn new(keys: &'static str, minidesc: &'static str, desc: &'static str) -> Self {
+    pub(crate) fn new(keys: &'static str, minidesc: &'static str, desc: &'static str) -> Self {
         Self {
             keys,
             minidesc,
@@ -39,16 +39,16 @@ impl HelpItem {
         }
     }
 
-    pub fn bottom_bar_help(&self) -> String {
+    pub(crate) fn bottom_bar_help(&self) -> String {
         format!("{}: {}", self.keys, self.minidesc)
     }
 
-    pub fn global_help(&self) -> String {
+    pub(crate) fn global_help(&self) -> String {
         format!("{}: {}", self.keys, self.desc)
     }
 }
 
-pub trait Component: std::fmt::Debug {
+pub(crate) trait Component: std::fmt::Debug {
     /// Take input for the component and optionally send back an action to perform
     fn input(&mut self, _key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
         Ok(vec![])
@@ -65,7 +65,7 @@ pub trait Component: std::fmt::Debug {
     }
 }
 
-pub trait PopupComponent: Component {
+pub(crate) trait PopupComponent: Component {
     /// Render the component into the rect given
     fn render_inner(&self, _f: &mut Frame, _rect: Rect) {}
 

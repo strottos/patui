@@ -1,21 +1,23 @@
-use std::sync::Arc;
+use std::{
+    io::{self, Read},
+    sync::Arc,
+};
 
 use clap::{Args, Parser};
 use color_eyre::Result;
+use edit::edit;
 
-use crate::db::Database;
-
-use super::resources;
+use crate::{db::Database, types::PatuiTest};
 
 #[derive(Debug, Args)]
 #[command(about = "Create new entity")]
-pub struct Command {
+pub(crate) struct Command {
     #[command(subcommand)]
     command: EditCommand,
 }
 
 impl Command {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+    pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         match &self.command {
             EditCommand::Test(new_test) => new_test.handle(db).await,
         }
@@ -23,27 +25,26 @@ impl Command {
 }
 
 #[derive(Parser, Debug)]
-pub enum EditCommand {
+pub(crate) enum EditCommand {
     Test(EditTest),
 }
 
 #[derive(Parser, Debug)]
 #[command(about = "Edit an existing test")]
-pub struct EditTest {
+pub(crate) struct EditTest {
     #[clap(short, long)]
-    pub id: i64,
+    pub(crate) id: i64,
 }
 
 impl EditTest {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let edit_test = resources::EditTest {
-            id: Some(self.id),
-            name: None,
-            description: None,
-            steps: None,
-        };
+    pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
+        let test = db.get_test(self.id).await?;
 
-        edit_test.handle(db).await?;
+        let yaml_str = test.to_editable_yaml_string()?;
+        let mut test = PatuiTest::edit_yaml(yaml_str)?;
+
+        db.edit_test(&mut test).await?;
+        eprintln!("Successfully saved test: {}", test.name);
 
         Ok(())
     }

@@ -6,13 +6,13 @@ use ratatui::{
 };
 
 #[derive(Debug, Default, Clone)]
-pub struct Button {
+pub(crate) struct Button {
     text: String,
     state: State,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum State {
+pub(crate) enum State {
     #[default]
     Normal,
     Selected,
@@ -20,14 +20,14 @@ pub enum State {
 }
 
 impl Button {
-    pub fn new(text: String) -> Self {
+    pub(crate) fn new(text: String) -> Self {
         Self {
             text,
             state: State::Normal,
         }
     }
 
-    pub fn selected(&mut self, selected: bool) {
+    pub(crate) fn selected(&mut self, selected: bool) {
         if selected {
             self.state = State::Selected;
         } else {
@@ -35,11 +35,11 @@ impl Button {
         }
     }
 
-    pub fn pressed(&mut self) {
+    pub(crate) fn pressed(&mut self) {
         self.state = State::Pressed;
     }
 
-    pub fn widget(&self) -> impl Widget {
+    pub(crate) fn widget(&self) -> impl Widget {
         ButtonWidget {
             text: Paragraph::new(self.text.clone()),
             style: match self.state {
@@ -51,7 +51,7 @@ impl Button {
     }
 }
 
-pub struct ButtonWidget<'a> {
+pub(crate) struct ButtonWidget<'a> {
     text: Paragraph<'a>,
     style: Style,
 }

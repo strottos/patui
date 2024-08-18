@@ -9,7 +9,7 @@ use ratatui::{
 
 type ValidateFn = Box<dyn Fn(&TextArea) -> bool>;
 
-pub struct TextArea<'a> {
+pub(crate) struct TextArea<'a> {
     inner: tui_textarea::TextArea<'a>,
     name: String,
     height: u16,
@@ -33,7 +33,7 @@ impl Debug for TextArea<'_> {
 }
 
 impl<'a> TextArea<'a> {
-    pub fn new(name: String, validate: Vec<ValidateFn>) -> Self {
+    pub(crate) fn new(name: String, validate: Vec<ValidateFn>) -> Self {
         let mut inner = tui_textarea::TextArea::default();
 
         let block = Block::default()
@@ -56,7 +56,7 @@ impl<'a> TextArea<'a> {
         }
     }
 
-    pub fn set_valid_entries(&mut self, mut valid_entries: Vec<String>) {
+    pub(crate) fn set_valid_entries(&mut self, mut valid_entries: Vec<String>) {
         valid_entries.sort();
         self.valid_entries = valid_entries;
         if self.validate.is_empty() {
@@ -65,32 +65,32 @@ impl<'a> TextArea<'a> {
         }
     }
 
-    pub fn widget(&'a self) -> impl Widget + 'a {
+    pub(crate) fn widget(&'a self) -> impl Widget + 'a {
         self.inner.widget()
     }
 
-    pub fn get_text(&'a self) -> String {
+    pub(crate) fn get_text(&'a self) -> String {
         self.inner.lines().join("\n")
     }
 
-    pub fn height(&'a self) -> u16 {
+    pub(crate) fn height(&'a self) -> u16 {
         self.height
     }
 
-    pub fn name(&'a self) -> &'a str {
+    pub(crate) fn name(&'a self) -> &'a str {
         &self.name
     }
 
-    pub fn is_valid(&'a self) -> bool {
+    pub(crate) fn is_valid(&'a self) -> bool {
         self.is_valid
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.inner.select_all();
         self.inner.delete_line_by_head();
     }
 
-    pub fn input(&mut self, key: &KeyEvent) -> bool {
+    pub(crate) fn input(&mut self, key: &KeyEvent) -> bool {
         if !self.valid_entries.is_empty() {
             match &key.code {
                 KeyCode::Up => {
@@ -131,7 +131,7 @@ impl<'a> TextArea<'a> {
         })
     }
 
-    pub fn validate(&mut self) {
+    pub(crate) fn validate(&mut self) {
         self.is_valid = self.check_is_valid();
         self.setup_widget();
     }
@@ -166,7 +166,7 @@ impl<'a> TextArea<'a> {
         }
     }
 
-    pub fn selected(&mut self, selected: bool) {
+    pub(crate) fn selected(&mut self, selected: bool) {
         self.selected = selected;
         self.setup_widget();
     }

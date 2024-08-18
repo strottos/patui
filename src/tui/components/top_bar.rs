@@ -13,14 +13,14 @@ use ratatui::{
 };
 
 #[derive(Debug)]
-pub struct TopBar {
+pub(crate) struct TopBar {
     breadcrumb_name: Vec<String>,
     breadcrumb_mode: Vec<MainMode>,
     selected_idx: usize,
 }
 
 impl TopBar {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             breadcrumb_name: vec!["Tests".to_string()],
             breadcrumb_mode: vec![MainMode::Test],
@@ -28,7 +28,7 @@ impl TopBar {
         }
     }
 
-    pub fn push(&mut self, name: String, mode: MainMode) {
+    pub(crate) fn push(&mut self, name: String, mode: MainMode) {
         if let Some(last_mode) = &self.breadcrumb_mode.last() {
             // If changing ids
             if mode.matched(last_mode) {
@@ -47,7 +47,7 @@ impl TopBar {
         assert!(self.selected_idx < self.breadcrumb_name.len());
     }
 
-    pub fn pop(&mut self) {
+    pub(crate) fn pop(&mut self) {
         if self.breadcrumb_name.len() > 1 {
             self.breadcrumb_name.pop();
             self.breadcrumb_mode.pop();
@@ -61,7 +61,7 @@ impl TopBar {
         assert!(self.selected_idx < self.breadcrumb_name.len());
     }
 
-    pub fn get_main_mode(&self) -> Result<&MainMode> {
+    pub(crate) fn get_main_mode(&self) -> Result<&MainMode> {
         if let Some(elem) = self.breadcrumb_mode.get(self.selected_idx) {
             Ok(elem)
         } else {
@@ -69,7 +69,7 @@ impl TopBar {
         }
     }
 
-    pub fn render(&self, f: &mut Frame, rect: Rect) {
+    pub(crate) fn render(&self, f: &mut Frame, rect: Rect) {
         let rect = rect.inner(Margin {
             vertical: 0,
             horizontal: 1,

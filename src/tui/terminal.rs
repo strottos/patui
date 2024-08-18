@@ -19,7 +19,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Debug)]
-pub enum Event {
+pub(crate) enum Event {
     Init,
     Tick,
     Render,
@@ -33,7 +33,7 @@ fn stdout() -> IO {
     std::io::stdout()
 }
 
-pub struct Tui {
+pub(crate) struct Tui {
     terminal: ratatui::Terminal<Backend<IO>>,
     task: JoinHandle<()>,
     cancellation_token: CancellationToken,
@@ -44,7 +44,7 @@ pub struct Tui {
 }
 
 impl Tui {
-    pub fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         let terminal = ratatui::Terminal::new(Backend::new(stdout()))?;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();
@@ -63,7 +63,7 @@ impl Tui {
         })
     }
 
-    pub fn start(&mut self) {
+    pub(crate) fn start(&mut self) {
         let tick_delay = std::time::Duration::from_secs_f64(1.0 / self.tick_rate);
         let render_delay = std::time::Duration::from_secs_f64(1.0 / self.frame_rate);
         self.cancel();
@@ -85,12 +85,12 @@ impl Tui {
         });
     }
 
-    pub fn stop(&mut self) -> Result<()> {
+    pub(crate) fn stop(&mut self) -> Result<()> {
         self.cancel();
         Ok(())
     }
 
-    pub fn enter(&mut self) -> Result<()> {
+    pub(crate) fn enter(&mut self) -> Result<()> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = stdout();
         stdout.execute(LeaveAlternateScreen)?;
@@ -103,7 +103,7 @@ impl Tui {
         Ok(())
     }
 
-    pub fn exit(&mut self) -> Result<()> {
+    pub(crate) fn exit(&mut self) -> Result<()> {
         // Clear the screen
         self.stop()?;
         if crossterm::terminal::is_raw_mode_enabled()? {
@@ -117,11 +117,11 @@ impl Tui {
         Ok(())
     }
 
-    pub fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         self.cancellation_token.cancel();
     }
 
-    pub async fn next(&mut self) -> Option<Event> {
+    pub(crate) async fn next(&mut self) -> Option<Event> {
         self.event_rx.recv().await
     }
 }

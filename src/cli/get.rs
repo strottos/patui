@@ -7,13 +7,13 @@ use crate::db::Database;
 
 #[derive(Debug, Args)]
 #[command(about = "Get an entity")]
-pub struct Command {
+pub(crate) struct Command {
     #[command(subcommand)]
     command: GetCommand,
 }
 
 impl Command {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+    pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         match &self.command {
             GetCommand::Test(get_test) | GetCommand::Tests(get_test) => get_test.handle(db).await,
         }
@@ -21,7 +21,7 @@ impl Command {
 }
 
 #[derive(Parser, Debug)]
-pub enum GetCommand {
+pub(crate) enum GetCommand {
     Test(GetTest),
     // Alias for Test
     Tests(GetTest),
@@ -29,20 +29,20 @@ pub enum GetCommand {
 
 #[derive(Parser, Debug)]
 #[command(about = "Get test details")]
-pub struct GetTest {
+pub(crate) struct GetTest {
     #[clap(short, long)]
-    pub id: Option<i64>,
+    pub(crate) id: Option<i64>,
 }
 
 impl GetTest {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+    pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         let tests = match self.id {
-            Some(id) => vec![db.get_test(id).await?.to_display_test()?],
+            Some(id) => vec![db.get_test(id).await?.to_min_display_test()?],
             None => db
                 .get_tests()
                 .await?
                 .iter()
-                .map(|x| x.to_display_test().unwrap())
+                .map(|x| x.to_min_display_test().unwrap())
                 .collect::<Vec<_>>(),
         };
 

@@ -11,12 +11,12 @@ use crate::tui::app::{Action, MainMode};
 use super::{Component, HelpItem, PopupComponent};
 
 #[derive(Debug)]
-pub struct HelpComponent {
+pub(crate) struct HelpComponent {
     help_items: Vec<HelpItem>,
 }
 
 impl HelpComponent {
-    pub fn new(help_items: Vec<HelpItem>) -> Self {
+    pub(crate) fn new(help_items: Vec<HelpItem>) -> Self {
         Self { help_items }
     }
 }

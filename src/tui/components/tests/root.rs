@@ -19,7 +19,7 @@ use crate::{
 const SHORT_WIDTH_DISPLAY: u16 = 60;
 
 #[derive(Debug)]
-pub struct TestComponent {
+pub(crate) struct TestComponent {
     initialized: bool,
     loading: bool,
 
@@ -29,7 +29,7 @@ pub struct TestComponent {
 }
 
 impl TestComponent {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             initialized: false,
             loading: false,
@@ -157,13 +157,13 @@ impl TestComponent {
         f.render_widget(table, r);
     }
 
-    pub fn update_tests(&mut self, tests: Vec<PatuiTest>) {
+    pub(crate) fn update_tests(&mut self, tests: Vec<PatuiTest>) {
         self.tests = tests;
         self.loading = false;
         self.initialized = true;
     }
 
-    pub fn render(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
+    pub(crate) fn render(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
         self.render_table(f, r, mode);
     }
 }

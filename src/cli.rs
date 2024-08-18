@@ -2,7 +2,6 @@ mod describe;
 mod edit;
 mod get;
 mod new;
-mod resources;
 
 use std::sync::Arc;
 
@@ -21,7 +20,7 @@ const VERSION_MESSAGE: &str = concat!(
 );
 
 #[derive(Debug, Parser)]
-pub enum Command {
+pub(crate) enum Command {
     /// Describe specific resource
     Describe(describe::Command),
 
@@ -36,7 +35,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn handle(&self, db: Arc<Database>) -> Result<()> {
+    pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         if let Err(e) = db.create_tables().await {
             panic!("Unexpected failure creating tables, aborting\nerror: {}", e);
         }
@@ -52,12 +51,12 @@ impl Command {
 
 #[derive(Parser, Debug)]
 #[command(author, version = version(), about)]
-pub struct Cli {
+pub(crate) struct Cli {
     #[clap(short, long)]
-    pub db: Option<String>,
+    pub(crate) db: Option<String>,
 
     #[command(subcommand)]
-    pub subcommand: Option<Command>,
+    pub(crate) subcommand: Option<Command>,
 }
 
 fn version() -> String {

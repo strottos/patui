@@ -16,20 +16,20 @@ use ratatui::{
 };
 
 #[derive(Debug)]
-pub struct TestDetailComponent {
+pub(crate) struct TestDetailComponent {
     test: Option<PatuiTest>,
 }
 
 impl TestDetailComponent {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { test: None }
     }
 
-    pub fn update_test_detail(&mut self, test: PatuiTest) {
+    pub(crate) fn update_test_detail(&mut self, test: PatuiTest) {
         self.test = Some(test);
     }
 
-    pub fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
+    pub(crate) fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
         let style = if !mode.is_test_detail_selected() {
             Style::default().fg(Color::DarkGray)
         } else {

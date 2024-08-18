@@ -16,13 +16,13 @@ use super::{
 };
 
 #[derive(Debug)]
-pub struct Middle {
+pub(crate) struct Middle {
     test_component: TestComponent,
     test_detail_component: TestDetailComponent,
 }
 
 impl Middle {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let test_component = TestComponent::new();
         let test_detail_component = TestDetailComponent::new();
 
@@ -32,15 +32,15 @@ impl Middle {
         }
     }
 
-    pub fn update_tests(&mut self, tests: Vec<PatuiTest>) {
+    pub(crate) fn update_tests(&mut self, tests: Vec<PatuiTest>) {
         self.test_component.update_tests(tests);
     }
 
-    pub fn update_test_detail(&mut self, test: PatuiTest) {
+    pub(crate) fn update_test_detail(&mut self, test: PatuiTest) {
         self.test_detail_component.update_test_detail(test);
     }
 
-    pub fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
+    pub(crate) fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
         if mode.is_test_detail() || mode.is_test_detail_selected() {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -90,7 +90,6 @@ impl Component for Middle {
             MainMode::Test => self.test_component.keys(mode),
             MainMode::TestDetail(_) => self.test_detail_component.keys(mode),
             MainMode::TestDetailSelected(_) => self.test_detail_component.keys(mode),
-            MainMode::TestSelectedFull(_) => self.test_detail_component.keys(mode),
         }
     }
 }
