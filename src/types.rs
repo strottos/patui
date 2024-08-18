@@ -24,6 +24,27 @@ pub(crate) struct PatuiTest {
     pub(crate) steps: Vec<PatuiStepDetails>,
 }
 
+impl Default for PatuiTest {
+    fn default() -> Self {
+        let now: String = chrono::Local::now().to_string();
+
+        PatuiTest {
+            id: None,
+            name: "Default".to_string(),
+            description: "Default template".to_string(),
+            creation_date: now.clone(),
+            last_updated: now,
+            last_used_date: None,
+            times_used: 0,
+            steps: vec![PatuiStepDetails::Shell(PatuiStepShell {
+                shell: Some("bash".to_string()),
+                contents: "echo 'Hello, world!'".to_string(),
+                location: None,
+            })],
+        }
+    }
+}
+
 impl PatuiTest {
     pub(crate) fn from_yaml_str(yaml: &str) -> Result<Self> {
         let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
@@ -87,15 +108,6 @@ impl PatuiTest {
             description: Some(self.description.clone()),
             status,
         }
-    }
-
-    pub(crate) fn edit_with_yaml(&mut self, yaml: &str) -> Result<()> {
-        let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
-        self.name = yaml_test.name;
-        self.description = yaml_test.description;
-        self.steps = yaml_test.steps;
-
-        Ok(())
     }
 }
 
@@ -222,79 +234,5 @@ mod tests {
         let test = PatuiTest::from_yaml_str(&yaml);
 
         assert_that!(test).is_err();
-    }
-
-    #[test]
-    fn edit_with_yaml() {
-        let mut test = PatuiTest {
-            id: Some(1),
-            name: "test name".to_string(),
-            description: "test description".to_string(),
-            creation_date: "2021-09-01T00:00:00".to_string(),
-            last_updated: "2021-09-01T00:00:00".to_string(),
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![],
-        };
-
-        test.edit_with_yaml(
-            r#"
-            name: new name
-            description: new description
-            steps:
-              - !Shell
-                shell: bash
-                contents: echo 'Hello, world!'
-              - !Assertion
-                assertion: Equal
-                negate: false
-                lhs: foo
-                rhs: bar
-            "#,
-        )
-        .unwrap();
-
-        assert_that!(test.name).is_equal_to("new name".to_string());
-        assert_that!(test.description).is_equal_to("new description".to_string());
-        assert_that!(test.steps).has_length(2);
-        assert_that!(test.steps[0]).is_equal_to(PatuiStepDetails::Shell(PatuiStepShell {
-            shell: Some("bash".to_string()),
-            contents: "echo 'Hello, world!'".to_string(),
-            location: None,
-        }));
-        assert_that!(test.steps[1]).is_equal_to(PatuiStepDetails::Assertion(PatuiStepAssertion {
-            assertion: PatuiStepAssertionType::Equal,
-            negate: false,
-            lhs: "foo".to_string(),
-            rhs: "bar".to_string(),
-        }));
-    }
-
-    #[test]
-    fn edit_with_bad_yaml_no_changes() {
-        let mut test = PatuiTest {
-            id: Some(1),
-            name: "test name".to_string(),
-            description: "test description".to_string(),
-            creation_date: "2021-09-01T00:00:00".to_string(),
-            last_updated: "2021-09-01T00:00:00".to_string(),
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![],
-        };
-
-        let expected_test = test.clone();
-
-        let output = test.edit_with_yaml(
-            r#"
-            name: new name
-            description: new description
-            steps:
-              - This: Bad
-            "#,
-        );
-
-        assert_that!(output).is_err();
-        assert_that!(test).is_equal_to(expected_test);
     }
 }

@@ -3,10 +3,7 @@ use std::{io::Read, sync::Arc};
 use clap::{Args, Parser};
 use color_eyre::Result;
 
-use crate::{
-    db::Database,
-    types::{PatuiStepDetails, PatuiStepShell, PatuiTest},
-};
+use crate::{db::Database, types::PatuiTest};
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[clap(rename_all = "lower")]
@@ -15,23 +12,8 @@ pub(crate) enum Templates {
 }
 
 fn get_template(template: Templates) -> Result<PatuiTest> {
-    let now = chrono::Local::now().to_string();
-
     match template {
-        Templates::Default => Ok(PatuiTest {
-            id: None,
-            name: "Default".to_string(),
-            description: "Default template".to_string(),
-            creation_date: now.clone(),
-            last_updated: now,
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![PatuiStepDetails::Shell(PatuiStepShell {
-                shell: Some("bash".to_string()),
-                contents: "echo 'Hello, world!'".to_string(),
-                location: None,
-            })],
-        }),
+        Templates::Default => Ok(PatuiTest::default()),
     }
 }
 
@@ -115,12 +97,13 @@ impl NewTest {
 
         let mut edited_tests = vec![];
 
-        for test in tests.iter_mut() {
-            match db.edit_test(test).await {
-                Ok(_) => edited_tests.push(test.to_edited_test("ok".to_string())),
+        for test in tests.into_iter() {
+            match db.edit_test(test.clone()).await {
+                Ok(test) => {
+                    edited_tests.push(test.to_edited_test("ok".to_string()));
+                }
                 Err(e) => edited_tests.push(test.to_edited_test(format!("err: {}", e))),
             }
-            edited_tests.push(test.to_edited_test("ok".to_string()));
         }
 
         println!("{}", serde_json::to_string(&edited_tests)?);

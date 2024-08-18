@@ -18,116 +18,9 @@ use super::{
     error::{Error, ErrorType},
     terminal::{Event, Tui},
 };
-use crate::{db::Database, types::PatuiTest};
+use crate::db::Database;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum MainMode {
-    Test,
-    TestDetail(i64),
-    TestDetailSelected(i64),
-}
-
-impl MainMode {
-    pub(crate) fn is_test(&self) -> bool {
-        matches!(self, MainMode::Test)
-    }
-
-    pub(crate) fn is_test_detail(&self) -> bool {
-        matches!(self, MainMode::TestDetail(_))
-    }
-
-    pub(crate) fn is_test_detail_selected(&self) -> bool {
-        matches!(self, MainMode::TestDetailSelected(_))
-    }
-
-    pub(crate) fn matched(&self, other_mode: &MainMode) -> bool {
-        match self {
-            MainMode::Test => *other_mode == MainMode::Test,
-            MainMode::TestDetail(_) => {
-                matches!(other_mode, MainMode::TestDetail(_))
-            }
-            MainMode::TestDetailSelected(_) => {
-                matches!(other_mode, MainMode::TestDetailSelected(_))
-            }
-        }
-    }
-
-    pub(crate) fn create_normal() -> Self {
-        MainMode::Test
-    }
-
-    pub(crate) fn create_test_detail(id: i64) -> Self {
-        MainMode::TestDetail(id)
-    }
-
-    pub(crate) fn create_test_detail_with_selected_id(id: i64) -> Self {
-        MainMode::TestDetailSelected(id)
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum DbRead {
-    Test,
-    TestDetail(i64),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum DbChange {
-    Test(PatuiTest),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum BreadcrumbDirection {
-    Forward,
-    None,
-    Backward,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum PopupMode {
-    CreateTest,
-    UpdateTest(i64),
-    Help,
-}
-
-impl PopupMode {
-    fn title(&self) -> &str {
-        match self {
-            PopupMode::CreateTest => "Create Test",
-            PopupMode::UpdateTest(_) => "Update Test",
-            PopupMode::Help => "Help",
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct Popup {
-    mode: PopupMode,
-    component: Box<dyn PopupComponent>,
-}
-impl Popup {
-    fn new(mode: PopupMode, component: Box<dyn PopupComponent>) -> Self {
-        Self { mode, component }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum Action {
-    Tick,
-    Render,
-    ClearKeys,
-    Resize(u16, u16),
-    Quit,
-    Error(Error),
-    ModeChange {
-        mode: MainMode,
-        breadcrumb_direction: BreadcrumbDirection,
-    },
-    PopupCreate(PopupMode),
-    PopupClose,
-    DbRead(DbRead),
-    DbChange(DbChange),
-}
+pub(crate) use super::types::*;
 
 #[derive(Debug)]
 pub(crate) struct App {
@@ -239,10 +132,10 @@ impl App {
         trace!("Pressed key: {:?}", key);
         trace!("Last key events: {:?}", self.last_key_events);
 
-        // Always have a fallback to check for double ctrl-c and quit, can't be
-        // overridden
         self.last_key_events.push(key);
 
+        // Always have a fallback to check for double ctrl-c and quit, can't be
+        // overridden
         if self.last_key_events[self.last_key_events.len().saturating_sub(2)..]
             == vec![
                 KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
@@ -331,6 +224,37 @@ impl App {
             Action::PopupClose => {
                 self.popups.pop();
             }
+            Action::EditorMode(editor_mode) => {
+                tracing::trace!("Got editor mode: {:?}", editor_mode);
+                tui.exit()?;
+                let test_result = match editor_mode {
+                    EditorMode::CreateTest => super::editor::create_test(),
+                    EditorMode::UpdateTest(id) => {
+                        let test = self.db.get_test(*id).await?;
+                        super::editor::edit_test(test)
+                    }
+                };
+                match test_result {
+                    Ok(test) => {
+                        ret.push(Action::DbChange(DbChange::Test(test)));
+                        tui.enter()?;
+                    }
+                    Err(e) => {
+                        ret.push(Action::Error(Error::new(
+                            ErrorType::Error,
+                            format!(
+                                "Error {} test, editor failure\n\n{}",
+                                match editor_mode {
+                                    EditorMode::CreateTest => "creating",
+                                    EditorMode::UpdateTest(_) => "editing",
+                                },
+                                e
+                            ),
+                        )));
+                    }
+                }
+                tui.enter()?;
+            }
             Action::DbRead(ref db_select) => {
                 tracing::trace!("Got db select: {:?}", db_select);
                 match db_select {
@@ -345,8 +269,8 @@ impl App {
             Action::DbChange(ref db_change) => {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change.clone() {
-                    DbChange::Test(mut test) => {
-                        self.db.edit_test(&mut test).await?;
+                    DbChange::Test(test) => {
+                        self.db.edit_test(test).await?;
                         self.middle.update_tests(self.db.get_tests().await?);
                     }
                 };
@@ -369,16 +293,16 @@ impl App {
 
     fn get_help(&self) -> Vec<HelpItem> {
         let main_mode = &self.main_mode();
-        let mut keys = if self.error_component.has_error() {
+        let mut keys = self.bottom_bar.keys(main_mode);
+        keys.extend(if self.error_component.has_error() {
             self.error_component.keys(main_mode)
         } else if let Some(popup) = self.popups.last() {
             popup.component.keys(main_mode)
         } else {
             self.middle.keys(main_mode)
-        };
+        });
 
         keys.extend(self.top_bar.keys(main_mode));
-        keys.extend(self.bottom_bar.keys(main_mode));
 
         keys
     }

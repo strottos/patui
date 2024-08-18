@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local};
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use indexmap::IndexMap;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Frame,
@@ -24,7 +25,8 @@ pub(crate) struct TestComponentEdit<'a> {
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
     selected_component_idx: usize,
-    crupdate_button: Button,
+    extra_components: IndexMap<String, TextArea<'a>>,
+    edit_button: Button,
     cancel_button: Button,
 }
 
@@ -44,16 +46,17 @@ impl<'a> TestComponentEdit<'a> {
 
         let desc_component = TextArea::new("Description".to_string(), vec![]);
 
-        let crupdate_button = Button::new("Create".to_string());
-        let clear_button = Button::new("Clear".to_string());
+        let edit_button = Button::new("Create".to_string());
+        let cancel_button = Button::new("Cancel".to_string());
 
         Self {
             test: None,
             name_component,
             desc_component,
+            extra_components: IndexMap::new(),
             selected_component_idx: 0,
-            crupdate_button,
-            cancel_button: clear_button,
+            edit_button,
+            cancel_button,
         }
     }
 
@@ -72,7 +75,7 @@ impl<'a> TestComponentEdit<'a> {
 
         let desc_component = TextArea::new("Description".to_string(), vec![]);
 
-        let crupdate_button = Button::new("Update".to_string());
+        let edit_button = Button::new("Update".to_string());
         let cancel_button = Button::new("Cancel".to_string());
 
         Ok(Self {
@@ -80,7 +83,8 @@ impl<'a> TestComponentEdit<'a> {
             name_component,
             desc_component,
             selected_component_idx: 0,
-            crupdate_button,
+            extra_components: IndexMap::new(),
+            edit_button,
             cancel_button,
         })
     }
@@ -94,14 +98,14 @@ impl<'a> TestComponentEdit<'a> {
             }
         }
 
-        self.crupdate_button
+        self.edit_button
             .selected(selected_component_idx == num_components - 2);
         self.cancel_button
             .selected(selected_component_idx == num_components - 1);
     }
 
     fn num_components(&self) -> usize {
-        4
+        4 + self.extra_components.len()
     }
 
     fn get_component(&mut self, idx: usize) -> Option<&mut TextArea<'a>> {
@@ -133,11 +137,11 @@ impl<'a> TestComponentEdit<'a> {
         true
     }
 
-    fn is_ok_button(&mut self) -> bool {
+    fn is_ok_button(&self) -> bool {
         self.selected_component_idx == self.num_components() - 2
     }
 
-    fn is_cancel_button(&mut self) -> bool {
+    fn is_cancel_button(&self) -> bool {
         self.selected_component_idx == self.num_components() - 1
     }
 
@@ -236,7 +240,7 @@ impl<'a> Component for TestComponentEdit<'a> {
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.is_ok_button() {
-                    self.crupdate_button.pressed();
+                    self.edit_button.pressed();
                     ret.extend(self.crupdate_test(mode));
                 } else if self.is_cancel_button() {
                     self.clear_components();
@@ -262,13 +266,20 @@ impl<'a> Component for TestComponentEdit<'a> {
     }
 
     fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
-        vec![
-            HelpItem::new("<C-c> | <Esc>", "Cancel", "Cancel"),
+        let mut ret = vec![
+            HelpItem::new("<Esc>", "Cancel", "Cancel"),
             HelpItem::new("<C-Enter>", "Submit", "Submit"),
             HelpItem::new("<Tab>", "Next Field", "Next Field"),
             HelpItem::new("<S-Tab>", "Previous Field", "Previous Field"),
-            HelpItem::new("Enter", "Select", "Select"),
-        ]
+        ];
+
+        if self.is_ok_button() {
+            ret.push(HelpItem::new("<Enter>", "Create/Update", "Press Button"));
+        } else if self.is_cancel_button() {
+            ret.push(HelpItem::new("<Enter>", "Cancel", "Press Button"));
+        }
+
+        ret
     }
 }
 
@@ -303,7 +314,7 @@ impl<'a> PopupComponent for TestComponentEdit<'a> {
             )
             .split(inner[3]);
 
-        f.render_widget(self.crupdate_button.widget(), buttons_inner[1]);
+        f.render_widget(self.edit_button.widget(), buttons_inner[1]);
         f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
     }
 }

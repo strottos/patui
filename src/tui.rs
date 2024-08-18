@@ -1,7 +1,9 @@
 mod app;
 mod components;
+mod editor;
 mod error;
 mod terminal;
+mod types;
 
 pub(crate) use app::App;
 

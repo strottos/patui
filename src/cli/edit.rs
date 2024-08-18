@@ -1,11 +1,7 @@
-use std::{
-    io::{self, Read},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use clap::{Args, Parser};
 use color_eyre::Result;
-use edit::edit;
 
 use crate::{db::Database, types::PatuiTest};
 
@@ -41,9 +37,9 @@ impl EditTest {
         let test = db.get_test(self.id).await?;
 
         let yaml_str = test.to_editable_yaml_string()?;
-        let mut test = PatuiTest::edit_yaml(yaml_str)?;
+        let test = PatuiTest::edit_yaml(yaml_str)?;
 
-        db.edit_test(&mut test).await?;
+        let test = db.edit_test(test).await?;
         eprintln!("Successfully saved test: {}", test.name);
 
         Ok(())

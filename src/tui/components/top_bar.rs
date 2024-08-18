@@ -3,7 +3,7 @@ use crate::tui::app::{Action, MainMode};
 use super::Component;
 
 use color_eyre::eyre::{eyre, Result};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Style, Stylize},
@@ -115,17 +115,17 @@ impl Component for TopBar {
     fn input(&mut self, key: &crossterm::event::KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        let level = match key.code {
-            KeyCode::Char('1') => 1,
-            KeyCode::Char('2') => 2,
-            KeyCode::Char('3') => 3,
-            KeyCode::Char('4') => 4,
-            KeyCode::Char('5') => 5,
-            KeyCode::Char('6') => 6,
-            KeyCode::Char('7') => 7,
-            KeyCode::Char('8') => 8,
-            KeyCode::Char('9') => 9,
-            KeyCode::Esc => {
+        let level = match (key.code, key.modifiers) {
+            (KeyCode::Char('1'), KeyModifiers::CONTROL) => 1,
+            (KeyCode::Char('2'), KeyModifiers::CONTROL) => 2,
+            (KeyCode::Char('3'), KeyModifiers::CONTROL) => 3,
+            (KeyCode::Char('4'), KeyModifiers::CONTROL) => 4,
+            (KeyCode::Char('5'), KeyModifiers::CONTROL) => 5,
+            (KeyCode::Char('6'), KeyModifiers::CONTROL) => 6,
+            (KeyCode::Char('7'), KeyModifiers::CONTROL) => 7,
+            (KeyCode::Char('8'), KeyModifiers::CONTROL) => 8,
+            (KeyCode::Char('9'), KeyModifiers::CONTROL) => 9,
+            (KeyCode::Esc, KeyModifiers::NONE) => {
                 ret.push(Action::ClearKeys);
                 self.breadcrumb_name.len() - 1
             }
@@ -144,5 +144,13 @@ impl Component for TopBar {
         self.selected_idx = if level > 0 { level - 1 } else { 0 };
 
         Ok(ret)
+    }
+
+    fn keys(&self, _mode: &MainMode) -> Vec<crate::tui::components::HelpItem> {
+        vec![crate::tui::components::HelpItem::new(
+            "<C-num>",
+            "Breadcrumb num",
+            "Goto breadcrumb element <num>",
+        )]
     }
 }

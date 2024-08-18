@@ -117,7 +117,7 @@ impl Database {
         Ok(tests)
     }
 
-    pub(crate) async fn edit_test(&self, test: &mut PatuiTest) -> Result<i64> {
+    pub(crate) async fn edit_test(&self, mut test: PatuiTest) -> Result<PatuiTest> {
         debug!("Edit test...");
         trace!("Edit test {:?}...", test);
 
@@ -161,7 +161,7 @@ impl Database {
 
         test.id = Some(test_id);
 
-        Ok(test_id)
+        Ok(test)
     }
 }
 
@@ -195,7 +195,7 @@ mod tests {
         let (db, db_test, _tmpdir) = setup_db().await;
 
         let res = db
-            .edit_test(&mut PatuiTest {
+            .edit_test(PatuiTest {
                 id: None,
                 name: "test name".to_string(),
                 description: "test description".to_string(),
@@ -208,14 +208,15 @@ mod tests {
             .await;
 
         assert_that!(res).is_ok();
-        let test_id = res.unwrap();
-        assert_that!(test_id).is_greater_than(0);
+        let test = res.unwrap();
+        assert_that!(test.id).is_some();
+        assert_that!(test.id.unwrap()).is_greater_than(0);
 
         // Check it went in the DB
         let mut stmt = db_test
             .prepare("SELECT name, desc FROM test WHERE id = ?1")
             .unwrap();
-        let mut rows = stmt.query(rusqlite::params![test_id]).unwrap();
+        let mut rows = stmt.query(rusqlite::params![test.id.unwrap()]).unwrap();
         let row = rows.next();
         assert_that!(row).is_ok();
         assert_that!(row.as_ref().unwrap().is_some()).is_true();
@@ -225,14 +226,14 @@ mod tests {
         let row = rows.next().unwrap();
         assert_that!(row.is_none()).is_true();
 
-        let test = db.get_test(test_id).await.unwrap();
+        let test = db.get_test(test.id.unwrap()).await.unwrap();
         assert_that!(test.name).is_equal_to("test name".to_string());
         assert_that!(test.description).is_equal_to("test description".to_string());
         assert_that!(test.creation_date).is_equal_to("2021-01-01 00:00:00".to_string());
         assert_that!(test.last_updated).is_equal_to("2021-01-01 00:00:00".to_string());
         assert_that!(test.last_used_date).is_none();
         assert_that!(test.times_used).is_equal_to(0);
-        assert_that!(test.id).is_equal_to(Some(test_id));
+        assert_that!(test.id).is_equal_to(Some(test.id.unwrap()));
 
         let tests = db.get_tests().await.unwrap();
         assert_that!(tests).has_length(1);
@@ -242,7 +243,7 @@ mod tests {
         assert_that!(tests[0].last_updated).is_equal_to("2021-01-01 00:00:00".to_string());
         assert_that!(tests[0].last_used_date).is_none();
         assert_that!(tests[0].times_used).is_equal_to(0);
-        assert_that!(tests[0].id).is_equal_to(Some(test_id));
+        assert_that!(tests[0].id).is_equal_to(Some(test.id.unwrap()));
     }
 
     #[tokio::test]
@@ -250,7 +251,7 @@ mod tests {
         let (db, db_test, _tmpdir) = setup_db().await;
 
         let res = db
-            .edit_test(&mut PatuiTest {
+            .edit_test(PatuiTest {
                 id: None,
                 name: "test name".to_string(),
                 description: "test description".to_string(),
@@ -275,14 +276,15 @@ mod tests {
             .await;
 
         assert_that!(res).is_ok();
-        let test_id = res.unwrap();
-        assert_that!(test_id).is_greater_than(0);
+        let test = res.unwrap();
+        assert_that!(test.id).is_some();
+        assert_that!(test.id.unwrap()).is_greater_than(0);
 
         // Check it went in the DB
         let mut stmt = db_test
             .prepare("SELECT name, desc, steps FROM test WHERE id = ?1")
             .unwrap();
-        let mut rows = stmt.query(rusqlite::params![test_id]).unwrap();
+        let mut rows = stmt.query(rusqlite::params![test.id.unwrap()]).unwrap();
 
         // Check first step
         let row = rows.next();

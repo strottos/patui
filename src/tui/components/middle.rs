@@ -88,7 +88,7 @@ impl Component for Middle {
     fn keys(&self, mode: &MainMode) -> Vec<HelpItem> {
         match mode {
             MainMode::Test => self.test_component.keys(mode),
-            MainMode::TestDetail(_) => self.test_detail_component.keys(mode),
+            MainMode::TestDetail(_) => self.test_component.keys(mode),
             MainMode::TestDetailSelected(_) => self.test_detail_component.keys(mode),
         }
     }
