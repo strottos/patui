@@ -41,7 +41,7 @@ impl Middle {
     }
 
     pub(crate) fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
-        if mode.is_test_detail() || mode.is_test_detail_selected() {
+        if mode.is_test_detail() || mode.is_test_detail_selected() || mode.is_test_detail_step() {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -56,16 +56,20 @@ impl Middle {
 
 impl Component for Middle {
     fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
-        if let MainMode::TestDetailSelected(_) = mode {
-            let ret = self.test_detail_component.input(key, mode)?;
-            return Ok(ret);
-        } else if let MainMode::TestDetail(id) = mode {
-            if let (KeyCode::Enter, KeyModifiers::NONE) = (key.code, key.modifiers) {
-                return Ok(vec![Action::ModeChange {
-                    mode: MainMode::create_test_detail_with_selected_id(*id),
-                    breadcrumb_direction: BreadcrumbDirection::Forward,
-                }]);
+        match mode {
+            MainMode::TestDetailSelected(_) | MainMode::TestDetailStep(_, _) => {
+                let ret = self.test_detail_component.input(key, mode)?;
+                return Ok(ret);
             }
+            MainMode::TestDetail(id) => {
+                if let (KeyCode::Enter, KeyModifiers::NONE) = (key.code, key.modifiers) {
+                    return Ok(vec![Action::ModeChange {
+                        mode: MainMode::create_test_detail_with_selected_id(*id),
+                        breadcrumb_direction: BreadcrumbDirection::Forward,
+                    }]);
+                }
+            }
+            _ => (),
         }
 
         self.test_component.input(key, mode)
@@ -90,6 +94,7 @@ impl Component for Middle {
             MainMode::Test => self.test_component.keys(mode),
             MainMode::TestDetail(_) => self.test_component.keys(mode),
             MainMode::TestDetailSelected(_) => self.test_detail_component.keys(mode),
+            MainMode::TestDetailStep(_, _) => self.test_detail_component.keys(mode),
         }
     }
 }

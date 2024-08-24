@@ -55,7 +55,7 @@ impl TestComponent {
     }
 
     fn render_table(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
-        let style = if mode.is_test_detail_selected() {
+        let style = if mode.is_test_detail_selected() || mode.is_test_detail_step() {
             Style::default().fg(Color::DarkGray)
         } else {
             Style::default()
@@ -467,7 +467,7 @@ impl Component for TestComponent {
                     "Skip forward or backwards half a page of tests",
                 ),
             ],
-            MainMode::TestDetailSelected(_) => unreachable!(),
+            _ => unreachable!(),
         }
     }
 }

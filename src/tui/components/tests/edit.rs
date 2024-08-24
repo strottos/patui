@@ -200,6 +200,10 @@ impl<'a> TestComponentEdit<'a> {
                         mode: MainMode::create_test_detail_with_selected_id(*id),
                         breadcrumb_direction: BreadcrumbDirection::None,
                     }),
+                    MainMode::TestDetailStep(id, step_idx) => ret.push(Action::ModeChange {
+                        mode: MainMode::create_test_detail_step(*id, *step_idx),
+                        breadcrumb_direction: BreadcrumbDirection::None,
+                    }),
                 }
                 ret.push(Action::ClearKeys);
                 ret

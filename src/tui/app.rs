@@ -203,6 +203,9 @@ impl App {
                             MainMode::TestDetailSelected(id) => {
                                 format!("Test Details {}", id)
                             }
+                            MainMode::TestDetailStep(id, step_num) => {
+                                format!("Test Details {} Step {}", id, step_num)
+                            }
                         },
                         mode.clone(),
                     );
@@ -233,11 +236,20 @@ impl App {
                         let test = self.db.get_test(*id).await?;
                         super::editor::edit_test(test)
                     }
+                    EditorMode::UpdateTestStep(id, step_num) => {
+                        let test = self.db.get_test(*id).await?;
+                        super::editor::edit_step(test, *step_num)
+                    }
                 };
+                trace!("Got test result: {:?}", test_result);
                 match test_result {
                     Ok(test) => {
+                        trace!("Changing DB: {:?}", test);
+                        let id = test.id;
                         ret.push(Action::DbChange(DbChange::Test(test)));
-                        tui.enter()?;
+                        if let Some(id) = id {
+                            ret.push(Action::DbRead(DbRead::TestDetail(id)));
+                        }
                     }
                     Err(e) => {
                         ret.push(Action::Error(Error::new(
@@ -246,7 +258,8 @@ impl App {
                                 "Error {} test, editor failure\n\n{}",
                                 match editor_mode {
                                     EditorMode::CreateTest => "creating",
-                                    EditorMode::UpdateTest(_) => "editing",
+                                    EditorMode::UpdateTest(_)
+                                    | EditorMode::UpdateTestStep(_, _) => "editing",
                                 },
                                 e
                             ),

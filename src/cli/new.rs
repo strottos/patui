@@ -69,7 +69,7 @@ impl NewTest {
             let test = if self.no_edit {
                 PatuiTest::from_yaml_str(&contents)?
             } else {
-                PatuiTest::edit_yaml(contents)?
+                PatuiTest::edit_yaml(contents, None)?
             };
             tests.push(test);
         }
@@ -85,7 +85,7 @@ impl NewTest {
                 tests.push(template);
             } else {
                 let yaml_str = template.to_editable_yaml_string()?;
-                let test = PatuiTest::edit_yaml(yaml_str)?;
+                let test = PatuiTest::edit_yaml(yaml_str, None)?;
                 tests.push(test);
             }
         }

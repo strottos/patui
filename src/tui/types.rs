@@ -7,6 +7,7 @@ pub(crate) enum MainMode {
     Test,
     TestDetail(i64),
     TestDetailSelected(i64),
+    TestDetailStep(i64, usize),
 }
 
 impl MainMode {
@@ -22,6 +23,10 @@ impl MainMode {
         matches!(self, MainMode::TestDetailSelected(_))
     }
 
+    pub(crate) fn is_test_detail_step(&self) -> bool {
+        matches!(self, MainMode::TestDetailStep(_, _))
+    }
+
     pub(crate) fn matched(&self, other_mode: &MainMode) -> bool {
         match self {
             MainMode::Test => *other_mode == MainMode::Test,
@@ -31,6 +36,7 @@ impl MainMode {
             MainMode::TestDetailSelected(_) => {
                 matches!(other_mode, MainMode::TestDetailSelected(_))
             }
+            MainMode::TestDetailStep(_, _) => matches!(other_mode, MainMode::TestDetailStep(_, _)),
         }
     }
 
@@ -44,6 +50,10 @@ impl MainMode {
 
     pub(crate) fn create_test_detail_with_selected_id(id: i64) -> Self {
         MainMode::TestDetailSelected(id)
+    }
+
+    pub(crate) fn create_test_detail_step(id: i64, step_num: usize) -> Self {
+        MainMode::TestDetailStep(id, step_num)
     }
 }
 
@@ -97,6 +107,7 @@ impl Popup {
 pub(crate) enum EditorMode {
     CreateTest,
     UpdateTest(i64),
+    UpdateTestStep(i64, usize),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

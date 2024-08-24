@@ -8,9 +8,10 @@
 use std::io::Read;
 
 use color_eyre::Result;
+use convert_case::{Case, Casing};
 use edit::edit;
 use serde::{Deserialize, Serialize};
-use strum::{EnumDiscriminants, EnumIter, VariantArray, VariantNames};
+use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTest {
@@ -65,11 +66,12 @@ impl PatuiTest {
         Ok(test)
     }
 
-    pub(crate) fn edit_yaml(mut yaml_str: String) -> Result<Self> {
+    pub(crate) fn edit_yaml(mut yaml_str: String, id: Option<i64>) -> Result<Self> {
         loop {
             yaml_str = edit(&yaml_str)?;
             match PatuiTest::from_yaml_str(&yaml_str) {
-                Ok(test) => {
+                Ok(mut test) => {
+                    test.id = id;
                     return Ok(test);
                 }
                 Err(e) => {
@@ -134,12 +136,80 @@ pub(crate) struct PatuiTestEditable {
 }
 
 #[derive(
-    Debug, Clone, Eq, PartialEq, Deserialize, Serialize, EnumIter, EnumDiscriminants, VariantNames,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Deserialize,
+    Serialize,
+    EnumIter,
+    EnumDiscriminants,
+    IntoStaticStr,
+    VariantNames,
 )]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum PatuiStepDetails {
     Shell(PatuiStepShell),
     Assertion(PatuiStepAssertion),
+}
+
+impl PatuiStepDetails {
+    pub(crate) fn get_display_yaml(&self) -> Result<Vec<String>> {
+        let mut ret = vec![];
+
+        let name: &'static str = self.into();
+        ret.push(format!("- {}:", name.to_case(Case::Pascal)));
+        let yaml = self.inner_yaml()?;
+        yaml.lines().for_each(|line| {
+            ret.push(format!("    {}", line));
+        });
+
+        Ok(ret)
+    }
+
+    pub(crate) fn inner_yaml(&self) -> Result<String> {
+        Ok(match self {
+            PatuiStepDetails::Shell(shell) => serde_yaml::to_string(shell)?,
+            PatuiStepDetails::Assertion(assertion) => serde_yaml::to_string(assertion)?,
+        })
+    }
+
+    pub(crate) fn to_editable_yaml(&self) -> Result<String> {
+        match self {
+            PatuiStepDetails::Shell(shell) => Ok(serde_yaml::to_string(&shell.contents)?),
+            _ => self.inner_yaml(),
+        }
+    }
+
+    pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStepDetails) -> Result<Self> {
+        loop {
+            yaml_str = edit(&yaml_str)?;
+            match PatuiStepDetails::from_yaml_str(&yaml_str, step) {
+                Ok(step) => {
+                    return Ok(step);
+                }
+                Err(e) => {
+                    eprintln!("Failed to parse yaml: {e}\nPress any key to continue editing or Ctrl-C to cancel...");
+                    let buffer = &mut [0u8];
+                    let _ = std::io::stdin().read_exact(buffer);
+                }
+            };
+        }
+    }
+
+    pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStepDetails) -> Result<Self> {
+        Ok(match step {
+            PatuiStepDetails::Shell(shell_step) => {
+                let contents = serde_yaml::from_str::<PatuiStepShell>(yaml)?;
+                PatuiStepDetails::Shell(PatuiStepShell {
+                    shell: shell_step.shell.clone(),
+                    contents: contents.contents,
+                    location: shell_step.location.clone(),
+                })
+            }
+            _ => serde_yaml::from_str::<PatuiStepDetails>(yaml)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
