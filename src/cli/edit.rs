@@ -37,9 +37,9 @@ impl EditTest {
         let test = db.get_test(self.id).await?;
 
         let yaml_str = test.to_editable_yaml_string()?;
-        let test = PatuiTest::edit_yaml(yaml_str, test.id)?;
+        let mut test = PatuiTest::edit_yaml(yaml_str, test.id)?;
 
-        let test = db.edit_test(test).await?;
+        db.edit_test(&mut test).await?;
         eprintln!("Successfully saved test: {}", test.name);
 
         Ok(())

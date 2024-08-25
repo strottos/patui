@@ -111,6 +111,11 @@ impl PatuiTest {
             status,
         }
     }
+
+    pub(crate) fn id(&self) -> Result<i64> {
+        self.id
+            .ok_or_else(|| color_eyre::eyre::eyre!("No ID found"))
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]

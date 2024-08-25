@@ -1,71 +1,29 @@
-use crate::tui::app::{Action, MainMode};
+use crate::tui::{
+    app::{Action, PaneType, UpdateData},
+    panes::Pane,
+};
 
-use super::Component;
-
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Style, Stylize},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
 #[derive(Debug)]
 pub(crate) struct TopBar {
-    breadcrumb_name: Vec<String>,
-    breadcrumb_mode: Vec<MainMode>,
+    panes_titles: Vec<String>,
     selected_idx: usize,
 }
 
 impl TopBar {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(panes_titles: Vec<String>) -> Self {
         Self {
-            breadcrumb_name: vec!["Tests".to_string()],
-            breadcrumb_mode: vec![MainMode::Test],
+            panes_titles,
             selected_idx: 0,
-        }
-    }
-
-    pub(crate) fn push(&mut self, name: String, mode: MainMode) {
-        if let Some(last_mode) = &self.breadcrumb_mode.last() {
-            // If changing ids
-            if mode.matched(last_mode) {
-                self.breadcrumb_name.pop();
-                self.breadcrumb_mode.pop();
-                self.selected_idx -= 1;
-            }
-        }
-
-        self.selected_idx += 1;
-
-        self.breadcrumb_name.push(name);
-        self.breadcrumb_mode.push(mode);
-
-        assert!(self.breadcrumb_name.len() == self.breadcrumb_mode.len());
-        assert!(self.selected_idx < self.breadcrumb_name.len());
-    }
-
-    pub(crate) fn pop(&mut self) {
-        if self.breadcrumb_name.len() > 1 {
-            self.breadcrumb_name.pop();
-            self.breadcrumb_mode.pop();
-
-            if self.selected_idx > 0 {
-                self.selected_idx -= 1;
-            }
-        }
-
-        assert!(self.breadcrumb_name.len() == self.breadcrumb_mode.len());
-        assert!(self.selected_idx < self.breadcrumb_name.len());
-    }
-
-    pub(crate) fn get_main_mode(&self) -> Result<&MainMode> {
-        if let Some(elem) = self.breadcrumb_mode.get(self.selected_idx) {
-            Ok(elem)
-        } else {
-            Err(eyre!("No breadcrumb mode found"))
         }
     }
 
@@ -77,21 +35,19 @@ impl TopBar {
 
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(5), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Min(5), Constraint::Length(10)].as_ref())
             .split(rect);
 
-        assert!(self.breadcrumb_name.len() == self.breadcrumb_mode.len());
-        assert!(self.selected_idx < self.breadcrumb_name.len());
-
         let breadcrumb = self
-            .breadcrumb_name
+            .panes_titles
             .iter()
             .enumerate()
-            .map(|(i, breadcrumb_name)| {
+            .map(|(i, pane)| {
+                let title = Span::from(pane);
                 if self.selected_idx == i {
-                    format!("({}) {}", i + 1, breadcrumb_name).white()
+                    title.white()
                 } else {
-                    format!("({}) {}", i + 1, breadcrumb_name).into()
+                    title
                 }
             })
             .intersperse(" > ".into())
@@ -109,13 +65,15 @@ impl TopBar {
         let right = Paragraph::new(Line::from("   Patui ")).alignment(Alignment::Right);
         f.render_widget(right, chunks[1]);
     }
-}
 
-impl Component for TopBar {
-    fn input(&mut self, key: &crossterm::event::KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+    pub(crate) fn input(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+        panes_len: usize,
+    ) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        let level = match (key.code, key.modifiers) {
+        let level: usize = match (key.code, key.modifiers) {
             (KeyCode::Char('1'), KeyModifiers::CONTROL) => 1,
             (KeyCode::Char('2'), KeyModifiers::CONTROL) => 2,
             (KeyCode::Char('3'), KeyModifiers::CONTROL) => 3,
@@ -125,32 +83,47 @@ impl Component for TopBar {
             (KeyCode::Char('7'), KeyModifiers::CONTROL) => 7,
             (KeyCode::Char('8'), KeyModifiers::CONTROL) => 8,
             (KeyCode::Char('9'), KeyModifiers::CONTROL) => 9,
-            (KeyCode::Esc, KeyModifiers::NONE) => {
-                ret.push(Action::ClearKeys);
-                self.breadcrumb_name.len() - 1
-            }
             _ => return Ok(vec![]),
         };
 
-        if level >= self.breadcrumb_name.len() || level == 0 {
+        if level >= panes_len || level == 0 {
             return Ok(vec![]);
         }
 
-        for _ in level..self.breadcrumb_name.len() {
-            self.breadcrumb_name.pop();
-            self.breadcrumb_mode.pop();
-        }
+        // Should always be at least 0 because level == 0 handled above
+        self.selected_idx = level - 1;
 
-        self.selected_idx = if level > 0 { level - 1 } else { 0 };
+        ret.push(Action::PaneChange(level));
 
         Ok(ret)
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<crate::tui::components::HelpItem> {
-        vec![crate::tui::components::HelpItem::new(
-            "<C-num>",
-            "Breadcrumb num",
-            "Goto breadcrumb element <num>",
-        )]
+    pub(crate) fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
+        match action {
+            Action::PaneChange(level) => {
+                self.selected_idx = *level - 1;
+            }
+            Action::UpdateData(UpdateData::BreadcrumbTitles(titles)) => {
+                self.panes_titles = titles.clone();
+            }
+            _ => {}
+        }
+
+        Ok(vec![])
+    }
+
+    pub(crate) fn keys(&self, _mode: &PaneType) -> Vec<crate::tui::components::HelpItem> {
+        vec![
+            crate::tui::components::HelpItem::new(
+                "<C-num>",
+                "Breadcrumb num",
+                "Goto breadcrumb element <num>",
+            ),
+            (crate::tui::components::HelpItem::new(
+                "<Esc>",
+                "Revert level",
+                "Go up a level in the breadcrumb",
+            )),
+        ]
     }
 }

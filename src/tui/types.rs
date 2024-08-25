@@ -2,58 +2,59 @@ use crate::types::PatuiTest;
 
 use super::{components::PopupComponent, error::Error};
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum MainMode {
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+pub(crate) enum PaneType {
+    #[default]
     Test,
     TestDetail(i64),
     TestDetailSelected(i64),
     TestDetailStep(i64, usize),
 }
 
-impl MainMode {
+impl PaneType {
     pub(crate) fn is_test(&self) -> bool {
-        matches!(self, MainMode::Test)
+        matches!(self, PaneType::Test)
     }
 
     pub(crate) fn is_test_detail(&self) -> bool {
-        matches!(self, MainMode::TestDetail(_))
+        matches!(self, PaneType::TestDetail(_))
     }
 
     pub(crate) fn is_test_detail_selected(&self) -> bool {
-        matches!(self, MainMode::TestDetailSelected(_))
+        matches!(self, PaneType::TestDetailSelected(_))
     }
 
     pub(crate) fn is_test_detail_step(&self) -> bool {
-        matches!(self, MainMode::TestDetailStep(_, _))
+        matches!(self, PaneType::TestDetailStep(_, _))
     }
 
-    pub(crate) fn matched(&self, other_mode: &MainMode) -> bool {
+    pub(crate) fn matched(&self, other_mode: &PaneType) -> bool {
         match self {
-            MainMode::Test => *other_mode == MainMode::Test,
-            MainMode::TestDetail(_) => {
-                matches!(other_mode, MainMode::TestDetail(_))
+            PaneType::Test => *other_mode == PaneType::Test,
+            PaneType::TestDetail(_) => {
+                matches!(other_mode, PaneType::TestDetail(_))
             }
-            MainMode::TestDetailSelected(_) => {
-                matches!(other_mode, MainMode::TestDetailSelected(_))
+            PaneType::TestDetailSelected(_) => {
+                matches!(other_mode, PaneType::TestDetailSelected(_))
             }
-            MainMode::TestDetailStep(_, _) => matches!(other_mode, MainMode::TestDetailStep(_, _)),
+            PaneType::TestDetailStep(_, _) => matches!(other_mode, PaneType::TestDetailStep(_, _)),
         }
     }
 
     pub(crate) fn create_normal() -> Self {
-        MainMode::Test
+        PaneType::Test
     }
 
     pub(crate) fn create_test_detail(id: i64) -> Self {
-        MainMode::TestDetail(id)
+        PaneType::TestDetail(id)
     }
 
     pub(crate) fn create_test_detail_with_selected_id(id: i64) -> Self {
-        MainMode::TestDetailSelected(id)
+        PaneType::TestDetailSelected(id)
     }
 
     pub(crate) fn create_test_detail_step(id: i64, step_num: usize) -> Self {
-        MainMode::TestDetailStep(id, step_num)
+        PaneType::TestDetailStep(id, step_num)
     }
 }
 
@@ -69,10 +70,10 @@ pub(crate) enum DbChange {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum BreadcrumbDirection {
-    Forward,
-    None,
-    Backward,
+pub(crate) enum UpdateData {
+    Tests(Vec<PatuiTest>),
+    TestDetail(PatuiTest),
+    BreadcrumbTitles(Vec<String>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -118,13 +119,12 @@ pub(crate) enum Action {
     Resize(u16, u16),
     Quit,
     Error(Error),
-    ModeChange {
-        mode: MainMode,
-        breadcrumb_direction: BreadcrumbDirection,
-    },
+    ModeChange { mode: PaneType },
+    PaneChange(usize),
     PopupCreate(PopupMode),
     PopupClose,
     EditorMode(EditorMode),
     DbRead(DbRead),
     DbChange(DbChange),
+    UpdateData(UpdateData),
 }

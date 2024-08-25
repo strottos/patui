@@ -117,7 +117,7 @@ impl Database {
         Ok(tests)
     }
 
-    pub(crate) async fn edit_test(&self, mut test: PatuiTest) -> Result<PatuiTest> {
+    pub(crate) async fn edit_test(&self, test: &mut PatuiTest) -> Result<()> {
         debug!("Edit test...");
         trace!("Edit test {:?}...", test);
 
@@ -161,7 +161,7 @@ impl Database {
 
         test.id = Some(test_id);
 
-        Ok(test)
+        Ok(())
     }
 }
 
@@ -194,21 +194,20 @@ mod tests {
     async fn test_create_and_read_test() {
         let (db, db_test, _tmpdir) = setup_db().await;
 
-        let res = db
-            .edit_test(PatuiTest {
-                id: None,
-                name: "test name".to_string(),
-                description: "test description".to_string(),
-                creation_date: "2021-01-01 00:00:00".to_string(),
-                last_updated: "2021-01-01 00:00:00".to_string(),
-                last_used_date: None,
-                times_used: 0,
-                steps: vec![],
-            })
-            .await;
+        let mut test = PatuiTest {
+            id: None,
+            name: "test name".to_string(),
+            description: "test description".to_string(),
+            creation_date: "2021-01-01 00:00:00".to_string(),
+            last_updated: "2021-01-01 00:00:00".to_string(),
+            last_used_date: None,
+            times_used: 0,
+            steps: vec![],
+        };
+
+        let res = db.edit_test(&mut test).await;
 
         assert_that!(res).is_ok();
-        let test = res.unwrap();
         assert_that!(test.id).is_some();
         assert_that!(test.id.unwrap()).is_greater_than(0);
 
@@ -250,33 +249,32 @@ mod tests {
     async fn test_create_and_read_test_with_steps() {
         let (db, db_test, _tmpdir) = setup_db().await;
 
-        let res = db
-            .edit_test(PatuiTest {
-                id: None,
-                name: "test name".to_string(),
-                description: "test description".to_string(),
-                creation_date: "2021-01-01 00:00:00".to_string(),
-                last_updated: "2021-01-01 00:00:00".to_string(),
-                last_used_date: None,
-                times_used: 0,
-                steps: vec![
-                    PatuiStepDetails::Shell(PatuiStepShell {
-                        shell: Some("bash".to_string()),
-                        contents: "echo 'hello'".to_string(),
-                        location: None,
-                    }),
-                    PatuiStepDetails::Assertion(PatuiStepAssertion {
-                        assertion: PatuiStepAssertionType::Equal,
-                        negate: false,
-                        lhs: "foo".to_string(),
-                        rhs: "bar".to_string(),
-                    }),
-                ],
-            })
-            .await;
+        let mut test = PatuiTest {
+            id: None,
+            name: "test name".to_string(),
+            description: "test description".to_string(),
+            creation_date: "2021-01-01 00:00:00".to_string(),
+            last_updated: "2021-01-01 00:00:00".to_string(),
+            last_used_date: None,
+            times_used: 0,
+            steps: vec![
+                PatuiStepDetails::Shell(PatuiStepShell {
+                    shell: Some("bash".to_string()),
+                    contents: "echo 'hello'".to_string(),
+                    location: None,
+                }),
+                PatuiStepDetails::Assertion(PatuiStepAssertion {
+                    assertion: PatuiStepAssertionType::Equal,
+                    negate: false,
+                    lhs: "foo".to_string(),
+                    rhs: "bar".to_string(),
+                }),
+            ],
+        };
+
+        let res = db.edit_test(&mut test).await;
 
         assert_that!(res).is_ok();
-        let test = res.unwrap();
         assert_that!(test.id).is_some();
         assert_that!(test.id.unwrap()).is_greater_than(0);
 

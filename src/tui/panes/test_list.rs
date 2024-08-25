@@ -15,16 +15,18 @@ use ratatui::{
 
 use crate::{
     tui::{
-        app::{Action, BreadcrumbDirection, DbRead, EditorMode, MainMode, PopupMode},
-        components::{Component, HelpItem},
+        app::{Action, DbRead, EditorMode, PaneType, PopupMode, UpdateData},
+        components::HelpItem,
     },
     types::PatuiTest,
 };
 
+use super::Pane;
+
 const SHORT_WIDTH_DISPLAY: u16 = 60;
 
 #[derive(Debug)]
-pub(crate) struct TestComponent {
+pub(crate) struct TestsPane {
     initialized: bool,
     loading: bool,
 
@@ -35,7 +37,7 @@ pub(crate) struct TestComponent {
     tests: Vec<PatuiTest>,
 }
 
-impl TestComponent {
+impl TestsPane {
     pub(crate) fn new() -> Self {
         Self {
             initialized: false,
@@ -49,16 +51,11 @@ impl TestComponent {
         }
     }
 
-    pub(crate) fn render(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
-        self.render_table(f, r, mode);
-        self.render_scrollbar(f, r);
-    }
-
-    fn render_table(&self, f: &mut Frame, r: Rect, mode: &MainMode) {
-        let style = if mode.is_test_detail_selected() || mode.is_test_detail_step() {
-            Style::default().fg(Color::DarkGray)
-        } else {
+    fn render_table(&self, f: &mut Frame, r: Rect, is_selected: bool) {
+        let style = if is_selected {
             Style::default()
+        } else {
+            Style::default().fg(Color::DarkGray)
         };
 
         let block = Block::default()
@@ -140,7 +137,7 @@ impl TestComponent {
                 )
             })
             .map(|(i, row)| {
-                let style = if self.selected_idx == i as isize && mode.is_test_detail() {
+                let style = if self.selected_idx == i as isize && is_selected {
                     Style::default().fg(Color::Black).bg(Color::White)
                 } else {
                     Style::default()
@@ -289,23 +286,40 @@ impl TestComponent {
 
         self.selected_idx != old_selected_idx
     }
+
+    fn get_selected_test_id(&self) -> Option<i64> {
+        if self.selected_idx == -1 {
+            None
+        } else {
+            self.tests[self.selected_idx as usize].id
+        }
+    }
 }
 
-impl Component for TestComponent {
+impl Pane for TestsPane {
+    fn render(&self, f: &mut Frame, r: Rect, is_selected: bool) {
+        self.render_table(f, r, is_selected);
+        self.render_scrollbar(f, r);
+    }
+
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        if let Action::Tick = action {
-            if !self.loading && !self.initialized {
-                self.loading = true;
-                ret.push(Action::DbRead(DbRead::Test));
+        match action {
+            Action::Tick => {
+                if !self.loading && !self.initialized {
+                    self.loading = true;
+                    ret.push(Action::DbRead(DbRead::Test));
+                }
             }
+            Action::UpdateData(UpdateData::Tests(tests)) => self.update_tests(tests.clone()),
+            _ => (),
         }
 
         Ok(ret)
     }
 
-    fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
         let mut actions = vec![];
 
         match (key.code, key.modifiers) {
@@ -336,10 +350,7 @@ impl Component for TestComponent {
             (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
                 if self.navigate(1, true) {
                     actions.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail(
-                            self.tests[self.selected_idx as usize].id.unwrap(),
-                        ),
-                        breadcrumb_direction: BreadcrumbDirection::Forward,
+                        mode: self.pane_type(),
                     });
                 }
                 actions.push(Action::ClearKeys);
@@ -347,10 +358,7 @@ impl Component for TestComponent {
             (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
                 if self.navigate(-1, true) {
                     actions.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail(
-                            self.tests[self.selected_idx as usize].id.unwrap(),
-                        ),
-                        breadcrumb_direction: BreadcrumbDirection::Forward,
+                        mode: self.pane_type(),
                     });
                 }
                 actions.push(Action::ClearKeys);
@@ -372,12 +380,10 @@ impl Component for TestComponent {
                     KeyCode::Char('y') => -1,
                     _ => unreachable!(),
                 };
-                if self.scroll_page(scroll_count) && mode.is_test_detail() {
+                if self.scroll_page(scroll_count) {
+                    // TODO: ^^^ && mode.is_test_detail() {
                     actions.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail(
-                            self.tests[self.selected_idx as usize].id.unwrap(),
-                        ),
-                        breadcrumb_direction: BreadcrumbDirection::Forward,
+                        mode: self.pane_type(),
                     });
                 }
                 actions.push(Action::ClearKeys);
@@ -412,14 +418,23 @@ impl Component for TestComponent {
                     _ => unreachable!(),
                 }
                 actions.push(Action::ModeChange {
-                    mode: MainMode::create_test_detail(
-                        self.tests[self.selected_idx as usize].id.unwrap(),
-                    ),
-                    breadcrumb_direction: BreadcrumbDirection::Forward,
+                    mode: self.pane_type(),
+                });
+                actions.push(Action::ClearKeys);
+            }
+            (KeyCode::Esc, KeyModifiers::NONE) => {
+                self.selected_idx = -1;
+                actions.push(Action::ModeChange {
+                    mode: PaneType::Test,
                 });
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
+                if let Some(id) = self.get_selected_test_id() {
+                    actions.push(Action::ModeChange {
+                        mode: PaneType::TestDetailSelected(id),
+                    });
+                }
                 actions.push(Action::ClearKeys);
             }
             _ => {}
@@ -428,46 +443,42 @@ impl Component for TestComponent {
         Ok(actions)
     }
 
-    fn keys(&self, mode: &MainMode) -> Vec<HelpItem> {
-        match mode {
-            MainMode::Test => vec![
-                HelpItem::new("n", "New Test", "New Test"),
-                HelpItem::new("C-n", "New Yaml Test", "New Test from editing a Yaml File"),
-                HelpItem::new("↑ | ↓ | j | k", "Navigate", "Navigate"),
-                HelpItem::new(
-                    "C-f | C-b",
-                    "Page Forward / Backward",
-                    "Go forward or backwards a page of tests",
-                ),
-                HelpItem::new(
-                    "C-d | C-u",
-                    "Half Page Forward / Backward",
-                    "Skip forward or backwards half a page of tests",
-                ),
-            ],
-            MainMode::TestDetail(_) => vec![
-                HelpItem::new("n", "New Test", "New Test"),
-                HelpItem::new("C-n", "New Test Yaml", "Create new Test Yaml in Editor"),
-                HelpItem::new("u", "Update Test", "Update Test"),
-                HelpItem::new("e", "Edit Test Yaml", "Edit Test Yaml in Editor"),
-                HelpItem::new("↑ | ↓ | j | k", "Navigate", "Navigate"),
-                HelpItem::new(
-                    "C-e | C-y",
-                    "Line Forward / Backward",
-                    "Go forward or backwards a line of tests",
-                ),
-                HelpItem::new(
-                    "C-f | C-b",
-                    "Page Forward / Backward",
-                    "Go forward or backwards a page of tests",
-                ),
-                HelpItem::new(
-                    "C-d | C-u",
-                    "Half Page Forward / Backward",
-                    "Skip forward or backwards half a page of tests",
-                ),
-            ],
-            _ => unreachable!(),
+    fn keys(&self) -> Vec<HelpItem> {
+        vec![
+            HelpItem::new("n", "New Test", "New Test"),
+            HelpItem::new("C-n", "New Test Yaml", "Create new Test Yaml in Editor"),
+            HelpItem::new("u", "Update Test", "Update Test"),
+            HelpItem::new("e", "Edit Test Yaml", "Edit Test Yaml in Editor"),
+            HelpItem::new("↑ | ↓ | j | k", "Navigate", "Navigate"),
+            HelpItem::new(
+                "C-e | C-y",
+                "Line Forward / Backward",
+                "Go forward or backwards a line of tests",
+            ),
+            HelpItem::new(
+                "C-f | C-b",
+                "Page Forward / Backward",
+                "Go forward or backwards a page of tests",
+            ),
+            HelpItem::new(
+                "C-d | C-u",
+                "Half Page Forward / Backward",
+                "Skip forward or backwards half a page of tests",
+            ),
+        ]
+    }
+
+    fn pane_type(&self) -> PaneType {
+        match self.get_selected_test_id() {
+            Some(id) => PaneType::TestDetail(id),
+            None => PaneType::Test,
+        }
+    }
+
+    fn pane_title(&self) -> String {
+        match self.get_selected_test_id() {
+            Some(id) => format!("Tests (selected id = {})", id),
+            None => "Tests".to_string(),
         }
     }
 }
@@ -491,8 +502,8 @@ mod tests {
         }
     }
 
-    fn create_test_component(num_tests: i64) -> TestComponent {
-        let mut ret = TestComponent::new();
+    fn create_test_component(num_tests: i64) -> TestsPane {
+        let mut ret = TestsPane::new();
 
         let mut tests = vec![];
         for i in 0..num_tests {

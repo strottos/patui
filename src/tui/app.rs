@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp, sync::Arc};
 
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -12,10 +12,11 @@ use tracing::{debug, trace};
 
 use super::{
     components::{
-        BottomBar, Component, ErrorComponent, HelpComponent, HelpItem, Middle, PopupComponent,
+        BottomBar, Component, ErrorComponent, HelpComponent, HelpItem, PopupComponent,
         TestComponentEdit, TopBar,
     },
     error::{Error, ErrorType},
+    panes::{Pane, TestDetailsPane},
     terminal::{Event, Tui},
 };
 use crate::db::Database;
@@ -23,15 +24,25 @@ use crate::db::Database;
 pub(crate) use super::types::*;
 
 #[derive(Debug)]
+enum OtherPane {
+    Left(usize),
+    Right(usize),
+    None,
+}
+
+#[derive(Debug)]
 pub(crate) struct App {
     should_quit: bool,
     last_key_events: Vec<KeyEvent>,
     db: Arc<Database>,
 
+    panes: Vec<Box<dyn Pane>>,
     popups: Vec<Popup>,
 
+    selected_pane: usize,
+    other_pane: OtherPane,
+
     top_bar: TopBar,
-    middle: Middle,
     bottom_bar: BottomBar,
     error_component: ErrorComponent,
 }
@@ -40,20 +51,24 @@ impl App {
     pub(crate) fn new(db: Arc<Database>) -> Result<Self> {
         let last_key_events = vec![];
 
-        let top_bar = TopBar::new();
-        let middle = Middle::new();
+        let top_bar = TopBar::new(vec!["Tests".to_string()]);
         let bottom_bar = BottomBar::new();
         let error_component = ErrorComponent::new();
+
+        let panes: Vec<Box<dyn Pane>> = vec![Box::new(super::panes::TestsPane::new())];
 
         Ok(Self {
             should_quit: false,
             last_key_events,
             db,
 
+            panes,
             popups: vec![],
 
+            selected_pane: 0,
+            other_pane: OtherPane::None,
+
             top_bar,
-            middle,
             bottom_bar,
             error_component,
         })
@@ -145,30 +160,35 @@ impl App {
             debug!("Got double ctrl-c, quitting");
             action_tx.send(Action::Quit)?;
             self.last_key_events.clear();
-        } else if self.last_key_events[self.last_key_events.len().saturating_sub(2)..]
-            == vec![
-                KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-                KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-            ]
+        } else if self.last_key_events[self.last_key_events.len().saturating_sub(1)..]
+            == vec![KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)]
         {
             self.last_key_events.clear();
+            self.last_key_events.push(key);
         } else if self.error_component.has_error() {
-            let main_mode = self.main_mode().clone();
-            self.error_component.input(&key, &main_mode)?;
+            let crumb_last_pane = &PaneType::Test;
+            self.error_component.input(&key, crumb_last_pane)?;
         } else {
-            let mode = self.main_mode().clone();
+            let crumb_last_pane = &PaneType::Test;
             if let Some(popup) = self.popups.last_mut() {
-                for action in popup.component.input(&key, &mode)?.into_iter() {
+                for action in popup.component.input(&key, crumb_last_pane)?.into_iter() {
                     action_tx.send(action)?;
                 }
-                for action in self.bottom_bar.input(&key, &mode)?.into_iter() {
+                for action in self.bottom_bar.input(&key, crumb_last_pane)?.into_iter() {
                     action_tx.send(action)?;
                 }
             } else {
-                for component in self.get_root_components_mut() {
-                    for action in component.input(&key, &mode)?.into_iter() {
-                        action_tx.send(action)?;
-                    }
+                let panes_len = self.panes.len();
+                let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
+                for action in self.top_bar.input(&key, effective_panes_len)?.into_iter() {
+                    action_tx.send(action)?;
+                }
+                let pane = self.panes.get_mut(self.selected_pane).unwrap();
+                for action in pane.input(&key)?.into_iter() {
+                    action_tx.send(action)?;
+                }
+                for action in self.bottom_bar.input(&key, crumb_last_pane)?.into_iter() {
+                    action_tx.send(action)?;
                 }
             }
         }
@@ -189,29 +209,39 @@ impl App {
             }
             Action::Quit => self.should_quit = true,
             Action::Error(ref e) => self.error_component.add_error(e.clone()),
-            Action::ModeChange {
-                ref mode,
-                ref breadcrumb_direction,
-            } => {
-                if *breadcrumb_direction == BreadcrumbDirection::Forward {
-                    self.top_bar.push(
-                        match mode {
-                            MainMode::Test => "Tests".to_string(),
-                            MainMode::TestDetail(id) => {
-                                format!("Test {}", id)
-                            }
-                            MainMode::TestDetailSelected(id) => {
-                                format!("Test Details {}", id)
-                            }
-                            MainMode::TestDetailStep(id, step_num) => {
-                                format!("Test Details {} Step {}", id, step_num)
-                            }
-                        },
-                        mode.clone(),
-                    );
-                } else if *breadcrumb_direction == BreadcrumbDirection::Backward {
-                    self.top_bar.pop();
+            Action::ModeChange { ref mode } => {
+                match mode {
+                    PaneType::Test => {
+                        self.selected_pane = 0;
+                        self.other_pane = OtherPane::None;
+                        while self.panes.len() > 1 {
+                            self.panes.pop();
+                        }
+                    }
+                    PaneType::TestDetail(id) => {
+                        self.selected_pane = 0;
+                        while self.panes.len() > 1 {
+                            self.panes.pop();
+                        }
+                        self.panes
+                            .push(Box::new(TestDetailsPane::new(self.db.get_test(*id).await?)));
+                        self.other_pane = OtherPane::Right(1);
+                    }
+                    PaneType::TestDetailSelected(_) | PaneType::TestDetailStep(_, _) => {
+                        self.selected_pane = 1;
+                        self.other_pane = OtherPane::Left(0);
+                    }
                 }
+
+                let panes_len = self.panes.len();
+                let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
+                ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
+                    self.panes[0..effective_panes_len]
+                        .iter()
+                        .map(|pane| pane.pane_title())
+                        .collect::<Vec<String>>(),
+                )));
+
                 self.popups.clear();
             }
             Action::PopupCreate(ref popup_mode) => {
@@ -272,26 +302,71 @@ impl App {
                 tracing::trace!("Got db select: {:?}", db_select);
                 match db_select {
                     DbRead::Test => {
-                        self.middle.update_tests(self.db.get_tests().await?);
+                        ret.push(Action::UpdateData(UpdateData::Tests(
+                            self.db.get_tests().await?,
+                        )));
                     }
                     DbRead::TestDetail(id) => {
-                        self.middle.update_test_detail(self.db.get_test(*id).await?);
+                        ret.push(Action::UpdateData(UpdateData::TestDetail(
+                            self.db.get_test(*id).await?,
+                        )));
                     }
                 };
             }
             Action::DbChange(ref db_change) => {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change.clone() {
-                    DbChange::Test(test) => {
-                        self.db.edit_test(test).await?;
-                        self.middle.update_tests(self.db.get_tests().await?);
+                    DbChange::Test(mut test) => {
+                        self.db.edit_test(&mut test).await?;
+                        ret.push(Action::UpdateData(UpdateData::Tests(
+                            self.db.get_tests().await?,
+                        )));
+                        ret.push(Action::UpdateData(UpdateData::TestDetail(test)));
                     }
                 };
             }
+            Action::PaneChange(pane_idx) => {
+                self.selected_pane = *pane_idx;
+                if *pane_idx == 0 {
+                    self.other_pane = OtherPane::None;
+                    while self.panes.len() > 1 {
+                        self.panes.pop();
+                    }
+                } else if *pane_idx == 1 {
+                    while self.panes.len() > 2 {
+                        self.panes.pop();
+                    }
+                    if self.panes.len() == 2 {
+                        self.other_pane = OtherPane::Right(1);
+                    } else {
+                        self.other_pane = OtherPane::None;
+                    }
+                } else {
+                    while self.panes.len() > *pane_idx {
+                        self.panes.pop();
+                    }
+                    if self.panes.len() > *pane_idx {
+                        self.other_pane = OtherPane::Left(*pane_idx - 1);
+                    } else {
+                        self.other_pane = OtherPane::None;
+                    }
+                }
+                ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
+                    self.panes
+                        .iter()
+                        .map(|pane| pane.pane_title())
+                        .collect::<Vec<String>>(),
+                )));
+                self.selected_pane = *pane_idx;
+            }
             Action::ClearKeys => self.last_key_events.clear(),
+            Action::UpdateData(_) => {}
         }
 
-        for component in self.get_root_components_mut() {
+        for action in self.top_bar.update(action)?.into_iter() {
+            ret.push(action);
+        }
+        for component in self.panes.iter_mut() {
             for action in component.update(action)?.into_iter() {
                 ret.push(action);
             }
@@ -300,34 +375,27 @@ impl App {
         Ok(ret)
     }
 
-    fn get_root_components_mut(&mut self) -> Vec<&mut dyn Component> {
-        vec![&mut self.top_bar, &mut self.middle, &mut self.bottom_bar]
-    }
-
     fn get_help(&self) -> Vec<HelpItem> {
-        let main_mode = &self.main_mode();
-        let mut keys = self.bottom_bar.keys(main_mode);
+        let crumb_last_pane = &PaneType::Test;
+        let mut keys = self.bottom_bar.keys(crumb_last_pane);
         keys.extend(if self.error_component.has_error() {
-            self.error_component.keys(main_mode)
+            self.error_component.keys(crumb_last_pane)
         } else if let Some(popup) = self.popups.last() {
-            popup.component.keys(main_mode)
+            popup.component.keys(crumb_last_pane)
         } else {
-            self.middle.keys(main_mode)
+            let pane = self.panes.get(self.selected_pane).unwrap();
+            pane.keys()
         });
 
-        keys.extend(self.top_bar.keys(main_mode));
+        keys.extend(self.top_bar.keys(crumb_last_pane));
 
         keys
-    }
-
-    fn main_mode(&self) -> &MainMode {
-        self.top_bar.get_main_mode().unwrap()
     }
 
     fn render(&mut self, f: &mut Frame) {
         let fsize = f.size();
 
-        let chunks_main = Layout::default()
+        let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
@@ -339,16 +407,42 @@ impl App {
             )
             .split(fsize);
 
-        self.top_bar.render(f, chunks_main[0]);
-        self.middle.render(f, chunks_main[1], self.main_mode());
+        self.top_bar.render(f, chunks[0]);
 
-        if self.error_component.has_error() {
-            self.error_component.render(f, chunks_main[1]);
-        } else if let Some(popup) = self.popups.last() {
-            self.render_create_popup(f, chunks_main[1], popup);
+        match self.other_pane {
+            OtherPane::Left(idx) => {
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+                let pane = self.panes.get(idx).unwrap();
+                pane.render(f, chunks[0], false);
+                let pane = self.panes.get(self.selected_pane).unwrap();
+                pane.render(f, chunks[1], true);
+            }
+            OtherPane::Right(idx) => {
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+                let pane = self.panes.get(self.selected_pane).unwrap();
+                pane.render(f, chunks[0], true);
+                let pane = self.panes.get(idx).unwrap();
+                pane.render(f, chunks[1], false);
+            }
+            OtherPane::None => {
+                let pane = self.panes.get(self.selected_pane).unwrap();
+                pane.render(f, chunks[1], true);
+            }
         }
 
-        self.bottom_bar.render(f, chunks_main[2], self.get_help());
+        if self.error_component.has_error() {
+            self.error_component.render(f, chunks[1]);
+        } else if let Some(popup) = self.popups.last() {
+            self.render_create_popup(f, chunks[1], popup);
+        }
+
+        self.bottom_bar.render(f, chunks[2], self.get_help());
     }
 
     fn render_create_popup(&self, f: &mut Frame, r: Rect, popup: &Popup) {

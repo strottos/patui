@@ -2,6 +2,8 @@ mod app;
 mod components;
 mod editor;
 mod error;
+mod panes;
+mod popups;
 mod terminal;
 mod types;
 

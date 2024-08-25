@@ -11,7 +11,7 @@ use ratatui::{
 
 use super::{widgets::Button, Component};
 use crate::tui::{
-    app::{Action, MainMode},
+    app::{Action, PaneType},
     error::Error,
 };
 
@@ -101,7 +101,7 @@ impl ErrorComponent {
 }
 
 impl Component for ErrorComponent {
-    fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
         match (key.code, key.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL)
             | (KeyCode::Enter, KeyModifiers::NONE)

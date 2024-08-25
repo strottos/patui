@@ -97,9 +97,9 @@ impl NewTest {
 
         let mut edited_tests = vec![];
 
-        for test in tests.into_iter() {
-            match db.edit_test(test.clone()).await {
-                Ok(test) => {
+        for mut test in tests.into_iter() {
+            match db.edit_test(&mut test).await {
+                Ok(()) => {
                     edited_tests.push(test.to_edited_test("ok".to_string()));
                 }
                 Err(e) => edited_tests.push(test.to_edited_test(format!("err: {}", e))),

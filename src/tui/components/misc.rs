@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::{Action, MainMode};
+use crate::tui::app::{Action, PaneType};
 
 use super::{Component, HelpItem, PopupComponent};
 
@@ -22,14 +22,14 @@ impl HelpComponent {
 }
 
 impl Component for HelpComponent {
-    fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => Ok(std::vec![Action::PopupClose, Action::ClearKeys]),
             _ => Ok(std::vec![]),
         }
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
+    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
         std::vec![]
     }
 }

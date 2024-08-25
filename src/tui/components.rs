@@ -14,11 +14,10 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{Action, MainMode};
+use super::app::{Action, PaneType};
 
 pub(crate) use bottom_bar::BottomBar;
 pub(crate) use error::ErrorComponent;
-pub(crate) use middle::Middle;
 pub(crate) use misc::HelpComponent;
 pub(crate) use tests::TestComponentEdit;
 pub(crate) use top_bar::TopBar;
@@ -50,12 +49,12 @@ impl HelpItem {
 
 pub(crate) trait Component: std::fmt::Debug {
     /// Take input for the component and optionally send back an action to perform
-    fn input(&mut self, _key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+    fn input(&mut self, _key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
         Ok(vec![])
     }
 
     /// Get the keys that the component is listening for
-    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
+    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
         vec![]
     }
 

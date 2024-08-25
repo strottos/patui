@@ -1,9 +1,7 @@
 use crate::tui::{
-    app::{Action, MainMode, PopupMode},
+    app::{Action, PaneType, PopupMode},
     components::HelpItem,
 };
-
-use super::Component;
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -32,10 +30,8 @@ impl BottomBar {
             rect,
         );
     }
-}
 
-impl Component for BottomBar {
-    fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+    pub(crate) fn input(&mut self, key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
         match (key.code, key.modifiers) {
             (KeyCode::Char('?'), KeyModifiers::CONTROL)
             | (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
@@ -45,7 +41,7 @@ impl Component for BottomBar {
         }
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
+    pub(crate) fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
         std::vec![HelpItem::new("C-? | C-h", "Help Popup", "Help Popup")]
     }
 }

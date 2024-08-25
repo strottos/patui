@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::{
     tui::{
-        app::{Action, BreadcrumbDirection, DbChange, MainMode},
+        app::{Action, DbChange, PaneType},
         components::{
             widgets::{Button, TextArea},
             Component, HelpItem, PopupComponent,
@@ -179,7 +179,7 @@ impl<'a> TestComponentEdit<'a> {
         }
     }
 
-    fn crupdate_test(&mut self, mode: &MainMode) -> Vec<Action> {
+    fn crupdate_test(&mut self, mode: &PaneType) -> Vec<Action> {
         if !self.is_valid() {
             return vec![];
         }
@@ -188,21 +188,17 @@ impl<'a> TestComponentEdit<'a> {
                 self.clear_components();
                 let mut ret = vec![Action::DbChange(DbChange::Test(test))];
                 match mode {
-                    MainMode::Test => ret.push(Action::ModeChange {
-                        mode: MainMode::create_normal(),
-                        breadcrumb_direction: BreadcrumbDirection::None,
+                    PaneType::Test => ret.push(Action::ModeChange {
+                        mode: PaneType::create_normal(),
                     }),
-                    MainMode::TestDetail(id) => ret.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail(*id),
-                        breadcrumb_direction: BreadcrumbDirection::None,
+                    PaneType::TestDetail(id) => ret.push(Action::ModeChange {
+                        mode: PaneType::create_test_detail(*id),
                     }),
-                    MainMode::TestDetailSelected(id) => ret.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail_with_selected_id(*id),
-                        breadcrumb_direction: BreadcrumbDirection::None,
+                    PaneType::TestDetailSelected(id) => ret.push(Action::ModeChange {
+                        mode: PaneType::create_test_detail_with_selected_id(*id),
                     }),
-                    MainMode::TestDetailStep(id, step_idx) => ret.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail_step(*id, *step_idx),
-                        breadcrumb_direction: BreadcrumbDirection::None,
+                    PaneType::TestDetailStep(id, step_idx) => ret.push(Action::ModeChange {
+                        mode: PaneType::create_test_detail_step(*id, *step_idx),
                     }),
                 }
                 ret.push(Action::ClearKeys);
@@ -222,7 +218,7 @@ impl<'a> TestComponentEdit<'a> {
 }
 
 impl<'a> Component for TestComponentEdit<'a> {
-    fn input(&mut self, key: &KeyEvent, mode: &MainMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent, mode: &PaneType) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
         match (key.code, key.modifiers) {
@@ -269,7 +265,7 @@ impl<'a> Component for TestComponentEdit<'a> {
         Ok(ret)
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
+    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
         let mut ret = vec![
             HelpItem::new("<Esc>", "Cancel", "Cancel"),
             HelpItem::new("<C-Enter>", "Submit", "Submit"),

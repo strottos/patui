@@ -1,7 +1,7 @@
 use crate::{
     tui::{
-        app::{Action, BreadcrumbDirection, DbRead, EditorMode, MainMode},
-        components::{Component, HelpItem},
+        app::{Action, DbRead, EditorMode, PaneType},
+        components::HelpItem,
     },
     types::PatuiTest,
 };
@@ -16,29 +16,29 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
 };
 
+use super::Pane;
+
 #[derive(Debug)]
-pub(crate) struct TestDetailComponent {
+pub(crate) struct TestDetailsPane {
     test: PatuiTest,
     selected_step: usize,
 }
 
-impl TestDetailComponent {
-    pub(crate) fn new() -> Self {
+impl TestDetailsPane {
+    pub(crate) fn new(test: PatuiTest) -> Self {
         Self {
-            test: PatuiTest::default(), // To be replaced
+            test,
             selected_step: 0,
         }
     }
+}
 
-    pub(crate) fn update_test_detail(&mut self, test: PatuiTest) {
-        self.test = test;
-    }
-
-    pub(crate) fn render(&self, f: &mut Frame, rect: Rect, mode: &MainMode) {
-        let style = if !mode.is_test_detail_selected() && !mode.is_test_detail_step() {
-            Style::default().fg(Color::DarkGray)
-        } else {
+impl Pane for TestDetailsPane {
+    fn render(&self, f: &mut Frame, rect: Rect, is_selected: bool) {
+        let style = if is_selected {
             Style::default()
+        } else {
+            Style::default().fg(Color::DarkGray)
         };
 
         let block = Block::new()
@@ -94,14 +94,12 @@ impl TestDetailComponent {
         let paragraph = Paragraph::new(text).wrap(Wrap { trim: false }).block(block);
         f.render_widget(paragraph, rect);
     }
-}
 
-impl Component for TestDetailComponent {
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
         if let Action::ModeChange {
-            mode: MainMode::TestDetail(id),
+            mode: PaneType::TestDetail(id),
             ..
         } = action
         {
@@ -113,54 +111,37 @@ impl Component for TestDetailComponent {
         Ok(ret)
     }
 
-    fn input(&mut self, key: &KeyEvent, _mode: &MainMode) -> Result<Vec<Action>> {
+    fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {
         let mut actions = vec![];
 
         match (key.code, key.modifiers) {
             (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
                 if self.selected_step < self.test.steps.len() {
                     self.selected_step += 1;
-                    actions.push(Action::ModeChange {
-                        mode: MainMode::create_test_detail_step(
-                            self.test.id.unwrap(),
-                            self.selected_step,
-                        ),
-                        breadcrumb_direction: BreadcrumbDirection::Forward,
-                    });
                 }
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
                 if self.selected_step > 0 {
                     self.selected_step -= 1;
-                    if self.selected_step == 0 {
-                        actions.push(Action::ModeChange {
-                            mode: MainMode::create_test_detail(self.test.id.unwrap()),
-                            breadcrumb_direction: BreadcrumbDirection::Backward,
-                        });
-                    } else {
-                        actions.push(Action::ModeChange {
-                            mode: MainMode::create_test_detail_step(
-                                self.test.id.unwrap(),
-                                self.selected_step,
-                            ),
-                            breadcrumb_direction: BreadcrumbDirection::Forward,
-                        });
-                    }
                 }
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Char('e'), KeyModifiers::NONE) => {
                 actions.push(Action::EditorMode(EditorMode::UpdateTestStep(
-                    self.test.id.unwrap(),
+                    self.test.id()?,
                     self.selected_step,
                 )));
             }
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                if self.selected_step != 0 {
+                if self.selected_step == 0 {
+                    actions.push(Action::ModeChange {
+                        mode: PaneType::TestDetail(self.test.id()?),
+                    });
+                } else {
                     self.selected_step = 0;
-                    actions.push(Action::ClearKeys);
                 }
+                actions.push(Action::ClearKeys);
             }
             _ => {}
         }
@@ -168,7 +149,7 @@ impl Component for TestDetailComponent {
         Ok(actions)
     }
 
-    fn keys(&self, _mode: &MainMode) -> Vec<HelpItem> {
+    fn keys(&self) -> Vec<HelpItem> {
         vec![
             HelpItem::new("n", "New Test", "New Test"),
             HelpItem::new("u", "Update Test", "Update Test"),
@@ -176,5 +157,19 @@ impl Component for TestDetailComponent {
             HelpItem::new("↑ | ↓", "Navigate", "Navigate"),
             HelpItem::new("<Enter>", "Select Test", "Select Test"),
         ]
+    }
+
+    fn pane_type(&self) -> PaneType {
+        match self.test.id {
+            Some(id) => PaneType::TestDetail(id),
+            None => unreachable!(), // Should never have a test here that isn't from the DB
+        }
+    }
+
+    fn pane_title(&self) -> String {
+        match self.test.id {
+            Some(id) => format!("Test Details (id = {})", id),
+            None => "Test Details".to_string(),
+        }
     }
 }
