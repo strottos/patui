@@ -14,10 +14,7 @@ use ratatui::{
 };
 
 use crate::{
-    tui::{
-        app::{Action, DbRead, EditorMode, PaneType, PopupMode, UpdateData},
-        components::HelpItem,
-    },
+    tui::app::{Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, UpdateData},
     types::PatuiTest,
 };
 

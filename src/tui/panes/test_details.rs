@@ -1,8 +1,5 @@
 use crate::{
-    tui::{
-        app::{Action, DbRead, EditorMode, PaneType},
-        components::HelpItem,
-    },
+    tui::app::{Action, DbRead, EditorMode, HelpItem, PaneType},
     types::PatuiTest,
 };
 

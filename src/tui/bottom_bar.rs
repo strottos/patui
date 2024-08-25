@@ -1,8 +1,3 @@
-use crate::tui::{
-    app::{Action, PaneType, PopupMode},
-    components::HelpItem,
-};
-
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -10,6 +5,8 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
     Frame,
 };
+
+use super::app::{Action, HelpItem, PaneType, PopupMode};
 
 #[derive(Debug)]
 pub(crate) struct BottomBar {}

@@ -1,7 +1,4 @@
-use crate::tui::{
-    app::{Action, PaneType, UpdateData},
-    panes::Pane,
-};
+use crate::tui::app::{Action, PaneType, UpdateData};
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -12,6 +9,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+
+use super::app::HelpItem;
 
 #[derive(Debug)]
 pub(crate) struct TopBar {
@@ -112,18 +111,10 @@ impl TopBar {
         Ok(vec![])
     }
 
-    pub(crate) fn keys(&self, _mode: &PaneType) -> Vec<crate::tui::components::HelpItem> {
+    pub(crate) fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
         vec![
-            crate::tui::components::HelpItem::new(
-                "<C-num>",
-                "Breadcrumb num",
-                "Goto breadcrumb element <num>",
-            ),
-            (crate::tui::components::HelpItem::new(
-                "<Esc>",
-                "Revert level",
-                "Go up a level in the breadcrumb",
-            )),
+            HelpItem::new("<C-num>", "Breadcrumb num", "Goto breadcrumb element <num>"),
+            HelpItem::new("<Esc>", "Revert level", "Go up a level in the breadcrumb"),
         ]
     }
 }

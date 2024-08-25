@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::tui::app::{Action, PaneType};
 
-use super::{Component, HelpItem, PopupComponent};
+use super::{HelpItem, PopupComponent};
 
 #[derive(Debug)]
 pub(crate) struct HelpComponent {
@@ -18,19 +18,6 @@ pub(crate) struct HelpComponent {
 impl HelpComponent {
     pub(crate) fn new(help_items: Vec<HelpItem>) -> Self {
         Self { help_items }
-    }
-}
-
-impl Component for HelpComponent {
-    fn input(&mut self, key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
-        match (key.code, key.modifiers) {
-            (KeyCode::Esc, _) => Ok(std::vec![Action::PopupClose, Action::ClearKeys]),
-            _ => Ok(std::vec![]),
-        }
-    }
-
-    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
-        std::vec![]
     }
 }
 
@@ -45,5 +32,16 @@ impl PopupComponent for HelpComponent {
         let paragraphs = Paragraph::new(items).wrap(Wrap { trim: false });
 
         f.render_widget(paragraphs, rect);
+    }
+
+    fn input(&mut self, key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) => Ok(std::vec![Action::PopupClose, Action::ClearKeys]),
+            _ => Ok(std::vec![]),
+        }
+    }
+
+    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
+        std::vec![]
     }
 }

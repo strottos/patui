@@ -1,11 +1,13 @@
 mod app;
-mod components;
+mod bottom_bar;
 mod editor;
 mod error;
 mod panes;
 mod popups;
 mod terminal;
+mod top_bar;
 mod types;
+mod widgets;
 
 pub(crate) use app::App;
 

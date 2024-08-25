@@ -2,10 +2,7 @@ use color_eyre::Result;
 use crossterm::event::KeyEvent;
 use ratatui::{layout::Rect, Frame};
 
-use super::{
-    app::{Action, PaneType},
-    components::HelpItem,
-};
+use super::app::{Action, HelpItem, PaneType};
 
 mod test_details;
 mod test_list;

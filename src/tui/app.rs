@@ -1,4 +1,4 @@
-use std::{cmp, sync::Arc};
+use std::{cmp, collections::VecDeque, sync::Arc};
 
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -11,13 +11,12 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tracing::{debug, trace};
 
 use super::{
-    components::{
-        BottomBar, Component, ErrorComponent, HelpComponent, HelpItem, PopupComponent,
-        TestComponentEdit, TopBar,
-    },
+    bottom_bar::BottomBar,
     error::{Error, ErrorType},
     panes::{Pane, TestDetailsPane},
+    popups::{ErrorComponent, HelpComponent, PopupComponent, TestEditComponent},
     terminal::{Event, Tui},
+    top_bar::TopBar,
 };
 use crate::db::Database;
 
@@ -44,7 +43,6 @@ pub(crate) struct App {
 
     top_bar: TopBar,
     bottom_bar: BottomBar,
-    error_component: ErrorComponent,
 }
 
 impl App {
@@ -53,7 +51,6 @@ impl App {
 
         let top_bar = TopBar::new(vec!["Tests".to_string()]);
         let bottom_bar = BottomBar::new();
-        let error_component = ErrorComponent::new();
 
         let panes: Vec<Box<dyn Pane>> = vec![Box::new(super::panes::TestsPane::new())];
 
@@ -70,7 +67,6 @@ impl App {
 
             top_bar,
             bottom_bar,
-            error_component,
         })
     }
 
@@ -165,9 +161,6 @@ impl App {
         {
             self.last_key_events.clear();
             self.last_key_events.push(key);
-        } else if self.error_component.has_error() {
-            let crumb_last_pane = &PaneType::Test;
-            self.error_component.input(&key, crumb_last_pane)?;
         } else {
             let crumb_last_pane = &PaneType::Test;
             if let Some(popup) = self.popups.last_mut() {
@@ -208,7 +201,12 @@ impl App {
                 tui.resize(Rect::new(0, 0, *w, *h))?;
             }
             Action::Quit => self.should_quit = true,
-            Action::Error(ref e) => self.error_component.add_error(e.clone()),
+            Action::Error(ref e) => {
+                self.popups.push(Popup::new(
+                    PopupMode::Error,
+                    Box::new(ErrorComponent::new(e.clone())),
+                ));
+            }
             Action::ModeChange { ref mode } => {
                 match mode {
                     PaneType::Test => {
@@ -246,11 +244,12 @@ impl App {
             }
             Action::PopupCreate(ref popup_mode) => {
                 let component: Box<dyn PopupComponent> = match popup_mode {
-                    PopupMode::CreateTest => Box::new(TestComponentEdit::new()),
+                    PopupMode::CreateTest => Box::new(TestEditComponent::new()),
                     PopupMode::UpdateTest(id) => {
-                        Box::new(TestComponentEdit::new_update(self.db.get_test(*id).await?)?)
+                        Box::new(TestEditComponent::new_update(self.db.get_test(*id).await?)?)
                     }
                     PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
+                    PopupMode::Error => unreachable!(), // Handled elsewhere, use Action::Error
                 };
                 self.popups.push(Popup::new(popup_mode.clone(), component));
             }
@@ -378,9 +377,7 @@ impl App {
     fn get_help(&self) -> Vec<HelpItem> {
         let crumb_last_pane = &PaneType::Test;
         let mut keys = self.bottom_bar.keys(crumb_last_pane);
-        keys.extend(if self.error_component.has_error() {
-            self.error_component.keys(crumb_last_pane)
-        } else if let Some(popup) = self.popups.last() {
+        keys.extend(if let Some(popup) = self.popups.last() {
             popup.component.keys(crumb_last_pane)
         } else {
             let pane = self.panes.get(self.selected_pane).unwrap();
@@ -436,9 +433,10 @@ impl App {
             }
         }
 
-        if self.error_component.has_error() {
-            self.error_component.render(f, chunks[1]);
-        } else if let Some(popup) = self.popups.last() {
+        // if self.error_component.has_error() {
+        //     self.error_component.render(f, chunks[1]);
+        // } else
+        if let Some(popup) = self.popups.last() {
             self.render_create_popup(f, chunks[1], popup);
         }
 

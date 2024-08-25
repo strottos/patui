@@ -7,20 +7,18 @@ use ratatui::{
     Frame,
 };
 
+use super::PopupComponent;
 use crate::{
     tui::{
-        app::{Action, DbChange, PaneType},
-        components::{
-            widgets::{Button, TextArea},
-            Component, HelpItem, PopupComponent,
-        },
+        app::{Action, DbChange, HelpItem, PaneType},
         error::{Error, ErrorType},
+        widgets::{Button, TextArea},
     },
     types::PatuiTest,
 };
 
 #[derive(Debug)]
-pub(crate) struct TestComponentEdit<'a> {
+pub(crate) struct TestEditComponent<'a> {
     test: Option<PatuiTest>,
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
@@ -30,7 +28,7 @@ pub(crate) struct TestComponentEdit<'a> {
     cancel_button: Button,
 }
 
-impl<'a> TestComponentEdit<'a> {
+impl<'a> TestEditComponent<'a> {
     pub(crate) fn new() -> Self {
         let mut name_component = TextArea::new(
             "Name".to_string(),
@@ -217,7 +215,41 @@ impl<'a> TestComponentEdit<'a> {
     }
 }
 
-impl<'a> Component for TestComponentEdit<'a> {
+impl<'a> PopupComponent for TestEditComponent<'a> {
+    fn render_inner(&self, f: &mut Frame, rect: Rect) {
+        let inner = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Max(self.name_component.height()),
+                    Constraint::Max(self.desc_component.height()),
+                    Constraint::Min(1),
+                    Constraint::Max(3),
+                ]
+                .as_ref(),
+            )
+            .split(rect);
+
+        f.render_widget(self.name_component.widget(), inner[0]);
+        f.render_widget(self.desc_component.widget(), inner[1]);
+
+        let buttons_inner = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Min(0),
+                    Constraint::Max(10),
+                    Constraint::Max(1),
+                    Constraint::Max(10),
+                ]
+                .as_ref(),
+            )
+            .split(inner[3]);
+
+        f.render_widget(self.edit_button.widget(), buttons_inner[1]);
+        f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
+    }
+
     fn input(&mut self, key: &KeyEvent, mode: &PaneType) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
@@ -280,41 +312,5 @@ impl<'a> Component for TestComponentEdit<'a> {
         }
 
         ret
-    }
-}
-
-impl<'a> PopupComponent for TestComponentEdit<'a> {
-    fn render_inner(&self, f: &mut Frame, rect: Rect) {
-        let inner = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Max(self.name_component.height()),
-                    Constraint::Max(self.desc_component.height()),
-                    Constraint::Min(1),
-                    Constraint::Max(3),
-                ]
-                .as_ref(),
-            )
-            .split(rect);
-
-        f.render_widget(self.name_component.widget(), inner[0]);
-        f.render_widget(self.desc_component.widget(), inner[1]);
-
-        let buttons_inner = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(
-                [
-                    Constraint::Min(0),
-                    Constraint::Max(10),
-                    Constraint::Max(1),
-                    Constraint::Max(10),
-                ]
-                .as_ref(),
-            )
-            .split(inner[3]);
-
-        f.render_widget(self.edit_button.widget(), buttons_inner[1]);
-        f.render_widget(self.cancel_button.widget(), buttons_inner[3]);
     }
 }

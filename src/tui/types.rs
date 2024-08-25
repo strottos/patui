@@ -1,6 +1,8 @@
 use crate::types::PatuiTest;
+use color_eyre::Result;
+use crossterm::event::KeyEvent;
 
-use super::{components::PopupComponent, error::Error};
+use super::{error::Error, popups::PopupComponent};
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) enum PaneType {
@@ -81,6 +83,7 @@ pub(crate) enum PopupMode {
     CreateTest,
     UpdateTest(i64),
     Help,
+    Error,
 }
 
 impl PopupMode {
@@ -89,6 +92,7 @@ impl PopupMode {
             PopupMode::CreateTest => "Create Test",
             PopupMode::UpdateTest(_) => "Update Test",
             PopupMode::Help => "Help",
+            PopupMode::Error => "Error",
         }
     }
 }
@@ -104,6 +108,47 @@ impl Popup {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct HelpItem {
+    pub(crate) keys: &'static str,
+    pub(crate) minidesc: &'static str,
+    pub(crate) desc: &'static str,
+}
+
+impl HelpItem {
+    pub(crate) fn new(keys: &'static str, minidesc: &'static str, desc: &'static str) -> Self {
+        Self {
+            keys,
+            minidesc,
+            desc,
+        }
+    }
+
+    pub(crate) fn bottom_bar_help(&self) -> String {
+        format!("{}: {}", self.keys, self.minidesc)
+    }
+
+    pub(crate) fn global_help(&self) -> String {
+        format!("{}: {}", self.keys, self.desc)
+    }
+}
+
+pub(crate) trait Component: std::fmt::Debug {
+    /// Take input for the component and optionally send back an action to perform
+    fn input(&mut self, _key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
+        Ok(vec![])
+    }
+
+    /// Get the keys that the component is listening for
+    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
+        vec![]
+    }
+
+    /// Update the component based on an action and optionally send back actions to perform
+    fn update(&mut self, _action: &Action) -> Result<Vec<Action>> {
+        Ok(vec![])
+    }
+}
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum EditorMode {
     CreateTest,
