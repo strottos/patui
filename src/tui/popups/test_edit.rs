@@ -230,8 +230,8 @@ impl<'a> PopupComponent for TestEditComponent<'a> {
             )
             .split(rect);
 
-        f.render_widget(self.name_component.widget(), inner[0]);
-        f.render_widget(self.desc_component.widget(), inner[1]);
+        f.render_widget(&self.name_component, inner[0]);
+        f.render_widget(&self.desc_component, inner[1]);
 
         let buttons_inner = Layout::default()
             .direction(Direction::Horizontal)

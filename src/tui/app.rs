@@ -1,4 +1,4 @@
-use std::{cmp, collections::VecDeque, sync::Arc};
+use std::{cmp, sync::Arc};
 
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -121,7 +121,7 @@ impl App {
 
             while let Ok(action) = action_rx.try_recv() {
                 if action != Action::Tick && action != Action::Render {
-                    debug!("action {:?}", action);
+                    trace!("action {:?}", action);
                 }
                 for action in self.handle_action(&action, &mut tui).await? {
                     action_tx.send(action)?;
@@ -208,94 +208,16 @@ impl App {
                 ));
             }
             Action::ModeChange { ref mode } => {
-                match mode {
-                    PaneType::Test => {
-                        self.selected_pane = 0;
-                        self.other_pane = OtherPane::None;
-                        while self.panes.len() > 1 {
-                            self.panes.pop();
-                        }
-                    }
-                    PaneType::TestDetail(id) => {
-                        self.selected_pane = 0;
-                        while self.panes.len() > 1 {
-                            self.panes.pop();
-                        }
-                        self.panes
-                            .push(Box::new(TestDetailsPane::new(self.db.get_test(*id).await?)));
-                        self.other_pane = OtherPane::Right(1);
-                    }
-                    PaneType::TestDetailSelected(_) | PaneType::TestDetailStep(_, _) => {
-                        self.selected_pane = 1;
-                        self.other_pane = OtherPane::Left(0);
-                    }
-                }
-
-                let panes_len = self.panes.len();
-                let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
-                ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
-                    self.panes[0..effective_panes_len]
-                        .iter()
-                        .map(|pane| pane.pane_title())
-                        .collect::<Vec<String>>(),
-                )));
-
-                self.popups.clear();
+                self.handle_mode_change(mode, &mut ret).await?;
             }
             Action::PopupCreate(ref popup_mode) => {
-                let component: Box<dyn PopupComponent> = match popup_mode {
-                    PopupMode::CreateTest => Box::new(TestEditComponent::new()),
-                    PopupMode::UpdateTest(id) => {
-                        Box::new(TestEditComponent::new_update(self.db.get_test(*id).await?)?)
-                    }
-                    PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
-                    PopupMode::Error => unreachable!(), // Handled elsewhere, use Action::Error
-                };
-                self.popups.push(Popup::new(popup_mode.clone(), component));
+                self.handle_popup_create(popup_mode).await?;
             }
             Action::PopupClose => {
                 self.popups.pop();
             }
             Action::EditorMode(editor_mode) => {
-                tracing::trace!("Got editor mode: {:?}", editor_mode);
-                tui.exit()?;
-                let test_result = match editor_mode {
-                    EditorMode::CreateTest => super::editor::create_test(),
-                    EditorMode::UpdateTest(id) => {
-                        let test = self.db.get_test(*id).await?;
-                        super::editor::edit_test(test)
-                    }
-                    EditorMode::UpdateTestStep(id, step_num) => {
-                        let test = self.db.get_test(*id).await?;
-                        super::editor::edit_step(test, *step_num)
-                    }
-                };
-                trace!("Got test result: {:?}", test_result);
-                match test_result {
-                    Ok(test) => {
-                        trace!("Changing DB: {:?}", test);
-                        let id = test.id;
-                        ret.push(Action::DbChange(DbChange::Test(test)));
-                        if let Some(id) = id {
-                            ret.push(Action::DbRead(DbRead::TestDetail(id)));
-                        }
-                    }
-                    Err(e) => {
-                        ret.push(Action::Error(Error::new(
-                            ErrorType::Error,
-                            format!(
-                                "Error {} test, editor failure\n\n{}",
-                                match editor_mode {
-                                    EditorMode::CreateTest => "creating",
-                                    EditorMode::UpdateTest(_)
-                                    | EditorMode::UpdateTestStep(_, _) => "editing",
-                                },
-                                e
-                            ),
-                        )));
-                    }
-                }
-                tui.enter()?;
+                self.handle_editor_mode(editor_mode, tui, &mut ret).await?;
             }
             Action::DbRead(ref db_select) => {
                 tracing::trace!("Got db select: {:?}", db_select);
@@ -325,38 +247,7 @@ impl App {
                 };
             }
             Action::PaneChange(pane_idx) => {
-                self.selected_pane = *pane_idx;
-                if *pane_idx == 0 {
-                    self.other_pane = OtherPane::None;
-                    while self.panes.len() > 1 {
-                        self.panes.pop();
-                    }
-                } else if *pane_idx == 1 {
-                    while self.panes.len() > 2 {
-                        self.panes.pop();
-                    }
-                    if self.panes.len() == 2 {
-                        self.other_pane = OtherPane::Right(1);
-                    } else {
-                        self.other_pane = OtherPane::None;
-                    }
-                } else {
-                    while self.panes.len() > *pane_idx {
-                        self.panes.pop();
-                    }
-                    if self.panes.len() > *pane_idx {
-                        self.other_pane = OtherPane::Left(*pane_idx - 1);
-                    } else {
-                        self.other_pane = OtherPane::None;
-                    }
-                }
-                ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
-                    self.panes
-                        .iter()
-                        .map(|pane| pane.pane_title())
-                        .collect::<Vec<String>>(),
-                )));
-                self.selected_pane = *pane_idx;
+                self.handle_pane_change(*pane_idx, &mut ret).await?;
             }
             Action::ClearKeys => self.last_key_events.clear(),
             Action::UpdateData(_) => {}
@@ -463,5 +354,143 @@ impl App {
         let title = popup.mode.title();
 
         popup.component.render(f, area, title);
+    }
+
+    async fn handle_mode_change(&mut self, mode: &PaneType, ret: &mut Vec<Action>) -> Result<()> {
+        match mode {
+            PaneType::Test => {
+                self.selected_pane = 0;
+                self.other_pane = OtherPane::None;
+                while self.panes.len() > 1 {
+                    self.panes.pop();
+                }
+            }
+            PaneType::TestDetail(id) => {
+                self.selected_pane = 0;
+                while self.panes.len() > 1 {
+                    self.panes.pop();
+                }
+                self.panes
+                    .push(Box::new(TestDetailsPane::new(self.db.get_test(*id).await?)));
+                self.other_pane = OtherPane::Right(1);
+            }
+            PaneType::TestDetailSelected(_) | PaneType::TestDetailStep(_, _) => {
+                self.selected_pane = 1;
+                self.other_pane = OtherPane::Left(0);
+            }
+        }
+
+        let panes_len = self.panes.len();
+        let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
+        ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
+            self.panes[0..effective_panes_len]
+                .iter()
+                .map(|pane| pane.pane_title())
+                .collect::<Vec<String>>(),
+        )));
+
+        self.popups.clear();
+
+        Ok(())
+    }
+
+    async fn handle_editor_mode(
+        &self,
+        editor_mode: &EditorMode,
+        tui: &mut Tui,
+        ret: &mut Vec<Action>,
+    ) -> Result<()> {
+        tracing::trace!("Got editor mode: {:?}", editor_mode);
+        tui.exit()?;
+        let test_result = match editor_mode {
+            EditorMode::CreateTest => super::editor::create_test(),
+            EditorMode::UpdateTest(id) => {
+                let test = self.db.get_test(*id).await?;
+                super::editor::edit_test(test)
+            }
+            EditorMode::UpdateTestStep(id, step_num) => {
+                let test = self.db.get_test(*id).await?;
+                super::editor::edit_step(test, *step_num)
+            }
+        };
+        trace!("Got test result: {:?}", test_result);
+        match test_result {
+            Ok(test) => {
+                trace!("Changing DB: {:?}", test);
+                let id = test.id;
+                ret.push(Action::DbChange(DbChange::Test(test)));
+                if let Some(id) = id {
+                    ret.push(Action::DbRead(DbRead::TestDetail(id)));
+                }
+            }
+            Err(e) => {
+                ret.push(Action::Error(Error::new(
+                    ErrorType::Error,
+                    format!(
+                        "Error {} test, editor failure\n\n{}",
+                        match editor_mode {
+                            EditorMode::CreateTest => "creating",
+                            EditorMode::UpdateTest(_) | EditorMode::UpdateTestStep(_, _) =>
+                                "editing",
+                        },
+                        e
+                    ),
+                )));
+            }
+        }
+        tui.enter()?;
+
+        Ok(())
+    }
+
+    async fn handle_popup_create(&mut self, popup_mode: &PopupMode) -> Result<()> {
+        let component: Box<dyn PopupComponent> = match popup_mode {
+            PopupMode::CreateTest => Box::new(TestEditComponent::new()),
+            PopupMode::UpdateTest(id) => {
+                Box::new(TestEditComponent::new_update(self.db.get_test(*id).await?)?)
+            }
+            PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
+            PopupMode::Error => unreachable!(), // Handled elsewhere, use Action::Error
+        };
+        self.popups.push(Popup::new(popup_mode.clone(), component));
+
+        Ok(())
+    }
+
+    async fn handle_pane_change(&mut self, pane_idx: usize, ret: &mut Vec<Action>) -> Result<()> {
+        self.selected_pane = pane_idx;
+        if pane_idx == 0 {
+            self.other_pane = OtherPane::None;
+            while self.panes.len() > 1 {
+                self.panes.pop();
+            }
+        } else if pane_idx == 1 {
+            while self.panes.len() > 2 {
+                self.panes.pop();
+            }
+            if self.panes.len() == 2 {
+                self.other_pane = OtherPane::Right(1);
+            } else {
+                self.other_pane = OtherPane::None;
+            }
+        } else {
+            while self.panes.len() > pane_idx {
+                self.panes.pop();
+            }
+            if self.panes.len() > pane_idx {
+                self.other_pane = OtherPane::Left(pane_idx - 1);
+            } else {
+                self.other_pane = OtherPane::None;
+            }
+        }
+        ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
+            self.panes
+                .iter()
+                .map(|pane| pane.pane_title())
+                .collect::<Vec<String>>(),
+        )));
+        self.selected_pane = pane_idx;
+
+        Ok(())
     }
 }

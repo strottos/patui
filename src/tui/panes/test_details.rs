@@ -1,5 +1,8 @@
 use crate::{
-    tui::app::{Action, DbRead, EditorMode, HelpItem, PaneType},
+    tui::{
+        app::{Action, DbRead, EditorMode, HelpItem, PaneType},
+        widgets::{PatuiWidget, ScrollableArea, Text},
+    },
     types::PatuiTest,
 };
 
@@ -9,8 +12,8 @@ use ratatui::{
     layout::Alignment,
     prelude::{Frame, Rect},
     style::{Color, Style},
-    text::{Line, Text},
-    widgets::{Block, Borders, Padding, Paragraph, Wrap},
+    text::Line,
+    widgets::{Block, Borders, Padding},
 };
 
 use super::Pane;
@@ -38,14 +41,15 @@ impl Pane for TestDetailsPane {
             Style::default().fg(Color::DarkGray)
         };
 
+        let mut scrollable_area = ScrollableArea::new_patui_widget();
+
         let block = Block::new()
             .borders(Borders::ALL)
             .padding(Padding::symmetric(2, 1))
             .title_alignment(Alignment::Center)
             .title("Test Details")
             .style(style);
-
-        let mut text = Text::default();
+        scrollable_area.add_scrollable_block(block);
 
         match &self.test.id {
             Some(id) => {
@@ -54,6 +58,8 @@ impl Pane for TestDetailsPane {
                 } else {
                     Style::default()
                 };
+
+                let mut text = Text::new();
 
                 text.push_line(Line::from(format!("Id: {}", id)).style(style));
                 text.push_line(Line::from(format!("Name: {}", self.test.name)).style(style));
@@ -71,6 +77,7 @@ impl Pane for TestDetailsPane {
                     ))
                     .style(style),
                 );
+                scrollable_area.add_scrollable_widget(PatuiWidget::Text(text));
 
                 for (i, step) in self.test.steps.iter().enumerate() {
                     let style = if i + 1 == self.selected_step || self.selected_step == 0 {
@@ -80,16 +87,24 @@ impl Pane for TestDetailsPane {
                     };
                     let yaml = step.get_display_yaml().unwrap();
 
+                    let mut text = Text::new();
+
                     yaml.into_iter().for_each(|line| {
                         text.push_line(Line::from(line).style(style));
                     });
+
+                    scrollable_area.add_scrollable_widget(PatuiWidget::Text(text));
                 }
             }
-            None => text.push_line("Details not yet loaded...".to_string()),
+            None => {
+                let mut text = Text::new();
+
+                text.push_line(Line::from("Details not yet loaded...".to_string()));
+                scrollable_area.add_scrollable_widget(PatuiWidget::Text(text));
+            }
         };
 
-        let paragraph = Paragraph::new(text).wrap(Wrap { trim: false }).block(block);
-        f.render_widget(paragraph, rect);
+        f.render_widget(&scrollable_area, rect);
     }
 
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {

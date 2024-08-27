@@ -2,10 +2,14 @@ use std::fmt::Debug;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
     prelude::Style,
     style::{Color, Modifier},
-    widgets::{Block, Borders, Widget},
+    widgets::{Block, Borders, Widget, WidgetRef},
 };
+
+use super::patui_widget::PatuiWidget;
 
 type ValidateFn = Box<dyn Fn(&TextArea) -> bool>;
 
@@ -63,10 +67,6 @@ impl<'a> TextArea<'a> {
             self.validate
                 .push(Box::new(|s| s.valid_entries.contains(&s.get_text())));
         }
-    }
-
-    pub(crate) fn widget(&'a self) -> impl Widget + 'a {
-        self.inner.widget()
     }
 
     pub(crate) fn get_text(&'a self) -> String {
@@ -171,3 +171,19 @@ impl<'a> TextArea<'a> {
         self.setup_widget();
     }
 }
+
+impl WidgetRef for TextArea<'_> {
+    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+        self.inner.render(area, buf);
+    }
+}
+
+// impl PatuiWidget for TextArea<'_> {
+//     fn scrollable_height(&self) -> usize {
+//         self.height as usize + 2
+//     }
+//
+//     fn num_widgets(&self) -> usize {
+//         1
+//     }
+// }

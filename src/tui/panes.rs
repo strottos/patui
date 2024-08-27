@@ -33,3 +33,17 @@ pub(crate) trait Pane: std::fmt::Debug {
 
     fn pane_title(&self) -> String;
 }
+
+pub(crate) trait ScrollablePane: Pane {
+    fn navigate(&mut self) -> Result<Vec<Action>>;
+
+    fn scroll_down(&mut self) -> Result<Vec<Action>>;
+
+    fn update_scroll(&mut self, _action: &Action) -> Result<Vec<Action>> {
+        Ok(vec![])
+    }
+
+    fn keys_scroll(&self) -> Vec<HelpItem> {
+        vec![]
+    }
+}

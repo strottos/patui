@@ -14,7 +14,10 @@ use ratatui::{
 };
 
 use crate::{
-    tui::app::{Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, UpdateData},
+    tui::{
+        app::{Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, UpdateData},
+        widgets::ScrollableArea,
+    },
     types::PatuiTest,
 };
 
@@ -23,7 +26,7 @@ use super::Pane;
 const SHORT_WIDTH_DISPLAY: u16 = 60;
 
 #[derive(Debug)]
-pub(crate) struct TestsPane {
+pub(crate) struct TestsPane<'a> {
     initialized: bool,
     loading: bool,
 
@@ -32,9 +35,11 @@ pub(crate) struct TestsPane {
     selected_idx: isize,
 
     tests: Vec<PatuiTest>,
+
+    scrollable_area: Option<ScrollableArea<'a>>,
 }
 
-impl TestsPane {
+impl<'a> TestsPane<'a> {
     pub(crate) fn new() -> Self {
         Self {
             initialized: false,
@@ -45,6 +50,8 @@ impl TestsPane {
             selected_idx: -1,
 
             tests: vec![],
+
+            scrollable_area: None,
         }
     }
 
@@ -208,41 +215,46 @@ impl TestsPane {
         self.initialized = true;
     }
 
-    /// Alters the selected_idx by the count given with optional wrapping and if necessary scrolls
-    /// the page to ensure the selected_idx is visible.
+    /// Alters the selected_idx by the count given with optional wrapping
+    /// and if necessary scrolls the page to ensure the selected_idx is
+    /// visible.
     ///
     /// Returns true if changed else false
-    pub(crate) fn navigate(&mut self, count: isize, wrap: bool) -> bool {
+    pub(crate) fn navigate(
+        &mut self,
+        scroll_lines: isize,
+        num_display_lines: isize,
+        num_total_lines: usize,
+        wrap: bool,
+    ) -> bool {
         let old_selected_idx = self.selected_idx;
 
-        if self.tests.is_empty() {
+        if num_total_lines == 0 {
             return false;
         }
 
         // On first navigation, if selected_idx is -1, set it to 0, otherwise we
         // select second last element.
-        if count < 0 && self.selected_idx == -1 {
+        if scroll_lines < 0 && self.selected_idx == -1 {
             self.selected_idx = 0;
         }
 
-        let mut selected_idx = self.selected_idx + count;
+        let mut new_selected_idx = self.selected_idx + scroll_lines;
         if !wrap {
-            if selected_idx < 0 {
-                selected_idx = 0;
-            } else if selected_idx >= self.tests.len() as isize {
-                selected_idx = self.tests.len() as isize - 1;
+            if new_selected_idx < 0 {
+                new_selected_idx = 0;
+            } else if new_selected_idx >= num_total_lines as isize {
+                new_selected_idx = num_total_lines as isize - 1;
             }
         }
         // handle wrap around as mod doesn't work as expected for negative numbers
-        while selected_idx < 0 {
-            selected_idx += self.tests.len() as isize;
+        while new_selected_idx < 0 {
+            new_selected_idx += num_total_lines as isize;
         }
-        self.selected_idx = selected_idx % self.tests.len() as isize;
+        self.selected_idx = new_selected_idx % num_total_lines as isize;
 
-        let num_tests_to_display = *self.num_tests_to_display.read().unwrap() as isize;
-
-        if self.selected_idx - self.first_row >= num_tests_to_display {
-            self.first_row = cmp::max(self.selected_idx - num_tests_to_display, 0);
+        if self.selected_idx - self.first_row >= num_display_lines {
+            self.first_row = cmp::max(self.selected_idx - num_display_lines, 0);
         } else if self.selected_idx < self.first_row {
             self.first_row = self.selected_idx;
         }
@@ -293,7 +305,7 @@ impl TestsPane {
     }
 }
 
-impl Pane for TestsPane {
+impl<'a> Pane for TestsPane<'a> {
     fn render(&self, f: &mut Frame, r: Rect, is_selected: bool) {
         self.render_table(f, r, is_selected);
         self.render_scrollbar(f, r);
@@ -345,7 +357,8 @@ impl Pane for TestsPane {
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                if self.navigate(1, true) {
+                let num_tests_to_display = *self.num_tests_to_display.read().unwrap() as isize;
+                if self.navigate(1, num_tests_to_display, self.tests.len(), true) {
                     actions.push(Action::ModeChange {
                         mode: self.pane_type(),
                     });
@@ -353,7 +366,8 @@ impl Pane for TestsPane {
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                if self.navigate(-1, true) {
+                let num_tests_to_display = *self.num_tests_to_display.read().unwrap() as isize;
+                if self.navigate(-1, num_tests_to_display, self.tests.len(), true) {
                     actions.push(Action::ModeChange {
                         mode: self.pane_type(),
                     });
@@ -378,7 +392,7 @@ impl Pane for TestsPane {
                     _ => unreachable!(),
                 };
                 if self.scroll_page(scroll_count) {
-                    // TODO: ^^^ && mode.is_test_detail() {
+                    // TODO: ^^^ && mode.is_test_detail()
                     actions.push(Action::ModeChange {
                         mode: self.pane_type(),
                     });
@@ -499,7 +513,7 @@ mod tests {
         }
     }
 
-    fn create_test_component(num_tests: i64) -> TestsPane {
+    fn create_test_component<'a>(num_tests: i64) -> TestsPane<'a> {
         let mut ret = TestsPane::new();
 
         let mut tests = vec![];
@@ -516,23 +530,23 @@ mod tests {
     fn test_single_navigate_down_with_wrap() {
         let mut test_component = create_test_component(3);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 3, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(0);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 3, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(1);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 3, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(2);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 3, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(0);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 3, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(1);
     }
@@ -541,15 +555,15 @@ mod tests {
     fn test_single_navigate_up_with_wrap() {
         let mut test_component = create_test_component(5);
 
-        let res = test_component.navigate(-1, true);
+        let res = test_component.navigate(-1, 17, 5, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(4);
 
-        let res = test_component.navigate(-1, true);
+        let res = test_component.navigate(-1, 17, 5, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(3);
 
-        let res = test_component.navigate(-1, true);
+        let res = test_component.navigate(-1, 17, 5, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(2);
     }
@@ -558,16 +572,16 @@ mod tests {
     fn test_single_navigate_down_trivial_cases() {
         let mut test_component = create_test_component(0);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 0, true);
         assert_that!(res).is_false();
 
         let mut test_component = create_test_component(1);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 1, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(0);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 1, true);
         assert_that!(res).is_false();
         assert_that!(test_component.selected_idx).is_equal_to(0);
     }
@@ -576,19 +590,19 @@ mod tests {
     fn test_single_navigate_without_wrap() {
         let mut test_component = create_test_component(2);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 2, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(0);
 
-        let res = test_component.navigate(-1, false);
+        let res = test_component.navigate(-1, 17, 2, false);
         assert_that!(res).is_false();
         assert_that!(test_component.selected_idx).is_equal_to(0);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 2, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(1);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 2, false);
         assert_that!(res).is_false();
         assert_that!(test_component.selected_idx).is_equal_to(1);
     }
@@ -597,57 +611,57 @@ mod tests {
     fn test_navigate_scroll() {
         let mut test_component = create_test_component(21);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 21, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(0);
         assert_that!(test_component.first_row).is_equal_to(0);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 21, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(1);
         assert_that!(test_component.first_row).is_equal_to(0);
 
-        let res = test_component.navigate(16, false);
+        let res = test_component.navigate(16, 17, 21, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(17);
         assert_that!(test_component.first_row).is_equal_to(0);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 21, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(18);
         assert_that!(test_component.first_row).is_equal_to(1);
 
-        let res = test_component.navigate(2, false);
+        let res = test_component.navigate(2, 17, 21, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(20);
         assert_that!(test_component.first_row).is_equal_to(3);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 21, false);
         assert_that!(res).is_false();
         assert_that!(test_component.selected_idx).is_equal_to(20);
         assert_that!(test_component.first_row).is_equal_to(3);
 
-        let res = test_component.navigate(1, true);
+        let res = test_component.navigate(1, 17, 21, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(0);
         assert_that!(test_component.first_row).is_equal_to(0);
 
-        let res = test_component.navigate(-1, true);
+        let res = test_component.navigate(-1, 17, 21, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(20);
         assert_that!(test_component.first_row).is_equal_to(3);
 
-        let res = test_component.navigate(-1, true);
+        let res = test_component.navigate(-1, 17, 21, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(19);
         assert_that!(test_component.first_row).is_equal_to(3);
 
-        let res = test_component.navigate(-17, true);
+        let res = test_component.navigate(-17, 17, 21, true);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(2);
         assert_that!(test_component.first_row).is_equal_to(2);
 
-        let res = test_component.navigate(19, false);
+        let res = test_component.navigate(19, 17, 21, false);
         assert_that!(res).is_true();
         assert_that!(test_component.selected_idx).is_equal_to(20);
         assert_that!(test_component.first_row).is_equal_to(3);
@@ -687,12 +701,12 @@ mod tests {
     fn test_scroll_page_leaves_selected_index_position() {
         let mut test_component = create_test_component(70);
 
-        let res = test_component.navigate(1, false);
+        let res = test_component.navigate(1, 17, 70, false);
         assert_that!(res).is_true();
         assert_that!(test_component.first_row).is_equal_to(0);
         assert_that!(test_component.selected_idx).is_equal_to(0);
 
-        let res = test_component.navigate(5, false);
+        let res = test_component.navigate(5, 17, 70, false);
         assert_that!(res).is_true();
         assert_that!(test_component.first_row).is_equal_to(0);
         assert_that!(test_component.selected_idx).is_equal_to(5);
