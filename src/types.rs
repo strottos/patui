@@ -1,21 +1,76 @@
 //! Data types used in the application, these are the types that are used to interact with the
 //! database. Every type that is used in the database should be defined here. This is to ensure
 //! that the types are consistent across the application and that the database schema is
-//! consistent. Every time we have an option wrapping an integer, it means that the field is an
-//! auto-incrementing primary key or a foreign key, the option should always be the `Some` after
-//! it has been flushed to the DB.
+//! consistent.
 
-use std::io::Read;
+use std::{fmt::Display, io::Read};
 
 use color_eyre::Result;
 use convert_case::{Case, Casing};
 use edit::edit;
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiTestId(i64);
+
+impl Display for PatuiTestId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<i64> for PatuiTestId {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PatuiTestId> for i64 {
+    fn from(value: PatuiTestId) -> i64 {
+        value.0
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiTestStepId(usize);
+
+impl Display for PatuiTestStepId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<usize> for PatuiTestStepId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PatuiTestStepId> for usize {
+    fn from(value: PatuiTestStepId) -> usize {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTest {
-    pub(crate) id: Option<i64>,
+pub(crate) enum PatuiId {
+    Test(PatuiTestId),
+    Step(PatuiTestStepId),
+}
+
+impl Display for PatuiId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatuiId::Test(id) => write!(f, "Test({})", id),
+            PatuiId::Step(id) => write!(f, "Step({})", id),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiTestDetails {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) creation_date: String,
@@ -25,12 +80,11 @@ pub(crate) struct PatuiTest {
     pub(crate) steps: Vec<PatuiStepDetails>,
 }
 
-impl Default for PatuiTest {
+impl Default for PatuiTestDetails {
     fn default() -> Self {
         let now: String = chrono::Local::now().to_string();
 
-        PatuiTest {
-            id: None,
+        PatuiTestDetails {
             name: "Default".to_string(),
             description: "Default template".to_string(),
             creation_date: now.clone(),
@@ -46,14 +100,13 @@ impl Default for PatuiTest {
     }
 }
 
-impl PatuiTest {
+impl PatuiTestDetails {
     pub(crate) fn from_yaml_str(yaml: &str) -> Result<Self> {
         let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
 
         let now: String = chrono::Local::now().to_string();
 
-        let test = PatuiTest {
-            id: None,
+        let test = PatuiTestDetails {
             name: yaml_test.name,
             description: yaml_test.description,
             creation_date: now.clone(),
@@ -66,13 +119,12 @@ impl PatuiTest {
         Ok(test)
     }
 
-    pub(crate) fn edit_yaml(mut yaml_str: String, id: Option<i64>) -> Result<Self> {
+    pub(crate) fn edit_yaml(mut yaml_str: String) -> Result<Self> {
         loop {
             yaml_str = edit(&yaml_str)?;
-            match PatuiTest::from_yaml_str(&yaml_str) {
-                Ok(mut test) => {
-                    test.id = id;
-                    return Ok(test);
+            match PatuiTestDetails::from_yaml_str(&yaml_str) {
+                Ok(details) => {
+                    return Ok(details);
                 }
                 Err(e) => {
                     eprintln!("Failed to parse yaml: {e}\nPress any key to continue editing or Ctrl-C to cancel...");
@@ -92,42 +144,61 @@ impl PatuiTest {
 
         Ok(serde_yaml::to_string(&yaml_test)?)
     }
+}
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct PatuiTest {
+    pub(crate) id: PatuiTestId,
+    pub(crate) details: PatuiTestDetails,
+}
+
+impl PatuiTest {
     pub(crate) fn to_min_display_test(&self) -> Result<PatuiTestMinDisplay> {
         Ok(PatuiTestMinDisplay {
-            id: self
-                .id
-                .ok_or_else(|| color_eyre::eyre::eyre!("No ID found"))?,
-            name: self.name.clone(),
-            description: self.description.clone(),
+            id: self.id.clone(),
+            name: self.details.name.clone(),
+            description: self.details.description.clone(),
         })
     }
 
     pub(crate) fn to_edited_test(&self, status: String) -> PatuiTestEditStatus {
         PatuiTestEditStatus {
             id: self.id,
-            name: Some(self.name.clone()),
-            description: Some(self.description.clone()),
+            name: Some(self.details.name.clone()),
+            description: Some(self.details.description.clone()),
             status,
         }
     }
+}
 
-    pub(crate) fn id(&self) -> Result<i64> {
-        self.id
-            .ok_or_else(|| color_eyre::eyre::eyre!("No ID found"))
+impl Serialize for PatuiTest {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("PatuiTest", 8)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("name", &self.details.name)?;
+        state.serialize_field("description", &self.details.description)?;
+        state.serialize_field("creation_date", &self.details.creation_date)?;
+        state.serialize_field("last_updated", &self.details.last_updated)?;
+        state.serialize_field("last_used_date", &self.details.last_used_date)?;
+        state.serialize_field("times_used", &self.details.times_used)?;
+        state.serialize_field("steps", &self.details.steps)?;
+        state.end()
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestMinDisplay {
-    pub(crate) id: i64,
+    pub(crate) id: PatuiTestId,
     pub(crate) name: String,
     pub(crate) description: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestEditStatus {
-    pub(crate) id: Option<i64>,
+    pub(crate) id: PatuiTestId,
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) status: String,
@@ -255,11 +326,11 @@ mod tests {
             "#,
         );
 
-        let test = PatuiTest::from_yaml_str(&yaml).unwrap();
+        let details = PatuiTestDetails::from_yaml_str(&yaml).unwrap();
 
-        assert_that!(test.name).is_equal_to("test name".to_string());
-        assert_that!(test.description).is_equal_to("test description".to_string());
-        assert_that!(test.steps).is_empty();
+        assert_that!(details.name).is_equal_to("test name".to_string());
+        assert_that!(details.description).is_equal_to("test description".to_string());
+        assert_that!(details.steps).is_empty();
     }
 
     #[test]
@@ -280,22 +351,24 @@ mod tests {
             "#,
         );
 
-        let test = PatuiTest::from_yaml_str(&yaml).unwrap();
+        let details = PatuiTestDetails::from_yaml_str(&yaml).unwrap();
 
-        assert_that!(test.name).is_equal_to("test name".to_string());
-        assert_that!(test.description).is_equal_to("test description".to_string());
-        assert_that!(test.steps).has_length(2);
-        assert_that!(test.steps[0]).is_equal_to(PatuiStepDetails::Shell(PatuiStepShell {
+        assert_that!(details.name).is_equal_to("test name".to_string());
+        assert_that!(details.description).is_equal_to("test description".to_string());
+        assert_that!(details.steps).has_length(2);
+        assert_that!(details.steps[0]).is_equal_to(PatuiStepDetails::Shell(PatuiStepShell {
             shell: Some("bash".to_string()),
             contents: "echo 'Hello, world!'".to_string(),
             location: None,
         }));
-        assert_that!(test.steps[1]).is_equal_to(PatuiStepDetails::Assertion(PatuiStepAssertion {
-            assertion: PatuiStepAssertionType::Equal,
-            negate: false,
-            lhs: "foo".to_string(),
-            rhs: "bar".to_string(),
-        }));
+        assert_that!(details.steps[1]).is_equal_to(PatuiStepDetails::Assertion(
+            PatuiStepAssertion {
+                assertion: PatuiStepAssertionType::Equal,
+                negate: false,
+                lhs: "foo".to_string(),
+                rhs: "bar".to_string(),
+            },
+        ));
     }
 
     #[test]
@@ -306,7 +379,7 @@ mod tests {
             "#,
         );
 
-        let test = PatuiTest::from_yaml_str(&yaml);
+        let test = PatuiTestDetails::from_yaml_str(&yaml);
 
         assert_that!(test).is_err();
     }

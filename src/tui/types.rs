@@ -1,4 +1,4 @@
-use crate::types::PatuiTest;
+use crate::types::{PatuiTest, PatuiTestDetails, PatuiTestId, PatuiTestStepId};
 use color_eyre::Result;
 use crossterm::event::KeyEvent;
 
@@ -8,9 +8,9 @@ use super::{error::Error, popups::PopupComponent};
 pub(crate) enum PaneType {
     #[default]
     Test,
-    TestDetail(i64),
-    TestDetailSelected(i64),
-    TestDetailStep(i64, usize),
+    TestDetail(PatuiTestId),
+    TestDetailSelected(PatuiTestId),
+    TestDetailStep(PatuiTestId, PatuiTestStepId),
 }
 
 impl PaneType {
@@ -47,15 +47,15 @@ impl PaneType {
         PaneType::Test
     }
 
-    pub(crate) fn create_test_detail(id: i64) -> Self {
+    pub(crate) fn create_test_detail(id: PatuiTestId) -> Self {
         PaneType::TestDetail(id)
     }
 
-    pub(crate) fn create_test_detail_with_selected_id(id: i64) -> Self {
+    pub(crate) fn create_test_detail_with_selected_id(id: PatuiTestId) -> Self {
         PaneType::TestDetailSelected(id)
     }
 
-    pub(crate) fn create_test_detail_step(id: i64, step_num: usize) -> Self {
+    pub(crate) fn create_test_detail_step(id: PatuiTestId, step_num: PatuiTestStepId) -> Self {
         PaneType::TestDetailStep(id, step_num)
     }
 }
@@ -63,11 +63,16 @@ impl PaneType {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum DbRead {
     Test,
-    TestDetail(i64),
+    TestDetail(PatuiTestId),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum DbChange {
+pub(crate) enum DbCreate {
+    Test(PatuiTestDetails),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum DbUpdate {
     Test(PatuiTest),
 }
 
@@ -81,7 +86,7 @@ pub(crate) enum UpdateData {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum PopupMode {
     CreateTest,
-    UpdateTest(i64),
+    UpdateTest(PatuiTestId),
     Help,
     Error,
 }
@@ -152,8 +157,8 @@ pub(crate) trait Component: std::fmt::Debug {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum EditorMode {
     CreateTest,
-    UpdateTest(i64),
-    UpdateTestStep(i64, usize),
+    UpdateTest(PatuiTestId),
+    UpdateTestStep(PatuiTestId, PatuiTestStepId),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -170,6 +175,7 @@ pub(crate) enum Action {
     PopupClose,
     EditorMode(EditorMode),
     DbRead(DbRead),
-    DbChange(DbChange),
+    DbCreate(DbCreate),
+    DbUpdate(DbUpdate),
     UpdateData(UpdateData),
 }

@@ -10,16 +10,16 @@ use ratatui::{
 use super::PopupComponent;
 use crate::{
     tui::{
-        app::{Action, DbChange, HelpItem, PaneType},
+        app::{Action, DbUpdate, HelpItem, PaneType},
         error::{Error, ErrorType},
         widgets::{Button, TextArea},
     },
-    types::PatuiTest,
+    types::PatuiTestDetails,
 };
 
 #[derive(Debug)]
 pub(crate) struct TestEditComponent<'a> {
-    test: Option<PatuiTest>,
+    test: Option<PatuiTestDetails>,
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
     selected_component_idx: usize,
@@ -58,7 +58,7 @@ impl<'a> TestEditComponent<'a> {
         }
     }
 
-    pub(crate) fn new_update(test: PatuiTest) -> Result<Self> {
+    pub(crate) fn new_update(test: PatuiTestDetails) -> Result<Self> {
         let mut name_component = TextArea::new(
             "Name".to_string(),
             vec![Box::new(|x| {
@@ -150,7 +150,7 @@ impl<'a> TestEditComponent<'a> {
         self.activate_selected();
     }
 
-    fn get_test_details(&self) -> Result<PatuiTest> {
+    fn get_test_details(&self) -> Result<PatuiTestDetails> {
         match self.test {
             Some(ref test) => {
                 let now: DateTime<Local> = Local::now();
@@ -163,8 +163,7 @@ impl<'a> TestEditComponent<'a> {
             None => {
                 let now: DateTime<Local> = Local::now();
 
-                Ok(PatuiTest {
-                    id: None,
+                Ok(PatuiTestDetails {
                     name: self.name_component.get_text().clone(),
                     description: self.desc_component.get_text().clone(),
                     creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -178,40 +177,42 @@ impl<'a> TestEditComponent<'a> {
     }
 
     fn crupdate_test(&mut self, mode: &PaneType) -> Vec<Action> {
-        if !self.is_valid() {
-            return vec![];
-        }
-        match self.get_test_details() {
-            Ok(test) => {
-                self.clear_components();
-                let mut ret = vec![Action::DbChange(DbChange::Test(test))];
-                match mode {
-                    PaneType::Test => ret.push(Action::ModeChange {
-                        mode: PaneType::create_normal(),
-                    }),
-                    PaneType::TestDetail(id) => ret.push(Action::ModeChange {
-                        mode: PaneType::create_test_detail(*id),
-                    }),
-                    PaneType::TestDetailSelected(id) => ret.push(Action::ModeChange {
-                        mode: PaneType::create_test_detail_with_selected_id(*id),
-                    }),
-                    PaneType::TestDetailStep(id, step_idx) => ret.push(Action::ModeChange {
-                        mode: PaneType::create_test_detail_step(*id, *step_idx),
-                    }),
-                }
-                ret.push(Action::ClearKeys);
-                ret
-            }
-            Err(e) => {
-                vec![Action::Error(Error::new(
-                    ErrorType::Error,
-                    format!(
-                        "A fatal error occurred getting the test details:\n\n{:?}",
-                        e
-                    ),
-                ))]
-            }
-        }
+        vec![]
+        // TODO
+        // if !self.is_valid() {
+        //     return vec![];
+        // }
+        // match self.get_test_details() {
+        //     Ok(test) => {
+        //         self.clear_components();
+        //         let mut ret = vec![Action::DbUpdate(DbUpdate::Test(test))];
+        //         match mode {
+        //             PaneType::Test => ret.push(Action::ModeChange {
+        //                 mode: PaneType::create_normal(),
+        //             }),
+        //             PaneType::TestDetail(id) => ret.push(Action::ModeChange {
+        //                 mode: PaneType::create_test_detail(*id),
+        //             }),
+        //             PaneType::TestDetailSelected(id) => ret.push(Action::ModeChange {
+        //                 mode: PaneType::create_test_detail_with_selected_id(*id),
+        //             }),
+        //             PaneType::TestDetailStep(id, step_idx) => ret.push(Action::ModeChange {
+        //                 mode: PaneType::create_test_detail_step(*id, *step_idx),
+        //             }),
+        //         }
+        //         ret.push(Action::ClearKeys);
+        //         ret
+        //     }
+        //     Err(e) => {
+        //         vec![Action::Error(Error::new(
+        //             ErrorType::Error,
+        //             format!(
+        //                 "A fatal error occurred getting the test details:\n\n{:?}",
+        //                 e
+        //             ),
+        //         ))]
+        //     }
+        // }
     }
 }
 

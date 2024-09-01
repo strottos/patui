@@ -1,0 +1,22 @@
+---
+source: src/tui/widgets/table.rs
+expression: buffer
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 10 },
+    content: [
+        "Name          Description   Creation Date        Last Used            Times Used",
+        "                                                                                ",
+        "test0         test descript 2024-08-31 11:00:00                                0",
+        "test1         test descript 2024-08-31 11:00:00                                0",
+        "test2         test descript 2024-08-31 11:00:00                                0",
+        "test3         test descript 2024-08-31 11:00:00                                0",
+        "test4         test descript 2024-08-31 11:00:00                                0",
+        "test5         test descript 2024-08-31 11:00:00                                0",
+        "test6         test descript 2024-08-31 11:00:00                                0",
+        "test7         test descript 2024-08-31 11:00:00                                0",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

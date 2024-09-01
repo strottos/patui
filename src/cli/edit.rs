@@ -3,7 +3,7 @@ use std::sync::Arc;
 use clap::{Args, Parser};
 use color_eyre::Result;
 
-use crate::{db::Database, types::PatuiTest};
+use crate::{db::Database, types::PatuiTestDetails};
 
 #[derive(Debug, Args)]
 #[command(about = "Create new entity")]
@@ -34,13 +34,13 @@ pub(crate) struct EditTest {
 
 impl EditTest {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let test = db.get_test(self.id).await?;
+        let mut test = db.get_test(self.id.into()).await?;
 
-        let yaml_str = test.to_editable_yaml_string()?;
-        let mut test = PatuiTest::edit_yaml(yaml_str, test.id)?;
+        let yaml_str = test.details.to_editable_yaml_string()?;
+        test.details = PatuiTestDetails::edit_yaml(yaml_str)?;
 
-        db.edit_test(&mut test).await?;
-        eprintln!("Successfully saved test: {}", test.name);
+        db.edit_test(&test).await?;
+        eprintln!("Successfully saved test: {}", test.details.name);
 
         Ok(())
     }

@@ -1,314 +1,113 @@
-use std::{cmp, sync::RwLock};
-
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    layout::{Alignment, Constraint, Margin, Rect},
-    style::{Color, Style},
-    text::Text,
-    widgets::{
-        Block, Borders, Cell, Padding, Paragraph, Row, Scrollbar, ScrollbarOrientation,
-        ScrollbarState, Table,
-    },
+    layout::{Alignment, Constraint, Rect},
+    text::Text as RatatuiText,
+    widgets::{Borders, Padding},
     Frame,
 };
 
 use crate::{
     tui::{
         app::{Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, UpdateData},
-        widgets::ScrollableArea,
+        widgets::{PatuiWidget, ScrollableArea, Table, TableHeader, Text},
     },
     types::PatuiTest,
 };
 
 use super::Pane;
 
-const SHORT_WIDTH_DISPLAY: u16 = 60;
-
 #[derive(Debug)]
 pub(crate) struct TestsPane<'a> {
     initialized: bool,
     loading: bool,
 
-    num_tests_to_display: RwLock<usize>,
-    first_row: isize,
+    tests: Vec<PatuiTest>,
     selected_idx: isize,
 
-    tests: Vec<PatuiTest>,
+    is_focussed: bool,
 
-    scrollable_area: Option<ScrollableArea<'a>>,
+    scrollable_area: PatuiWidget<'a>,
 }
 
 impl<'a> TestsPane<'a> {
     pub(crate) fn new() -> Self {
+        let mut scrollable_area = ScrollableArea::new_patui_widget();
+
+        scrollable_area.inner_scrollable_mut().unwrap().add_block(
+            "Tests",
+            Borders::ALL,
+            Padding::symmetric(2, 1),
+        );
+
+        scrollable_area
+            .inner_scrollable_mut()
+            .unwrap()
+            .add_widget(PatuiWidget::new_text(Text::new_with_text(
+                RatatuiText::from("Loading tests...").alignment(Alignment::Left),
+                false,
+            )));
+
         Self {
             initialized: false,
             loading: false,
 
-            first_row: 0,
-            num_tests_to_display: RwLock::new(17),
+            tests: vec![],
             selected_idx: -1,
 
-            tests: vec![],
+            is_focussed: false,
 
-            scrollable_area: None,
+            scrollable_area,
         }
-    }
-
-    fn render_table(&self, f: &mut Frame, r: Rect, is_selected: bool) {
-        let style = if is_selected {
-            Style::default()
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .padding(Padding::new(1, 2, 1, 1))
-            .title("Tests")
-            .title_alignment(Alignment::Center)
-            .style(style);
-
-        if self.loading {
-            f.render_widget(Paragraph::new("Retrieving data...").block(block), r);
-            return;
-        } else if !self.initialized {
-            f.render_widget(Paragraph::new("Yet to initialize tests...").block(block), r);
-            return;
-        }
-
-        if self.tests.is_empty() {
-            f.render_widget(
-                Paragraph::new(
-                    "No tests found. You can create some by pressing `n` or <ctrl>-`n`.",
-                )
-                .block(block),
-                r,
-            );
-            return;
-        }
-
-        let header = if r.width < SHORT_WIDTH_DISPLAY {
-            ["Name", "Creation Date"]
-                .into_iter()
-                .map(Cell::from)
-                .collect::<Row>()
-                .height(2)
-        } else {
-            [
-                "Name",
-                "Description",
-                "Creation Date",
-                "Last Used",
-                "Times Used",
-            ]
-            .into_iter()
-            .map(Cell::from)
-            .collect::<Row>()
-            .height(2)
-        };
-
-        let num_tests_to_display = cmp::min((r.height - 7) as usize, self.tests.len());
-        *self.num_tests_to_display.write().unwrap() = num_tests_to_display;
-
-        let rows = self
-            .tests
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| {
-                *i >= self.first_row as usize
-                    && *i < (self.first_row as usize) + num_tests_to_display + 1
-            })
-            .map(|(i, test)| {
-                (
-                    i,
-                    if r.width < SHORT_WIDTH_DISPLAY {
-                        vec![test.name.clone(), test.creation_date.to_string()]
-                    } else {
-                        let last_used_date = if let Some(last_used_date) = &test.last_used_date {
-                            last_used_date.to_string()
-                        } else {
-                            "Never".to_string()
-                        };
-                        vec![
-                            test.name.clone(),
-                            test.description.clone(),
-                            test.creation_date.to_string(),
-                            last_used_date,
-                            test.times_used.to_string(),
-                        ]
-                    },
-                )
-            })
-            .map(|(i, row)| {
-                let style = if self.selected_idx == i as isize && is_selected {
-                    Style::default().fg(Color::Black).bg(Color::White)
-                } else {
-                    Style::default()
-                };
-
-                Row::new(
-                    row.into_iter()
-                        .enumerate()
-                        .map(|(j, s)| {
-                            if j >= 4 {
-                                Text::from(s).alignment(Alignment::Right)
-                            } else {
-                                Text::from(s)
-                            }
-                        })
-                        .map(Cell::from)
-                        .collect::<Vec<_>>(),
-                )
-                .height(1)
-                .style(style)
-            });
-
-        let table = if r.width < SHORT_WIDTH_DISPLAY {
-            Table::new(rows, [Constraint::Min(12), Constraint::Min(12)])
-        } else {
-            Table::new(
-                rows,
-                [
-                    Constraint::Min(12),
-                    Constraint::Min(12),
-                    Constraint::Max(20),
-                    Constraint::Max(20),
-                    Constraint::Max(10),
-                ],
-            )
-        }
-        .header(header)
-        .block(block);
-
-        f.render_widget(table, r);
-    }
-
-    fn render_scrollbar(&self, f: &mut Frame, r: Rect) {
-        let num_tests_to_display = *self.num_tests_to_display.read().unwrap();
-        let total_tests = self.tests.len();
-
-        if total_tests <= num_tests_to_display {
-            return;
-        }
-
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(Some("↑"))
-            .end_symbol(Some("↓"));
-
-        let mut scrollbar_state = ScrollbarState::new(total_tests - num_tests_to_display)
-            .position(self.first_row as usize);
-
-        f.render_stateful_widget(
-            scrollbar,
-            r.inner(Margin {
-                vertical: 1,
-                horizontal: 1,
-            }),
-            &mut scrollbar_state,
-        );
     }
 
     pub(crate) fn update_tests(&mut self, tests: Vec<PatuiTest>) {
         self.tests = tests;
         self.loading = false;
         self.initialized = true;
-    }
 
-    /// Alters the selected_idx by the count given with optional wrapping
-    /// and if necessary scrolls the page to ensure the selected_idx is
-    /// visible.
-    ///
-    /// Returns true if changed else false
-    pub(crate) fn navigate(
-        &mut self,
-        scroll_lines: isize,
-        num_display_lines: isize,
-        num_total_lines: usize,
-        wrap: bool,
-    ) -> bool {
-        let old_selected_idx = self.selected_idx;
+        let table = PatuiWidget::new_table(Table::new_with_elements(
+            self.tests
+                .iter()
+                .map(|test| {
+                    vec![
+                        RatatuiText::from(test.details.name.clone()),
+                        RatatuiText::from(test.details.description.clone()),
+                        RatatuiText::from(test.details.creation_date.clone()),
+                    ]
+                })
+                .collect::<Vec<Vec<RatatuiText>>>(),
+            vec![
+                TableHeader::new("Name".into(), 0, Constraint::Min(12)),
+                TableHeader::new("Creation Date".into(), 2, Constraint::Max(19)),
+            ],
+            vec![
+                TableHeader::new("Name".into(), 0, Constraint::Min(12)),
+                TableHeader::new("Description".into(), 1, Constraint::Min(5)),
+                TableHeader::new("Creation Date".into(), 2, Constraint::Max(19)),
+                TableHeader::new("Last Used Date".into(), 3, Constraint::Max(19)),
+                TableHeader::new("Times Used".into(), 4, Constraint::Max(10)),
+            ],
+        ));
 
-        if num_total_lines == 0 {
-            return false;
-        }
-
-        // On first navigation, if selected_idx is -1, set it to 0, otherwise we
-        // select second last element.
-        if scroll_lines < 0 && self.selected_idx == -1 {
-            self.selected_idx = 0;
-        }
-
-        let mut new_selected_idx = self.selected_idx + scroll_lines;
-        if !wrap {
-            if new_selected_idx < 0 {
-                new_selected_idx = 0;
-            } else if new_selected_idx >= num_total_lines as isize {
-                new_selected_idx = num_total_lines as isize - 1;
-            }
-        }
-        // handle wrap around as mod doesn't work as expected for negative numbers
-        while new_selected_idx < 0 {
-            new_selected_idx += num_total_lines as isize;
-        }
-        self.selected_idx = new_selected_idx % num_total_lines as isize;
-
-        if self.selected_idx - self.first_row >= num_display_lines {
-            self.first_row = cmp::max(self.selected_idx - num_display_lines, 0);
-        } else if self.selected_idx < self.first_row {
-            self.first_row = self.selected_idx;
-        }
-
-        assert!(self.selected_idx >= self.first_row);
-
-        self.selected_idx != old_selected_idx
-    }
-
-    /// Scrolls the page keeping any selected_idx in the same part of the view.
-    /// NB: Wrapping is always off for this.
-    ///
-    /// Returns true if selected_idx is visible else false
-    pub(crate) fn scroll_page(&mut self, count: isize) -> bool {
-        let old_selected_idx = self.selected_idx;
-
-        if self.tests.is_empty() {
-            return false;
-        }
-
-        let old_position_idx = cmp::max(self.selected_idx - self.first_row, 0);
-        let num_tests_to_display = *self.num_tests_to_display.read().unwrap() as isize;
-
-        self.first_row += count;
-        if self.first_row < 0 {
-            self.first_row = 0;
-        } else if self.first_row >= self.tests.len() as isize - num_tests_to_display {
-            self.first_row = self.tests.len() as isize - num_tests_to_display - 1;
-        }
-
-        if self.selected_idx - self.first_row >= num_tests_to_display
-            || self.selected_idx < self.first_row
-        {
-            self.selected_idx = self.first_row + old_position_idx;
-        }
-
-        assert!(self.selected_idx >= self.first_row);
-
-        self.selected_idx != old_selected_idx
+        self.scrollable_area
+            .inner_scrollable_mut()
+            .unwrap()
+            .set_widgets(vec![table]);
     }
 
     fn get_selected_test_id(&self) -> Option<i64> {
         if self.selected_idx == -1 {
             None
         } else {
-            self.tests[self.selected_idx as usize].id
+            Some(self.tests[self.selected_idx as usize].id.into())
         }
     }
 }
 
 impl<'a> Pane for TestsPane<'a> {
-    fn render(&self, f: &mut Frame, r: Rect, is_selected: bool) {
-        self.render_table(f, r, is_selected);
-        self.render_scrollbar(f, r);
+    fn render(&self, f: &mut Frame, rect: Rect) {
+        f.render_widget(&self.scrollable_area, rect);
     }
 
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
@@ -342,95 +141,14 @@ impl<'a> Pane for TestsPane<'a> {
             }
             (KeyCode::Char('u'), KeyModifiers::NONE) => {
                 if let Some(test) = self.tests.get(self.selected_idx as usize) {
-                    if let Some(id) = test.id {
-                        actions.push(Action::PopupCreate(PopupMode::UpdateTest(id)));
-                    }
-                    actions.push(Action::ClearKeys);
+                    actions.push(Action::PopupCreate(PopupMode::UpdateTest(test.id)));
                 }
+                actions.push(Action::ClearKeys);
             }
             (KeyCode::Char('e'), KeyModifiers::NONE) => {
                 if let Some(test) = self.tests.get(self.selected_idx as usize) {
-                    if let Some(id) = test.id {
-                        actions.push(Action::EditorMode(EditorMode::UpdateTest(id)));
-                    }
+                    actions.push(Action::EditorMode(EditorMode::UpdateTest(test.id)));
                 }
-                actions.push(Action::ClearKeys);
-            }
-            (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                let num_tests_to_display = *self.num_tests_to_display.read().unwrap() as isize;
-                if self.navigate(1, num_tests_to_display, self.tests.len(), true) {
-                    actions.push(Action::ModeChange {
-                        mode: self.pane_type(),
-                    });
-                }
-                actions.push(Action::ClearKeys);
-            }
-            (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                let num_tests_to_display = *self.num_tests_to_display.read().unwrap() as isize;
-                if self.navigate(-1, num_tests_to_display, self.tests.len(), true) {
-                    actions.push(Action::ModeChange {
-                        mode: self.pane_type(),
-                    });
-                }
-                actions.push(Action::ClearKeys);
-            }
-            (KeyCode::Char('f'), KeyModifiers::CONTROL)
-            | (KeyCode::Char('b'), KeyModifiers::CONTROL)
-            | (KeyCode::Char('d'), KeyModifiers::CONTROL)
-            | (KeyCode::Char('u'), KeyModifiers::CONTROL)
-            | (KeyCode::Char('e'), KeyModifiers::CONTROL)
-            | (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-                let scroll_count = match key.code {
-                    KeyCode::Char('f') => *self.num_tests_to_display.read().unwrap() as isize,
-                    KeyCode::Char('b') => -(*self.num_tests_to_display.read().unwrap() as isize),
-                    KeyCode::Char('d') => (*self.num_tests_to_display.read().unwrap() as isize) / 2,
-                    KeyCode::Char('u') => {
-                        -(*self.num_tests_to_display.read().unwrap() as isize) / 2
-                    }
-                    KeyCode::Char('e') => 1,
-                    KeyCode::Char('y') => -1,
-                    _ => unreachable!(),
-                };
-                if self.scroll_page(scroll_count) {
-                    // TODO: ^^^ && mode.is_test_detail()
-                    actions.push(Action::ModeChange {
-                        mode: self.pane_type(),
-                    });
-                }
-                actions.push(Action::ClearKeys);
-            }
-            (KeyCode::Char('g'), KeyModifiers::NONE)
-            | (KeyCode::Char('G'), KeyModifiers::SHIFT)
-            | (KeyCode::Char('H'), KeyModifiers::SHIFT)
-            | (KeyCode::Char('M'), KeyModifiers::SHIFT)
-            | (KeyCode::Char('L'), KeyModifiers::SHIFT) => {
-                match key.code {
-                    KeyCode::Char('g') => {
-                        self.first_row = 0;
-                        self.selected_idx = 0;
-                    }
-                    KeyCode::Char('G') => {
-                        self.first_row = self.tests.len() as isize
-                            - *self.num_tests_to_display.read().unwrap() as isize
-                            - 1;
-                        self.selected_idx = self.tests.len() as isize - 1;
-                    }
-                    KeyCode::Char('H') => {
-                        self.selected_idx = self.first_row;
-                    }
-                    KeyCode::Char('M') => {
-                        self.selected_idx = self.first_row
-                            + (*self.num_tests_to_display.read().unwrap() as isize) / 2;
-                    }
-                    KeyCode::Char('L') => {
-                        self.selected_idx =
-                            self.first_row + (*self.num_tests_to_display.read().unwrap() as isize);
-                    }
-                    _ => unreachable!(),
-                }
-                actions.push(Action::ModeChange {
-                    mode: self.pane_type(),
-                });
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Esc, KeyModifiers::NONE) => {
@@ -443,12 +161,21 @@ impl<'a> Pane for TestsPane<'a> {
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if let Some(id) = self.get_selected_test_id() {
                     actions.push(Action::ModeChange {
-                        mode: PaneType::TestDetailSelected(id),
+                        mode: PaneType::TestDetailSelected(id.into()),
                     });
                 }
                 actions.push(Action::ClearKeys);
             }
-            _ => {}
+            _ => {
+                if self
+                    .scrollable_area
+                    .inner_scrollable_mut()
+                    .unwrap()
+                    .input(key, false, true)?
+                {
+                    actions.push(Action::ClearKeys);
+                }
+            }
         }
 
         Ok(actions)
@@ -481,7 +208,7 @@ impl<'a> Pane for TestsPane<'a> {
 
     fn pane_type(&self) -> PaneType {
         match self.get_selected_test_id() {
-            Some(id) => PaneType::TestDetail(id),
+            Some(id) => PaneType::TestDetail(id.into()),
             None => PaneType::Test,
         }
     }
@@ -492,243 +219,8 @@ impl<'a> Pane for TestsPane<'a> {
             None => "Tests".to_string(),
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use assertor::*;
-
-    use super::*;
-
-    fn create_test(id: i64) -> PatuiTest {
-        PatuiTest {
-            id: Some(id),
-            name: format!("test {}", id),
-            description: "test".to_string(),
-            creation_date: "2021-01-01".to_string(),
-            last_updated: "2021-01-02".to_string(),
-            last_used_date: Some("2021-01-02".to_string()),
-            times_used: 1,
-            steps: vec![],
-        }
-    }
-
-    fn create_test_component<'a>(num_tests: i64) -> TestsPane<'a> {
-        let mut ret = TestsPane::new();
-
-        let mut tests = vec![];
-        for i in 0..num_tests {
-            tests.push(create_test(i));
-        }
-
-        ret.update_tests(tests);
-
-        ret
-    }
-
-    #[test]
-    fn test_single_navigate_down_with_wrap() {
-        let mut test_component = create_test_component(3);
-
-        let res = test_component.navigate(1, 17, 3, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-
-        let res = test_component.navigate(1, 17, 3, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(1);
-
-        let res = test_component.navigate(1, 17, 3, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(2);
-
-        let res = test_component.navigate(1, 17, 3, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-
-        let res = test_component.navigate(1, 17, 3, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(1);
-    }
-
-    #[test]
-    fn test_single_navigate_up_with_wrap() {
-        let mut test_component = create_test_component(5);
-
-        let res = test_component.navigate(-1, 17, 5, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(4);
-
-        let res = test_component.navigate(-1, 17, 5, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(3);
-
-        let res = test_component.navigate(-1, 17, 5, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(2);
-    }
-
-    #[test]
-    fn test_single_navigate_down_trivial_cases() {
-        let mut test_component = create_test_component(0);
-
-        let res = test_component.navigate(1, 17, 0, true);
-        assert_that!(res).is_false();
-
-        let mut test_component = create_test_component(1);
-
-        let res = test_component.navigate(1, 17, 1, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-
-        let res = test_component.navigate(1, 17, 1, true);
-        assert_that!(res).is_false();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-    }
-
-    #[test]
-    fn test_single_navigate_without_wrap() {
-        let mut test_component = create_test_component(2);
-
-        let res = test_component.navigate(1, 17, 2, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-
-        let res = test_component.navigate(-1, 17, 2, false);
-        assert_that!(res).is_false();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-
-        let res = test_component.navigate(1, 17, 2, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(1);
-
-        let res = test_component.navigate(1, 17, 2, false);
-        assert_that!(res).is_false();
-        assert_that!(test_component.selected_idx).is_equal_to(1);
-    }
-
-    #[test]
-    fn test_navigate_scroll() {
-        let mut test_component = create_test_component(21);
-
-        let res = test_component.navigate(1, 17, 21, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-        assert_that!(test_component.first_row).is_equal_to(0);
-
-        let res = test_component.navigate(1, 17, 21, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(1);
-        assert_that!(test_component.first_row).is_equal_to(0);
-
-        let res = test_component.navigate(16, 17, 21, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(17);
-        assert_that!(test_component.first_row).is_equal_to(0);
-
-        let res = test_component.navigate(1, 17, 21, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(18);
-        assert_that!(test_component.first_row).is_equal_to(1);
-
-        let res = test_component.navigate(2, 17, 21, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(20);
-        assert_that!(test_component.first_row).is_equal_to(3);
-
-        let res = test_component.navigate(1, 17, 21, false);
-        assert_that!(res).is_false();
-        assert_that!(test_component.selected_idx).is_equal_to(20);
-        assert_that!(test_component.first_row).is_equal_to(3);
-
-        let res = test_component.navigate(1, 17, 21, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-        assert_that!(test_component.first_row).is_equal_to(0);
-
-        let res = test_component.navigate(-1, 17, 21, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(20);
-        assert_that!(test_component.first_row).is_equal_to(3);
-
-        let res = test_component.navigate(-1, 17, 21, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(19);
-        assert_that!(test_component.first_row).is_equal_to(3);
-
-        let res = test_component.navigate(-17, 17, 21, true);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(2);
-        assert_that!(test_component.first_row).is_equal_to(2);
-
-        let res = test_component.navigate(19, 17, 21, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.selected_idx).is_equal_to(20);
-        assert_that!(test_component.first_row).is_equal_to(3);
-    }
-
-    #[test]
-    fn test_scroll_page() {
-        let mut test_component = create_test_component(29);
-
-        let res = test_component.scroll_page(10);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(10);
-        assert_that!(test_component.selected_idx).is_equal_to(10);
-
-        let res = test_component.scroll_page(10);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(11);
-        assert_that!(test_component.selected_idx).is_equal_to(11);
-
-        let res = test_component.scroll_page(10);
-        assert_that!(res).is_false();
-        assert_that!(test_component.first_row).is_equal_to(11);
-        assert_that!(test_component.selected_idx).is_equal_to(11);
-
-        let res = test_component.scroll_page(-10);
-        assert_that!(res).is_false();
-        assert_that!(test_component.first_row).is_equal_to(1);
-        assert_that!(test_component.selected_idx).is_equal_to(11);
-
-        let res = test_component.scroll_page(-10);
-        assert_that!(res).is_false();
-        assert_that!(test_component.first_row).is_equal_to(0);
-        assert_that!(test_component.selected_idx).is_equal_to(11);
-    }
-
-    #[test]
-    fn test_scroll_page_leaves_selected_index_position() {
-        let mut test_component = create_test_component(70);
-
-        let res = test_component.navigate(1, 17, 70, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(0);
-        assert_that!(test_component.selected_idx).is_equal_to(0);
-
-        let res = test_component.navigate(5, 17, 70, false);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(0);
-        assert_that!(test_component.selected_idx).is_equal_to(5);
-
-        let res = test_component.scroll_page(17);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(17);
-        assert_that!(test_component.selected_idx).is_equal_to(22);
-
-        let res = test_component.scroll_page(-17);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(0);
-        assert_that!(test_component.selected_idx).is_equal_to(5);
-
-        let res = test_component.scroll_page(9);
-        assert_that!(res).is_true();
-        assert_that!(test_component.first_row).is_equal_to(9);
-        assert_that!(test_component.selected_idx).is_equal_to(14);
-
-        let res = test_component.scroll_page(-9);
-        assert_that!(res).is_false();
-        assert_that!(test_component.first_row).is_equal_to(0);
-        assert_that!(test_component.selected_idx).is_equal_to(14);
+    fn set_focus(&mut self, focus: bool) {
+        self.is_focussed = focus;
     }
 }

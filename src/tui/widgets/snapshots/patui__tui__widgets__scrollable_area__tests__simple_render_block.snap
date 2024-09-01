@@ -3,18 +3,18 @@ source: src/tui/widgets/scrollable_area.rs
 expression: buffer
 ---
 Buffer {
-    area: Rect { x: 2, y: 2, width: 10, height: 10 },
+    area: Rect { x: 2, y: 2, width: 20, height: 10 },
     content: [
-        "┌────────┐",
-        "│       ↑│",
-        "│       █│",
-        "│       █│",
-        "│       █│",
-        "│       █│",
-        "│       ║│",
-        "│       ║│",
-        "│       ↓│",
-        "└────────┘",
+        "┌──────────────────┐",
+        "│                 ↑│",
+        "│  Test1          █│",
+        "│  Test2          █│",
+        "│  Test3          █│",
+        "│  Test4          ║│",
+        "│  Test5          ║│",
+        "│  Test6          ║│",
+        "│                 ↓│",
+        "└──────────────────┘",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

@@ -26,8 +26,10 @@ pub(crate) trait Pane: std::fmt::Debug {
         Ok(vec![])
     }
 
+    fn set_focus(&mut self, _focus: bool);
+
     /// Render the component into the rect given
-    fn render(&self, f: &mut Frame, rect: Rect, is_selected: bool);
+    fn render(&self, f: &mut Frame, rect: Rect);
 
     fn pane_type(&self) -> PaneType;
 

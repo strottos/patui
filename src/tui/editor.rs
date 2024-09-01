@@ -1,30 +1,34 @@
 use color_eyre::{eyre::eyre, Result};
 
-use crate::types::{PatuiStepDetails, PatuiTest};
+use crate::types::{PatuiStepDetails, PatuiTest, PatuiTestDetails, PatuiTestStepId};
 
-pub(crate) fn create_test() -> Result<PatuiTest> {
-    let template = crate::types::PatuiTest::default().to_editable_yaml_string()?;
-    let test = PatuiTest::edit_yaml(template, None)?;
-
-    Ok(test)
-}
-
-pub(crate) fn edit_test(test: PatuiTest) -> Result<PatuiTest> {
-    let template = test.to_editable_yaml_string()?;
-    let test = PatuiTest::edit_yaml(template, test.id)?;
+pub(crate) fn create_test() -> Result<PatuiTestDetails> {
+    let template = crate::types::PatuiTestDetails::default().to_editable_yaml_string()?;
+    let test = PatuiTestDetails::edit_yaml(template)?;
 
     Ok(test)
 }
 
-pub(crate) fn edit_step(mut test: PatuiTest, step_num: usize) -> Result<PatuiTest> {
+pub(crate) fn edit_test(mut test: PatuiTest) -> Result<PatuiTest> {
+    let template = test.details.to_editable_yaml_string()?;
+    test.details = PatuiTestDetails::edit_yaml(template)?;
+
+    Ok(test)
+}
+
+pub(crate) fn edit_step(mut test: PatuiTest, step_num: PatuiTestStepId) -> Result<PatuiTest> {
     let step = test
+        .details
         .steps
-        .get(step_num)
+        .get(usize::from(step_num))
         .ok_or_else(|| eyre!("Step {} not found", step_num))?;
     let template = step.to_editable_yaml()?;
     let mut step = PatuiStepDetails::edit_yaml(template, step)?;
 
-    test.steps.get_mut(step_num).replace(&mut step);
+    test.details
+        .steps
+        .get_mut(usize::from(step_num))
+        .replace(&mut step);
 
     Ok(test)
 }

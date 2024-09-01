@@ -1,0 +1,32 @@
+---
+source: src/tui/widgets/scrollable_area.rs
+expression: buffer
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 20, height: 20 },
+    content: [
+        "                   ↑",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   █",
+        "                   █",
+        "                   █",
+        "                   █",
+        "                   █",
+        "                   █",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ║",
+        "                   ↓",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

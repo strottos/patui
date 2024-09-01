@@ -190,7 +190,7 @@ impl App {
     }
 
     async fn handle_action(&mut self, action: &Action, tui: &mut Tui) -> Result<Vec<Action>> {
-        let mut ret = vec![];
+        let mut extra_actions = vec![];
 
         match action {
             Action::Render => {
@@ -208,7 +208,7 @@ impl App {
                 ));
             }
             Action::ModeChange { ref mode } => {
-                self.handle_mode_change(mode, &mut ret).await?;
+                self.handle_mode_change(mode, &mut extra_actions).await?;
             }
             Action::PopupCreate(ref popup_mode) => {
                 self.handle_popup_create(popup_mode).await?;
@@ -217,52 +217,66 @@ impl App {
                 self.popups.pop();
             }
             Action::EditorMode(editor_mode) => {
-                self.handle_editor_mode(editor_mode, tui, &mut ret).await?;
+                self.handle_editor_mode(editor_mode, tui, &mut extra_actions)
+                    .await;
             }
             Action::DbRead(ref db_select) => {
                 tracing::trace!("Got db select: {:?}", db_select);
                 match db_select {
                     DbRead::Test => {
-                        ret.push(Action::UpdateData(UpdateData::Tests(
+                        extra_actions.push(Action::UpdateData(UpdateData::Tests(
                             self.db.get_tests().await?,
                         )));
                     }
                     DbRead::TestDetail(id) => {
-                        ret.push(Action::UpdateData(UpdateData::TestDetail(
+                        extra_actions.push(Action::UpdateData(UpdateData::TestDetail(
                             self.db.get_test(*id).await?,
                         )));
                     }
                 };
             }
-            Action::DbChange(ref db_change) => {
+            Action::DbCreate(ref db_change) => {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change.clone() {
-                    DbChange::Test(mut test) => {
-                        self.db.edit_test(&mut test).await?;
-                        ret.push(Action::UpdateData(UpdateData::Tests(
+                    DbCreate::Test(details) => {
+                        let test = self.db.new_test(&details).await?;
+                        extra_actions.push(Action::UpdateData(UpdateData::Tests(
                             self.db.get_tests().await?,
                         )));
-                        ret.push(Action::UpdateData(UpdateData::TestDetail(test)));
+                        extra_actions.push(Action::UpdateData(UpdateData::TestDetail(test)));
+                    }
+                };
+            }
+            Action::DbUpdate(ref db_change) => {
+                tracing::trace!("Got db change: {:?}", db_change);
+                match db_change.clone() {
+                    DbUpdate::Test(mut test) => {
+                        self.db.edit_test(&mut test).await?;
+                        extra_actions.push(Action::UpdateData(UpdateData::Tests(
+                            self.db.get_tests().await?,
+                        )));
+                        extra_actions.push(Action::UpdateData(UpdateData::TestDetail(test)));
                     }
                 };
             }
             Action::PaneChange(pane_idx) => {
-                self.handle_pane_change(*pane_idx, &mut ret).await?;
+                self.handle_pane_change(*pane_idx, &mut extra_actions)
+                    .await?;
             }
             Action::ClearKeys => self.last_key_events.clear(),
             Action::UpdateData(_) => {}
         }
 
         for action in self.top_bar.update(action)?.into_iter() {
-            ret.push(action);
+            extra_actions.push(action);
         }
         for component in self.panes.iter_mut() {
             for action in component.update(action)?.into_iter() {
-                ret.push(action);
+                extra_actions.push(action);
             }
         }
 
-        Ok(ret)
+        Ok(extra_actions)
     }
 
     fn get_help(&self) -> Vec<HelpItem> {
@@ -281,7 +295,7 @@ impl App {
     }
 
     fn render(&mut self, f: &mut Frame) {
-        let fsize = f.size();
+        let fsize = f.area();
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -303,24 +317,29 @@ impl App {
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .split(chunks[1]);
-                let pane = self.panes.get(idx).unwrap();
-                pane.render(f, chunks[0], false);
-                let pane = self.panes.get(self.selected_pane).unwrap();
-                pane.render(f, chunks[1], true);
+                let pane = self.panes.get_mut(idx).unwrap();
+                pane.set_focus(false);
+                pane.render(f, chunks[0]);
+                let pane = self.panes.get_mut(self.selected_pane).unwrap();
+                pane.set_focus(true);
+                pane.render(f, chunks[1]);
             }
             OtherPane::Right(idx) => {
                 let chunks = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .split(chunks[1]);
-                let pane = self.panes.get(self.selected_pane).unwrap();
-                pane.render(f, chunks[0], true);
-                let pane = self.panes.get(idx).unwrap();
-                pane.render(f, chunks[1], false);
+                let pane = self.panes.get_mut(self.selected_pane).unwrap();
+                pane.set_focus(true);
+                pane.render(f, chunks[0]);
+                let pane = self.panes.get_mut(idx).unwrap();
+                pane.set_focus(false);
+                pane.render(f, chunks[1]);
             }
             OtherPane::None => {
-                let pane = self.panes.get(self.selected_pane).unwrap();
-                pane.render(f, chunks[1], true);
+                let pane = self.panes.get_mut(self.selected_pane).unwrap();
+                pane.set_focus(true);
+                pane.render(f, chunks[1]);
             }
         }
 
@@ -356,8 +375,12 @@ impl App {
         popup.component.render(f, area, title);
     }
 
-    async fn handle_mode_change(&mut self, mode: &PaneType, ret: &mut Vec<Action>) -> Result<()> {
-        match mode {
+    async fn handle_mode_change(
+        &mut self,
+        selected_pane: &PaneType,
+        extra_actions: &mut Vec<Action>,
+    ) -> Result<()> {
+        match selected_pane {
             PaneType::Test => {
                 self.selected_pane = 0;
                 self.other_pane = OtherPane::None;
@@ -382,7 +405,7 @@ impl App {
 
         let panes_len = self.panes.len();
         let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
-        ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
+        extra_actions.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
             self.panes[0..effective_panes_len]
                 .iter()
                 .map(|pane| pane.pane_title())
@@ -399,45 +422,50 @@ impl App {
         editor_mode: &EditorMode,
         tui: &mut Tui,
         ret: &mut Vec<Action>,
+    ) {
+        if let Err(e) = self.handle_editor_mode_inner(editor_mode, tui, ret).await {
+            ret.push(Action::Error(Error::new(
+                ErrorType::Error,
+                format!(
+                    "Error {} test, editor failure\n\n{}",
+                    match editor_mode {
+                        EditorMode::CreateTest => "creating",
+                        EditorMode::UpdateTest(_) | EditorMode::UpdateTestStep(_, _) => "editing",
+                    },
+                    e
+                ),
+            )));
+        }
+    }
+
+    async fn handle_editor_mode_inner(
+        &self,
+        editor_mode: &EditorMode,
+        tui: &mut Tui,
+        ret: &mut Vec<Action>,
     ) -> Result<()> {
         tracing::trace!("Got editor mode: {:?}", editor_mode);
         tui.exit()?;
-        let test_result = match editor_mode {
-            EditorMode::CreateTest => super::editor::create_test(),
+        match editor_mode {
+            EditorMode::CreateTest => {
+                let test_details = super::editor::create_test()?;
+                ret.push(Action::DbCreate(DbCreate::Test(test_details)));
+            }
             EditorMode::UpdateTest(id) => {
                 let test = self.db.get_test(*id).await?;
-                super::editor::edit_test(test)
+                let test = super::editor::edit_test(test)?;
+                let test_id = test.id;
+                ret.push(Action::DbUpdate(DbUpdate::Test(test)));
+                ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
             }
             EditorMode::UpdateTestStep(id, step_num) => {
                 let test = self.db.get_test(*id).await?;
-                super::editor::edit_step(test, *step_num)
+                let test = super::editor::edit_step(test, *step_num)?;
+                let test_id = test.id;
+                ret.push(Action::DbUpdate(DbUpdate::Test(test)));
+                ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
             }
         };
-        trace!("Got test result: {:?}", test_result);
-        match test_result {
-            Ok(test) => {
-                trace!("Changing DB: {:?}", test);
-                let id = test.id;
-                ret.push(Action::DbChange(DbChange::Test(test)));
-                if let Some(id) = id {
-                    ret.push(Action::DbRead(DbRead::TestDetail(id)));
-                }
-            }
-            Err(e) => {
-                ret.push(Action::Error(Error::new(
-                    ErrorType::Error,
-                    format!(
-                        "Error {} test, editor failure\n\n{}",
-                        match editor_mode {
-                            EditorMode::CreateTest => "creating",
-                            EditorMode::UpdateTest(_) | EditorMode::UpdateTestStep(_, _) =>
-                                "editing",
-                        },
-                        e
-                    ),
-                )));
-            }
-        }
         tui.enter()?;
 
         Ok(())
@@ -446,9 +474,9 @@ impl App {
     async fn handle_popup_create(&mut self, popup_mode: &PopupMode) -> Result<()> {
         let component: Box<dyn PopupComponent> = match popup_mode {
             PopupMode::CreateTest => Box::new(TestEditComponent::new()),
-            PopupMode::UpdateTest(id) => {
-                Box::new(TestEditComponent::new_update(self.db.get_test(*id).await?)?)
-            }
+            PopupMode::UpdateTest(id) => Box::new(TestEditComponent::new_update(
+                self.db.get_test(*id).await?.details,
+            )?),
             PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
             PopupMode::Error => unreachable!(), // Handled elsewhere, use Action::Error
         };

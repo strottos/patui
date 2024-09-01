@@ -37,7 +37,7 @@ pub(crate) struct GetTest {
 impl GetTest {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         let tests = match self.id {
-            Some(id) => vec![db.get_test(id).await?.to_min_display_test()?],
+            Some(id) => vec![db.get_test(id.into()).await?.to_min_display_test()?],
             None => db
                 .get_tests()
                 .await?

@@ -38,7 +38,7 @@ pub(crate) struct DescribeTest {
 
 impl DescribeTest {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let tests = db.get_test(self.id).await?;
+        let tests = db.get_test(self.id.into()).await?;
 
         std::io::stdout().write_all(&serde_json::to_vec(&tests)?)?;
         std::io::stdout().write_all(b"\n")?;

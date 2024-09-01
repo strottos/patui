@@ -5,9 +5,9 @@ expression: buffer
 Buffer {
     area: Rect { x: 0, y: 0, width: 10, height: 10 },
     content: [
-        "          ",
-        "          ",
-        "          ",
+        "Test1     ",
+        "Test2     ",
+        "Test3     ",
         "          ",
         "          ",
         "          ",
