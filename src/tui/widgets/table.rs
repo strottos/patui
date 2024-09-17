@@ -257,6 +257,7 @@ mod tests {
         text::Text,
         widgets::WidgetRef,
     };
+    use tracing_test::traced_test;
 
     use crate::tui::widgets::patui_widget::ScrollType;
 
@@ -298,6 +299,7 @@ mod tests {
         )
     }
 
+    #[traced_test]
     #[test]
     fn test_display_table_short_width() {
         let table = create_tests_table(8);
@@ -309,6 +311,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_display_table_normal() {
         let table = create_tests_table(8);
@@ -320,6 +323,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_display_table_with_offsets() {
         let mut table = create_tests_table(40);
@@ -332,6 +336,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_display_table_with_selected_idx() {
         let mut table = create_tests_table(40);
@@ -346,6 +351,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scroll_table() {
         let mut table = create_tests_table(40);
@@ -376,6 +382,7 @@ mod tests {
         assert_that!(table.first_row).is_equal_to(0);
     }
 
+    #[traced_test]
     #[test]
     fn test_navigate_table() {
         let mut table = create_tests_table(40);

@@ -11,7 +11,7 @@ mod widgets;
 
 pub(crate) use app::App;
 
-use color_eyre::Result;
+use eyre::Result;
 
 use self::terminal::Tui;
 

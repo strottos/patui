@@ -1,6 +1,6 @@
 use crate::types::{PatuiTest, PatuiTestDetails, PatuiTestId, PatuiTestStepId};
-use color_eyre::Result;
 use crossterm::event::KeyEvent;
+use eyre::Result;
 
 use super::{error::Error, popups::PopupComponent};
 

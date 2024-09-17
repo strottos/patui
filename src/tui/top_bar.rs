@@ -1,7 +1,7 @@
 use crate::tui::app::{Action, PaneType, UpdateData};
 
-use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Style, Stylize},

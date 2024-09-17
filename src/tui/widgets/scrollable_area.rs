@@ -1,7 +1,7 @@
 use std::{cell::Cell, cmp};
 
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -153,13 +153,11 @@ impl<'a> ScrollableArea<'a> {
             for _ in 0..count {
                 new_selected_idx += 1;
                 while new_selected_idx < self.num_widgets() as isize {
-                    if self
-                        .get_widget(new_selected_idx as usize)
-                        .unwrap()
-                        .is_selectable()
-                    {
-                        self.selected_idx = new_selected_idx;
-                        break;
+                    if let Some(widget) = self.get_widget(new_selected_idx as usize) {
+                        if widget.is_selectable() {
+                            self.selected_idx = new_selected_idx;
+                            break;
+                        }
                     }
                     new_selected_idx += 1;
                 }
@@ -197,7 +195,7 @@ impl<'a> ScrollableArea<'a> {
 
                 if wrap_around && new_selected_idx == -1 {
                     new_selected_idx = self.num_widgets() as isize - 1;
-                    eprintln!("New Selected Index: {}", new_selected_idx);
+                    debug!("New Selected Index: {}", new_selected_idx);
                     while new_selected_idx >= 0 {
                         if self
                             .get_widget(new_selected_idx as usize)
@@ -215,7 +213,7 @@ impl<'a> ScrollableArea<'a> {
             }
         }
 
-        eprintln!(
+        debug!(
             "Selected Rows: {:?}, First Row: {}, Display Height: {}",
             self.get_selected_rows(),
             self.first_row,
@@ -301,7 +299,7 @@ impl<'a> ScrollableArea<'a> {
         for (i, widget) in self.widgets.iter().enumerate() {
             let widget_height = widget.scrollable_height();
             let widget_size = widget.num_widgets();
-            eprintln!(
+            debug!(
                 "Widget: {}, Starting Index: {}, Widget Height: {}, Selected Idx {}",
                 i, widget.starting_idx, widget_height, self.selected_idx,
             );
@@ -566,6 +564,7 @@ mod tests {
         text::{Line, Text as RatatuiText},
         widgets::{Borders, Padding},
     };
+    use tracing_test::traced_test;
 
     fn get_widget_calls<'a>(scrollable_area: &'a ScrollableArea<'a>) -> Vec<TestWidget<'a>> {
         scrollable_area
@@ -575,6 +574,7 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_area_simple() {
         let mut scrollable_area = ScrollableArea {
@@ -614,6 +614,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_area_with_overlaps() {
         let mut scrollable_area = ScrollableArea {
@@ -648,6 +649,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_area_with_different_first_line() {
         let mut scrollable_area = ScrollableArea {
@@ -681,6 +683,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_single_line_scroll() {
         let widgets = (0..12)
@@ -731,6 +734,7 @@ mod tests {
         assert_that!(scrollable_area.first_row).is_equal_to(0);
     }
 
+    #[traced_test]
     #[test]
     fn test_page_scroll() {
         let widgets = (0..12)
@@ -791,6 +795,7 @@ mod tests {
         scrollable_area.render_ref(rect, &mut buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_render_block() {
         let mut scrollable_area = ScrollableArea {
@@ -855,6 +860,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_render_block_with_offset() {
         let mut scrollable_area = ScrollableArea {
@@ -919,6 +925,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_render_block_with_offset_into_widget() {
         let mut scrollable_area = ScrollableArea {
@@ -981,6 +988,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_render_block_with_offset_into_top_and_bottom_widget() {
         let mut scrollable_area = ScrollableArea {
@@ -1043,6 +1051,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_render_text_widgets() {
         let widgets = (0..10)
@@ -1079,6 +1088,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_first_navigation_text_down() {
         let widgets = (0..10)
@@ -1123,6 +1133,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_first_navigation_text_up() {
         let widgets = (0..11)
@@ -1167,6 +1178,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_navigation() {
         let widgets = (0..11)
@@ -1211,6 +1223,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_navigation_with_wrapping_forward() {
         let widgets = (0..11)
@@ -1255,6 +1268,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_navigation_with_wrapping_backward() {
         let widgets = (0..11)
@@ -1376,6 +1390,7 @@ mod tests {
         }
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_1() {
         let scrollable_area = scrollable_with_table_widget();
@@ -1388,6 +1403,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_2() {
         let mut scrollable_area = scrollable_with_table_widget();
@@ -1401,6 +1417,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_3() {
         let mut scrollable_area = scrollable_with_table_widget();
@@ -1414,6 +1431,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_4() {
         let mut scrollable_area = scrollable_with_table_widget();
@@ -1427,6 +1445,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_5() {
         let mut scrollable_area = scrollable_with_table_widget();
@@ -1440,6 +1459,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_6() {
         let mut scrollable_area = scrollable_with_table_widget();
@@ -1453,6 +1473,7 @@ mod tests {
         insta::assert_debug_snapshot!(buffer);
     }
 
+    #[traced_test]
     #[test]
     fn test_scrollable_with_table_widget_7() {
         let mut scrollable_area = scrollable_with_table_widget();
@@ -1462,6 +1483,61 @@ mod tests {
 
         scrollable_area.navigate(6, false);
         scrollable_area.render_ref(rect, &mut buffer);
+
+        insta::assert_debug_snapshot!(buffer);
+    }
+
+    #[traced_test]
+    #[test]
+    fn test_scrollable_with_table_select() {
+        let mut scrollable_area = ScrollableArea {
+            first_row: 0,
+            first_col: 0,
+            selected_idx: -1,
+            display_height: Cell::new(24),
+            display_width: Cell::new(60),
+            widgets: vec![PatuiWidgetData {
+                inner: PatuiWidget::new_table(Table::new_with_elements(
+                    vec![
+                        vec![
+                            RatatuiText::from("Test1_1"),
+                            RatatuiText::from("Test1_2"),
+                            RatatuiText::from("Test1_3"),
+                        ],
+                        vec![
+                            RatatuiText::from("Test2_1"),
+                            RatatuiText::from("Test2_2"),
+                            RatatuiText::from("Test2_3"),
+                        ],
+                        vec![
+                            RatatuiText::from("Test3_1"),
+                            RatatuiText::from("Test3_2"),
+                            RatatuiText::from("Test3_3"),
+                        ],
+                    ],
+                    vec![
+                        TableHeader::new(RatatuiText::from("Header1"), 0, Constraint::Min(10)),
+                        TableHeader::new(RatatuiText::from("Header2"), 1, Constraint::Min(10)),
+                    ],
+                    vec![
+                        TableHeader::new(RatatuiText::from("Header1"), 0, Constraint::Min(10)),
+                        TableHeader::new(RatatuiText::from("Header2"), 1, Constraint::Min(10)),
+                        TableHeader::new(RatatuiText::from("Header3"), 2, Constraint::Min(10)),
+                    ],
+                )),
+                starting_idx: 4,
+            }],
+            block: None,
+            style: Style::default(),
+        };
+
+        let rect = Rect::new(0, 0, 80, 24);
+        let mut buffer = Buffer::empty(rect);
+
+        scrollable_area.navigate(1, false);
+        scrollable_area.render_ref(rect, &mut buffer);
+
+        assert_that!(scrollable_area.selected_idx).is_equal_to(0);
 
         insta::assert_debug_snapshot!(buffer);
     }

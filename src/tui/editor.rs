@@ -1,4 +1,4 @@
-use color_eyre::{eyre::eyre, Result};
+use eyre::{eyre, Result};
 
 use crate::types::{PatuiStepDetails, PatuiTest, PatuiTestDetails, PatuiTestStepId};
 

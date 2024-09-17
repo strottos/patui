@@ -6,8 +6,8 @@ use crate::{
     types::{PatuiTest, PatuiTestStepId},
 };
 
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     prelude::{Frame, Rect},
     text::Line,

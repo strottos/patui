@@ -1,5 +1,5 @@
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     text::Text as RatatuiText,

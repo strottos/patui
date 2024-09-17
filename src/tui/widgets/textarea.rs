@@ -9,8 +9,6 @@ use ratatui::{
     widgets::{Block, Borders, Widget, WidgetRef},
 };
 
-use super::patui_widget::PatuiWidget;
-
 type ValidateFn = Box<dyn Fn(&TextArea) -> bool>;
 
 pub(crate) struct TextArea<'a> {

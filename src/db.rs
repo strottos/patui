@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use color_eyre::Result;
+use eyre::Result;
 use tokio_rusqlite::Connection;
 use tracing::{debug, trace};
 

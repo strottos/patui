@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use clap::{Args, Parser};
-use color_eyre::Result;
+use eyre::Result;
 
 use crate::{db::Database, types::PatuiTestDetails};
 

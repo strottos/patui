@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use indexmap::IndexMap;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},

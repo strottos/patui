@@ -1,7 +1,7 @@
 use std::{cmp, sync::Arc};
 
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     widgets::Clear,
@@ -37,12 +37,12 @@ pub(crate) struct App {
 
     panes: Vec<Box<dyn Pane>>,
     popups: Vec<Popup>,
-
     selected_pane: usize,
     other_pane: OtherPane,
-
     top_bar: TopBar,
     bottom_bar: BottomBar,
+
+    redraw: bool,
 }
 
 impl App {
@@ -61,12 +61,12 @@ impl App {
 
             panes,
             popups: vec![],
-
             selected_pane: 0,
             other_pane: OtherPane::None,
-
             top_bar,
             bottom_bar,
+
+            redraw: true,
         })
     }
 
@@ -194,11 +194,15 @@ impl App {
 
         match action {
             Action::Render => {
-                tui.draw(|f| self.render(f))?;
+                if self.redraw {
+                    tui.draw(|f| self.render(f))?;
+                }
+                self.redraw = false;
             }
             Action::Tick => {}
             Action::Resize(w, h) => {
                 tui.resize(Rect::new(0, 0, *w, *h))?;
+                self.redraw = true;
             }
             Action::Quit => self.should_quit = true,
             Action::Error(ref e) => {
@@ -206,15 +210,19 @@ impl App {
                     PopupMode::Error,
                     Box::new(ErrorComponent::new(e.clone())),
                 ));
+                self.redraw = true;
             }
             Action::ModeChange { ref mode } => {
                 self.handle_mode_change(mode, &mut extra_actions).await?;
+                self.redraw = true;
             }
             Action::PopupCreate(ref popup_mode) => {
                 self.handle_popup_create(popup_mode).await?;
+                self.redraw = true;
             }
             Action::PopupClose => {
                 self.popups.pop();
+                self.redraw = true;
             }
             Action::EditorMode(editor_mode) => {
                 self.handle_editor_mode(editor_mode, tui, &mut extra_actions)
@@ -234,6 +242,7 @@ impl App {
                         )));
                     }
                 };
+                self.redraw = true;
             }
             Action::DbCreate(ref db_change) => {
                 tracing::trace!("Got db change: {:?}", db_change);
@@ -246,25 +255,30 @@ impl App {
                         extra_actions.push(Action::UpdateData(UpdateData::TestDetail(test)));
                     }
                 };
+                self.redraw = true;
             }
             Action::DbUpdate(ref db_change) => {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change.clone() {
-                    DbUpdate::Test(mut test) => {
-                        self.db.edit_test(&mut test).await?;
+                    DbUpdate::Test(test) => {
+                        self.db.edit_test(&test).await?;
                         extra_actions.push(Action::UpdateData(UpdateData::Tests(
                             self.db.get_tests().await?,
                         )));
                         extra_actions.push(Action::UpdateData(UpdateData::TestDetail(test)));
                     }
                 };
+                self.redraw = true;
             }
             Action::PaneChange(pane_idx) => {
                 self.handle_pane_change(*pane_idx, &mut extra_actions)
                     .await?;
+                self.redraw = true;
             }
             Action::ClearKeys => self.last_key_events.clear(),
-            Action::UpdateData(_) => {}
+            Action::UpdateData(_) => {
+                self.redraw = true;
+            }
         }
 
         for action in self.top_bar.update(action)?.into_iter() {

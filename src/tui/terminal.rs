@@ -4,12 +4,12 @@ use std::{
     time::Duration,
 };
 
-use color_eyre::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, KeyEventKind},
     terminal::LeaveAlternateScreen,
     ExecutableCommand,
 };
+use eyre::Result;
 use futures::{FutureExt, StreamExt};
 use ratatui::backend::CrosstermBackend as Backend;
 use tokio::{

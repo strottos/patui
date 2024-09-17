@@ -5,9 +5,9 @@
 
 use std::{fmt::Display, io::Read};
 
-use color_eyre::Result;
 use convert_case::{Case, Casing};
 use edit::edit;
+use eyre::Result;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
