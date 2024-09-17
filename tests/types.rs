@@ -56,3 +56,31 @@ pub struct PatuiTestMinDisplay {
     pub name: String,
     pub description: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct PatuiRunStatus {
+    pub id: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PatuiInstance {
+    pub(crate) id: id,
+    pub(crate) test_id: PatuiTestId,
+    pub(crate) hash: i64,
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) creation_date: String,
+    pub(crate) last_updated: String,
+    pub(crate) steps: Vec<PatuiStep>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PatuiRun {
+    pub(crate) id: PatuiRunId,
+    pub(crate) instance: PatuiInstance,
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) status: PatuiRunStatus,
+    pub(crate) step_run_details: Vec<PatuiRunStep>,
+}

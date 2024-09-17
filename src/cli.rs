@@ -6,7 +6,7 @@ mod new;
 use std::sync::Arc;
 
 use clap::Parser;
-use color_eyre::Result;
+use eyre::Result;
 
 use crate::db::Database;
 

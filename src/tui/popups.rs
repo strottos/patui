@@ -2,8 +2,8 @@ mod error;
 mod help;
 mod test_edit;
 
-use color_eyre::Result;
 use crossterm::event::KeyEvent;
+use eyre::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     widgets::Block,

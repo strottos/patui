@@ -1,5 +1,5 @@
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     text::Text,
@@ -29,15 +29,8 @@ impl ErrorComponent {
 impl PopupComponent for ErrorComponent {
     fn render_inner(&self, f: &mut Frame, r: Rect) {
         let error_widget = Paragraph::new(Text::from(self.error.display()))
-            .alignment(Alignment::Center)
-            .block(
-                Block::default()
-                    .title(self.error.title())
-                    .borders(Borders::ALL),
-            )
+            .alignment(Alignment::Left)
             .wrap(Wrap { trim: false });
-
-        f.render_widget(error_widget, r);
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
@@ -54,6 +47,8 @@ impl PopupComponent for ErrorComponent {
                 .as_ref(),
             )
             .split(layout[1]);
+
+        f.render_widget(error_widget, r);
 
         let mut ok_button = Button::new("OK".to_string());
         ok_button.selected(true);

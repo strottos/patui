@@ -1,5 +1,5 @@
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     text::Text as RatatuiText,
@@ -8,11 +8,11 @@ use ratatui::{
 };
 
 use crate::{
+    db::PatuiTest,
     tui::{
         app::{Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, UpdateData},
         widgets::{PatuiWidget, ScrollableArea, Table, TableHeader, Text},
     },
-    types::PatuiTest,
 };
 
 use super::Pane;
@@ -71,9 +71,9 @@ impl<'a> TestsPane<'a> {
                 .iter()
                 .map(|test| {
                     vec![
-                        RatatuiText::from(test.details.name.clone()),
-                        RatatuiText::from(test.details.description.clone()),
-                        RatatuiText::from(test.details.creation_date.clone()),
+                        RatatuiText::from(test.name.clone()),
+                        RatatuiText::from(test.description.clone()),
+                        RatatuiText::from(test.creation_date.clone()),
                     ]
                 })
                 .collect::<Vec<Vec<RatatuiText>>>(),

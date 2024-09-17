@@ -1,13 +1,13 @@
 use crate::{
+    db::{PatuiTest, PatuiTestStepId},
     tui::{
         app::{Action, DbRead, EditorMode, HelpItem, PaneType},
         widgets::{PatuiWidget, ScrollableArea, Text},
     },
-    types::{PatuiTest, PatuiTestStepId},
 };
 
-use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use eyre::Result;
 use ratatui::{
     prelude::{Frame, Rect},
     text::Line,
@@ -39,25 +39,18 @@ impl<'a> TestDetailsPane<'a> {
         let mut text = Text::default();
 
         text.push_line(Line::from(format!("Id: {}", test.id)));
-        text.push_line(Line::from(format!("Name: {}", test.details.name)));
-        text.push_line(Line::from(format!(
-            "Description: {}\n",
-            test.details.description
-        )));
+        text.push_line(Line::from(format!("Name: {}", test.name)));
+        text.push_line(Line::from(format!("Description: {}\n", test.description)));
         text.push_line(Line::from(format!(
             "Steps:{}",
-            if test.details.steps.is_empty() {
-                " []"
-            } else {
-                ""
-            }
+            if test.steps.is_empty() { " []" } else { "" }
         )));
         scrollable_area
             .inner_scrollable_mut()
             .unwrap()
             .add_widget(PatuiWidget::new_text(text));
 
-        for step in test.details.steps.iter() {
+        for step in test.steps.iter() {
             let yaml = step.get_display_yaml().unwrap();
 
             let mut text = Text::new(true);

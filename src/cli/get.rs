@@ -1,9 +1,9 @@
 use std::{io::Write, sync::Arc};
 
 use clap::{Args, Parser};
-use color_eyre::Result;
+use eyre::Result;
 
-use crate::db::Database;
+use crate::db::{Database, PatuiTestMinDisplay};
 
 #[derive(Debug, Args)]
 #[command(about = "Get an entity")]
@@ -36,13 +36,13 @@ pub(crate) struct GetTest {
 
 impl GetTest {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let tests = match self.id {
-            Some(id) => vec![db.get_test(id.into()).await?.to_min_display_test()?],
+        let tests: Vec<PatuiTestMinDisplay> = match self.id {
+            Some(id) => vec![db.get_test(id.into()).await?.into()],
             None => db
                 .get_tests()
                 .await?
-                .iter()
-                .map(|x| x.to_min_display_test().unwrap())
+                .into_iter()
+                .map(|x| x.into())
                 .collect::<Vec<_>>(),
         };
 

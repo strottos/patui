@@ -3,14 +3,16 @@
 
 mod cli;
 mod db;
+mod runner;
 mod tui;
-pub(crate) mod types;
+mod types;
+mod utils;
 
 use std::{env, fs::create_dir_all, sync::Arc};
 
 use clap::Parser;
-use color_eyre::Result;
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
+use eyre::Result;
 use lazy_static::lazy_static;
 use tracing::{error, info};
 use tracing_subscriber::{

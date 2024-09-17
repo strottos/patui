@@ -1,6 +1,7 @@
-use crate::types::{PatuiTest, PatuiTestDetails, PatuiTestId, PatuiTestStepId};
-use color_eyre::Result;
+use crate::db::{PatuiTest, PatuiTestId, PatuiTestStepId};
+use crate::types::PatuiTestDetails;
 use crossterm::event::KeyEvent;
+use eyre::Result;
 
 use super::{error::Error, popups::PopupComponent};
 
@@ -154,6 +155,7 @@ pub(crate) trait Component: std::fmt::Debug {
         Ok(vec![])
     }
 }
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum EditorMode {
     CreateTest,

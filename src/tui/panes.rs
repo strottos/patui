@@ -1,5 +1,5 @@
-use color_eyre::Result;
 use crossterm::event::KeyEvent;
+use eyre::Result;
 use ratatui::{layout::Rect, Frame};
 
 use super::app::{Action, HelpItem, PaneType};

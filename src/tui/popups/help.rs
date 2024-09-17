@@ -1,5 +1,5 @@
-use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
+use eyre::Result;
 use ratatui::{
     layout::Rect,
     widgets::{Paragraph, Wrap},
