@@ -119,14 +119,14 @@ impl NewTest {
 pub(crate) struct NewRun {
     // Test ID to run
     #[arg(short, long)]
-    pub(crate) test_id: isize,
+    pub(crate) test_id: i64,
 }
 
 impl NewRun {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let run = db.new_run(self.test_id).await?;
+        let run = db.new_run(self.test_id.into()).await?;
 
-        println!("{}", serde_json::to_string(run)?);
+        println!("{}", serde_json::to_string(&run)?);
 
         Ok(())
     }

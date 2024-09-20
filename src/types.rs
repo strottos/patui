@@ -8,10 +8,13 @@ use std::{fmt::Display, io::Read};
 use convert_case::{Case, Casing};
 use edit::edit;
 use eyre::Result;
+use rusqlite::{types::ToSqlOutput, ToSql};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+// IDs
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub(crate) struct PatuiTestId(i64);
 
 impl Display for PatuiTestId {
@@ -53,6 +56,48 @@ impl From<PatuiTestStepId> for usize {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiInstanceId(i64);
+
+impl Display for PatuiInstanceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<i64> for PatuiInstanceId {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PatuiInstanceId> for i64 {
+    fn from(value: PatuiInstanceId) -> i64 {
+        value.0
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunId(i64);
+
+impl Display for PatuiRunId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<i64> for PatuiRunId {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PatuiRunId> for i64 {
+    fn from(value: PatuiRunId) -> i64 {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiId {
     #[default]
@@ -73,8 +118,10 @@ impl Display for PatuiId {
     }
 }
 
+// Test templates
+
 #[allow(dead_code)]
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Eq, Hash, Deserialize, Serialize)]
 pub(crate) struct PatuiTestDetails {
     pub(crate) name: String,
     pub(crate) description: String,
@@ -102,6 +149,18 @@ impl Default for PatuiTestDetails {
                 location: None,
             })],
         }
+    }
+}
+
+// We don't take columns that imply this was used into account, otherwise it's a
+// different test.
+impl PartialEq for PatuiTestDetails {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.description == other.description
+            && self.creation_date == other.creation_date
+            && self.last_updated == other.last_updated
+            && self.steps == other.steps
     }
 }
 
@@ -151,7 +210,7 @@ impl PatuiTestDetails {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct PatuiTest {
     pub(crate) id: PatuiTestId,
     pub(crate) details: PatuiTestDetails,
@@ -216,11 +275,14 @@ pub(crate) struct PatuiTestEditable {
     pub(crate) steps: Vec<PatuiStepDetails>,
 }
 
+// Test steps
+
 #[derive(
     Debug,
     Clone,
     Eq,
     PartialEq,
+    Hash,
     Deserialize,
     Serialize,
     EnumIter,
@@ -295,20 +357,20 @@ impl PatuiStepDetails {
     }
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub(crate) struct PatuiStepProcess {
     pub(crate) process: String,
     pub(crate) args: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub(crate) struct PatuiStepShell {
     pub(crate) shell: Option<String>,
     pub(crate) contents: String,
     pub(crate) location: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub(crate) struct PatuiStepAssertion {
     pub(crate) assertion: PatuiStepAssertionType,
     pub(crate) negate: bool,
@@ -316,25 +378,79 @@ pub(crate) struct PatuiStepAssertion {
     pub(crate) rhs: String,
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, EnumIter, VariantArray)]
+#[derive(
+    Debug, Clone, Default, Eq, PartialEq, Hash, Deserialize, Serialize, EnumIter, VariantArray,
+)]
 pub(crate) enum PatuiStepAssertionType {
     #[default]
     Equal,
     Contains,
 }
 
+// Test runs
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiInstance {
-    pub(crate) id: PatuiTestId,
+    pub(crate) id: PatuiInstanceId,
     pub(crate) test_id: PatuiTestId,
-    pub(crate) status: String,
-    pub(crate) start_time: String,
-    pub(crate) end_time: Option<String>,
-    pub(crate) steps: Vec<PatuiStepInstance>,
+    pub(crate) hash: i64,
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) creation_date: String,
+    pub(crate) last_updated: String,
+    pub(crate) steps: Vec<PatuiStepDetails>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunError {}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStatus {
+    Pending,
+    Ok,
+    Error(PatuiRunError),
+}
+
+impl ToSql for PatuiRunStatus {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(match self {
+            PatuiRunStatus::Pending => 0,
+            PatuiRunStatus::Ok => 1,
+            PatuiRunStatus::Error(_) => 2, // TODO: Errors
+        }))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStepDetails {}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunDetails {
+    pub(crate) instance: PatuiInstance,
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) status: PatuiRunStatus,
+    pub(crate) step_run_details: Vec<PatuiRunStepDetails>,
+}
+
+impl PatuiRunDetails {
+    pub(crate) fn new(instance: PatuiInstance) -> Self {
+        let now: String = chrono::Local::now().to_string();
+
+        PatuiRunDetails {
+            instance,
+            start_time: now,
+            end_time: None,
+            status: PatuiRunStatus::Pending,
+            step_run_details: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRun {
-    pub(crate) id: PatuiTestId,
-    pub(crate) steps: Vec<PatuiStepDetails>,
+    pub(crate) id: PatuiRunId,
+    pub(crate) details: PatuiRunDetails,
 }
 
 #[cfg(test)]

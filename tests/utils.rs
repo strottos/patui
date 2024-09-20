@@ -7,7 +7,19 @@ pub(crate) fn run_patui(args: &[&str], stdin: Option<&str>) -> Output {
     if let Some(stdin) = stdin {
         cmd.write_stdin(stdin);
     }
-    let output = cmd.args(args).ok().unwrap();
+    let output = match cmd
+        .args(args)
+        .env("PATUI_LOG", "trace")
+        .env("PATUI_LOG_FILE", "/dev/stderr")
+        .ok()
+    {
+        Ok(output) => output,
+        Err(e) => panic!(
+            "Err: {:#?}\n{}",
+            e,
+            String::from_utf8(e.as_output().unwrap().stderr.clone()).unwrap()
+        ),
+    };
 
     output
 }

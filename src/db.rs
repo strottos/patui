@@ -1,10 +1,17 @@
-use std::path::Path;
+use std::{
+    hash::{Hash, Hasher},
+    path::Path,
+};
 
 use eyre::Result;
+use rustc_hash::FxHasher;
 use tokio_rusqlite::Connection;
 use tracing::{debug, trace};
 
-use crate::types::{PatuiStepDetails, PatuiTest, PatuiTestDetails, PatuiTestId};
+use crate::types::{
+    PatuiInstance, PatuiRun, PatuiRunDetails, PatuiRunStepDetails, PatuiStepDetails, PatuiTest,
+    PatuiTestDetails, PatuiTestId,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Database {
@@ -46,25 +53,25 @@ impl Database {
                     CREATE TABLE IF NOT EXISTS instance (
                         id INTEGER PRIMARY KEY,
                         test_id INTEGER NOT NULL,
-                        hash TEXT NOT NULL,
+                        hash INTEGER NOT NULL,
                         name TEXT NOT NULL,
                         desc TEXT NOT NULL,
                         creation_date TEXT NOT NULL,
                         last_updated TEXT NOT NULL,
-                        last_used_date TEXT,
-                        times_used INTEGER NOT NULL DEFAULT 0,
                         steps BLOB NOT NULL DEFAULT '[]',
                         FOREIGN KEY (test_id) REFERENCES test(id)
                     );
+
+                    CREATE INDEX IF NOT EXISTS idx_instance_hash ON instance (hash);
 
                     -- Holds details of the run of a test instance
                     CREATE TABLE IF NOT EXISTS run (
                         id INTEGER PRIMARY KEY,
                         instance_id INTEGER NOT NULL,
                         start_time TEXT NOT NULL,
-                        end_time TEXT NOT NULL,
+                        end_time TEXT,
                         status TEXT NOT NULL,
-                        step_details BLOB NOT NULL DEFAULT '[]',
+                        step_run_details BLOB NOT NULL DEFAULT '[]',
                         FOREIGN KEY (instance_id) REFERENCES instance(id)
                     );
                     "#,
@@ -91,8 +98,7 @@ impl Database {
                 let mut stmt = conn.prepare("SELECT id, name, desc, creation_date, last_updated, last_used_date, times_used, steps FROM test WHERE id = ?1")?;
 
                 let test = stmt.query_row([i64::from(id)], |row| {
-                    let steps: String = row.get(7)?;
-                    let steps: Vec<PatuiStepDetails> = serde_json::from_str(&steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                    let steps = sql_decode_steps(row.get(7)?)?;
 
                     Ok(PatuiTest {
                         id,
@@ -124,8 +130,7 @@ impl Database {
                 let mut stmt = conn.prepare("SELECT id, name, desc, creation_date, last_updated, last_used_date, times_used, steps FROM test")?;
                 let tests = stmt
                     .query_map([], |row| {
-                        let steps: String = row.get(7)?;
-                        let steps: Vec<PatuiStepDetails> = serde_json::from_str(&steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                        let steps = sql_decode_steps(row.get(7)?)?;
                         let id: i64 = row.get(0)?;
                         Ok(PatuiTest {
                             id: id.into(),
@@ -165,9 +170,8 @@ impl Database {
                     test_clone.creation_date.clone(),
                     test_clone.last_updated.clone(),
                     test_clone.last_used_date.clone(),
-                    test_clone.times_used.clone(),
-                    serde_json::to_string(&test_clone.steps)
-                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                    test_clone.times_used,
+                    sql_encode_steps(&test_clone.steps)?,
                 ))?;
 
                 Ok(test_id)
@@ -199,7 +203,7 @@ impl Database {
                     test_clone.details.last_updated,
                     test_clone.details.last_used_date,
                     test_clone.details.times_used,
-                    serde_json::to_string(&test_clone.details.steps).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                    sql_encode_steps(&test_clone.details.steps)?,
                     id,
                 ))?;
 
@@ -210,7 +214,155 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) async fn new_run(&self, details: &PatuiRunDetails) -> Result<PatuiRun> {}
+    pub(crate) async fn new_run(&self, test_id: PatuiTestId) -> Result<PatuiRun> {
+        let test = self.get_test(test_id).await?;
+
+        let instance = self.get_or_new_instance(&test).await?;
+        let instance_id = instance.id;
+
+        let run_details = PatuiRunDetails::new(instance);
+
+        let run_details_clone = run_details.clone();
+
+        let run_id = self.conn
+            .call(move |conn| {
+                let mut stmt = conn.prepare("INSERT INTO run (instance_id, start_time, end_time, status, step_run_details) VALUES (?1, ?2, ?3, ?4, ?5)")?;
+
+                let run_id = stmt.insert((
+                    i64::from(instance_id),
+                    run_details_clone.start_time,
+                    run_details_clone.end_time,
+                    run_details_clone.status,
+                    sql_encode_step_runs(&run_details_clone.step_run_details)?,
+                ))?;
+
+                Ok(run_id)
+            })
+            .await?;
+
+        Ok(PatuiRun {
+            id: run_id.into(),
+            details: run_details,
+        })
+    }
+
+    async fn get_instance(&self, hash: i64, test: PatuiTest) -> Result<Option<PatuiInstance>> {
+        let instance = self.conn.call(move |conn| {
+            let mut stmt = conn.prepare("SELECT id, test_id, name, desc, creation_date, last_updated, steps FROM instance WHERE hash = ?1")?;
+
+            let mut rows = stmt.query([hash])?;
+
+            while let Some(row) = rows.next()? {
+                let test_id: i64 = row.get(1)?;
+                let steps = sql_decode_steps(row.get(6)?)?;
+
+                let possible_test = PatuiTest {
+                    id: test_id.into(),
+                    details: PatuiTestDetails {
+                        name: row.get(2)?,
+                        description: row.get(3)?,
+                        creation_date: row.get(4)?,
+                        last_updated: row.get(5)?,
+                        last_used_date: None, // Irrelevant in PartialEq
+                        times_used: 0, // Irrelevant in PartialEq
+                        steps: steps.clone(),
+                    }
+                };
+
+                if possible_test == test {
+                    let id: i64 = row.get(0)?;
+
+                    return Ok(Some(PatuiInstance {
+                        id: id.into(),
+                        test_id: test_id.into(),
+                        hash,
+                        name: row.get(2)?,
+                        description: row.get(3)?,
+                        creation_date: row.get(4)?,
+                        last_updated: row.get(5)?,
+                        steps,
+                    }));
+                }
+            }
+
+            Ok(None)
+        }).await?;
+
+        Ok(instance)
+    }
+
+    async fn get_or_new_instance(&self, test: &PatuiTest) -> Result<PatuiInstance> {
+        debug!("Get or new instance");
+        trace!("Get or new instance details {:?}", test);
+
+        let instance_hash = get_test_hash(test);
+
+        let test_clone = test.clone();
+
+        let instance = self.get_instance(instance_hash, test_clone).await?;
+        if let Some(instance) = instance {
+            return Ok(instance);
+        }
+
+        let test_clone = test.clone();
+
+        let instance_id = self.conn.call(move |conn| {
+            let mut stmt = conn.prepare("INSERT INTO instance (test_id, hash, name, desc, creation_date, last_updated, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
+
+            let instance_id = stmt.insert((
+                i64::from(test_clone.id),
+                instance_hash,
+                test_clone.details.name,
+                test_clone.details.description,
+                test_clone.details.creation_date,
+                test_clone.details.last_updated,
+                sql_encode_steps(&test_clone.details.steps)?,
+            ))?;
+
+            Ok(instance_id)
+        }).await?;
+
+        let instance = PatuiInstance {
+            id: instance_id.into(),
+            test_id: test.id,
+            hash: instance_hash,
+            name: test.details.name.clone(),
+            description: test.details.description.clone(),
+            creation_date: test.details.creation_date.clone(),
+            last_updated: test.details.last_updated.clone(),
+            steps: test.details.steps.clone(),
+        };
+
+        Ok(instance)
+    }
+}
+
+fn get_test_hash(test: &PatuiTest) -> i64 {
+    let mut s = FxHasher::default();
+    test.hash(&mut s);
+    let ret = s.finish() as i64;
+    debug!("Hash {}", ret);
+    ret
+}
+
+fn sql_decode_steps(steps: String) -> std::result::Result<Vec<PatuiStepDetails>, rusqlite::Error> {
+    let ret = serde_json::from_str(&steps)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(ret)
+}
+
+fn sql_encode_steps(steps: &Vec<PatuiStepDetails>) -> std::result::Result<String, rusqlite::Error> {
+    let ret = serde_json::to_string(steps)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(ret)
+}
+
+fn sql_encode_step_runs(
+    run_steps: &Vec<PatuiRunStepDetails>,
+) -> std::result::Result<String, rusqlite::Error> {
+    let ret = serde_json::to_string(run_steps)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(ret)
 }
 
 #[cfg(test)]
@@ -290,7 +442,7 @@ mod tests {
         assert_that!(tests[0].details.last_updated).is_equal_to("2021-01-01 00:00:00".to_string());
         assert_that!(tests[0].details.last_used_date).is_none();
         assert_that!(tests[0].details.times_used).is_equal_to(0);
-        let new_test_id: i64 = tests[0].id.clone().into();
+        let new_test_id: i64 = tests[0].id.into();
         assert_that!(new_test_id).is_equal_to(test_id);
     }
 
