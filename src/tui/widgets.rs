@@ -8,6 +8,6 @@ mod textarea;
 pub(crate) use button::Button;
 pub(crate) use patui_widget::PatuiWidget;
 pub(crate) use scrollable_area::ScrollableArea;
-pub(crate) use table::{Table, TableHeader};
+pub(crate) use table::{Table, TableHeader, TableRow};
 pub(crate) use text::Text;
 pub(crate) use textarea::TextArea;

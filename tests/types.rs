@@ -56,3 +56,9 @@ pub struct PatuiTestMinDisplay {
     pub name: String,
     pub description: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct PatuiRunStatus {
+    pub id: i64,
+    pub status: String,
+}

@@ -10,9 +10,9 @@ use ratatui::{
 use crate::{
     tui::{
         app::{Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, UpdateData},
-        widgets::{PatuiWidget, ScrollableArea, Table, TableHeader, Text},
+        widgets::{PatuiWidget, ScrollableArea, Table, TableHeader, TableRow, Text},
     },
-    types::PatuiTest,
+    types::{PatuiId, PatuiTest},
 };
 
 use super::Pane;
@@ -21,9 +21,6 @@ use super::Pane;
 pub(crate) struct TestsPane<'a> {
     initialized: bool,
     loading: bool,
-
-    tests: Vec<PatuiTest>,
-    selected_idx: isize,
 
     is_focussed: bool,
 
@@ -52,31 +49,30 @@ impl<'a> TestsPane<'a> {
             initialized: false,
             loading: false,
 
-            tests: vec![],
-            selected_idx: -1,
-
             is_focussed: false,
 
             scrollable_area,
         }
     }
 
-    pub(crate) fn update_tests(&mut self, tests: Vec<PatuiTest>) {
-        self.tests = tests;
+    pub(crate) fn update_tests(&mut self, tests: Vec<&PatuiTest>) {
         self.loading = false;
         self.initialized = true;
 
-        let table = PatuiWidget::new_table(Table::new_with_elements(
-            self.tests
+        let table = PatuiWidget::new_table(Table::new_with_rows(
+            tests
                 .iter()
                 .map(|test| {
-                    vec![
-                        RatatuiText::from(test.details.name.clone()),
-                        RatatuiText::from(test.details.description.clone()),
-                        RatatuiText::from(test.details.creation_date.clone()),
-                    ]
+                    TableRow::new(
+                        vec![
+                            RatatuiText::from(test.details.name.clone()),
+                            RatatuiText::from(test.details.description.clone()),
+                            RatatuiText::from(test.details.creation_date.clone()),
+                        ],
+                        PatuiId::Test(test.id),
+                    )
                 })
-                .collect::<Vec<Vec<RatatuiText>>>(),
+                .collect::<Vec<TableRow>>(),
             vec![
                 TableHeader::new("Name".into(), 0, Constraint::Min(12)),
                 TableHeader::new("Creation Date".into(), 2, Constraint::Max(19)),
@@ -96,13 +92,13 @@ impl<'a> TestsPane<'a> {
             .set_widgets(vec![table]);
     }
 
-    fn get_selected_test_id(&self) -> Option<i64> {
-        if self.selected_idx == -1 {
-            None
-        } else {
-            Some(self.tests[self.selected_idx as usize].id.into())
-        }
-    }
+    // fn get_selected_test_id(&self) -> Option<i64> {
+    //     if self.selected_idx == -1 {
+    //         None
+    //     } else {
+    //         Some(self.tests[self.selected_idx as usize].id.into())
+    //     }
+    // }
 }
 
 impl<'a> Pane for TestsPane<'a> {
@@ -120,7 +116,9 @@ impl<'a> Pane for TestsPane<'a> {
                     ret.push(Action::DbRead(DbRead::Test));
                 }
             }
-            Action::UpdateData(UpdateData::Tests(tests)) => self.update_tests(tests.clone()),
+            Action::UpdateData(UpdateData::Tests(tests)) => {
+                self.update_tests(tests.iter().collect::<Vec<_>>())
+            }
             _ => (),
         }
 
@@ -139,31 +137,30 @@ impl<'a> Pane for TestsPane<'a> {
                 actions.push(Action::EditorMode(EditorMode::CreateTest));
                 actions.push(Action::ClearKeys);
             }
-            (KeyCode::Char('u'), KeyModifiers::NONE) => {
-                if let Some(test) = self.tests.get(self.selected_idx as usize) {
-                    actions.push(Action::PopupCreate(PopupMode::UpdateTest(test.id)));
-                }
-                actions.push(Action::ClearKeys);
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                if let Some(test) = self.tests.get(self.selected_idx as usize) {
-                    actions.push(Action::EditorMode(EditorMode::UpdateTest(test.id)));
-                }
-                actions.push(Action::ClearKeys);
-            }
+            // (KeyCode::Char('u'), KeyModifiers::NONE) => {
+            //     if let Some(test) = self.tests.get(self.selected_idx as usize) {
+            //         actions.push(Action::PopupCreate(PopupMode::UpdateTest(test.id)));
+            //     }
+            //     actions.push(Action::ClearKeys);
+            // }
+            // (KeyCode::Char('e'), KeyModifiers::NONE) => {
+            //     if let Some(test) = self.tests.get(self.selected_idx as usize) {
+            //         actions.push(Action::EditorMode(EditorMode::UpdateTest(test.id)));
+            //     }
+            //     actions.push(Action::ClearKeys);
+            // }
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                self.selected_idx = -1;
                 actions.push(Action::ModeChange {
                     mode: PaneType::Test,
                 });
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
-                if let Some(id) = self.get_selected_test_id() {
-                    actions.push(Action::ModeChange {
-                        mode: PaneType::TestDetailSelected(id.into()),
-                    });
-                }
+                // if let Some(id) = self.get_selected_test_id() {
+                //     actions.push(Action::ModeChange {
+                //         mode: PaneType::TestDetailSelected(id.into()),
+                //     });
+                // }
                 actions.push(Action::ClearKeys);
             }
             _ => {
@@ -171,7 +168,7 @@ impl<'a> Pane for TestsPane<'a> {
                     .scrollable_area
                     .inner_scrollable_mut()
                     .unwrap()
-                    .input(key, false, true)?
+                    .input(key, false, false)?
                 {
                     actions.push(Action::ClearKeys);
                 }
@@ -207,17 +204,19 @@ impl<'a> Pane for TestsPane<'a> {
     }
 
     fn pane_type(&self) -> PaneType {
-        match self.get_selected_test_id() {
-            Some(id) => PaneType::TestDetail(id.into()),
-            None => PaneType::Test,
-        }
+        //     match self.get_selected_test_id() {
+        //         Some(id) => PaneType::TestDetail(id.into()),
+        //         None =>
+        PaneType::Test
+        //     }
     }
 
     fn pane_title(&self) -> String {
-        match self.get_selected_test_id() {
-            Some(id) => format!("Tests (selected id = {})", id),
-            None => "Tests".to_string(),
-        }
+        //     match self.get_selected_test_id() {
+        //         Some(id) => format!("Tests (selected id = {})", id),
+        //        None =>
+        "Tests".to_string()
+        //     }
     }
 
     fn set_focus(&mut self, focus: bool) {

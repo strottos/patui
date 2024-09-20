@@ -30,6 +30,7 @@ impl Database {
                         id INTEGER PRIMARY KEY
                     );
 
+                    -- Holds a test twmplate, can be edited
                     CREATE TABLE IF NOT EXISTS test (
                         id INTEGER PRIMARY KEY,
                         name TEXT NOT NULL,
@@ -39,6 +40,32 @@ impl Database {
                         last_used_date TEXT,
                         times_used INTEGER NOT NULL DEFAULT 0,
                         steps BLOB NOT NULL DEFAULT '[]'
+                    );
+
+                    -- Holds the audit of the test details when it was ran
+                    CREATE TABLE IF NOT EXISTS instance (
+                        id INTEGER PRIMARY KEY,
+                        test_id INTEGER NOT NULL,
+                        hash TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        desc TEXT NOT NULL,
+                        creation_date TEXT NOT NULL,
+                        last_updated TEXT NOT NULL,
+                        last_used_date TEXT,
+                        times_used INTEGER NOT NULL DEFAULT 0,
+                        steps BLOB NOT NULL DEFAULT '[]',
+                        FOREIGN KEY (test_id) REFERENCES test(id)
+                    );
+
+                    -- Holds details of the run of a test instance
+                    CREATE TABLE IF NOT EXISTS run (
+                        id INTEGER PRIMARY KEY,
+                        instance_id INTEGER NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        step_details BLOB NOT NULL DEFAULT '[]',
+                        FOREIGN KEY (instance_id) REFERENCES instance(id)
                     );
                     "#,
                 )?;
@@ -182,6 +209,8 @@ impl Database {
 
         Ok(())
     }
+
+    pub(crate) async fn new_run(&self, details: &PatuiRunDetails) -> Result<PatuiRun> {}
 }
 
 #[cfg(test)]

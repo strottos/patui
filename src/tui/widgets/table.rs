@@ -8,6 +8,8 @@ use ratatui::{
     widgets::{Cell as RatatuiCell, Row, Table as RatatuiTable, WidgetRef},
 };
 
+use crate::types::PatuiId;
+
 use super::patui_widget::ScrollType;
 
 const SHORT_WIDTH_DISPLAY: u16 = 60;
@@ -29,6 +31,18 @@ impl<'a> TableHeader<'a> {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TableRow<'a> {
+    elements: Vec<Text<'a>>,
+    id: PatuiId,
+}
+
+impl<'a> TableRow<'a> {
+    pub(crate) fn new(elements: Vec<Text<'a>>, id: PatuiId) -> Self {
+        Self { elements, id }
+    }
+}
+
 /// For the table widget you need to pass in:
 /// * The `short_header` that will be the elements displayed along with their index in the
 ///   `elements` vector when the width of the table is less than `SHORT_WIDTH_DISPLAY`.
@@ -39,7 +53,7 @@ impl<'a> TableHeader<'a> {
 pub(crate) struct Table<'a> {
     short_header: Vec<TableHeader<'a>>,
     long_header: Vec<TableHeader<'a>>,
-    elements: Vec<Vec<Text<'a>>>,
+    rows: Vec<TableRow<'a>>,
 
     first_row: isize,
     selected_idx: isize,
@@ -49,15 +63,15 @@ pub(crate) struct Table<'a> {
 }
 
 impl<'a> Table<'a> {
-    pub(crate) fn new_with_elements(
-        elements: Vec<Vec<Text<'a>>>,
+    pub(crate) fn new_with_rows(
+        rows: Vec<TableRow<'a>>,
         short_header: Vec<TableHeader<'a>>,
         long_header: Vec<TableHeader<'a>>,
     ) -> Self {
         Self {
             short_header,
             long_header,
-            elements,
+            rows,
 
             first_row: 0,
             selected_idx: -1,
@@ -68,11 +82,11 @@ impl<'a> Table<'a> {
     }
 
     pub(crate) fn scrollable_height(&self) -> usize {
-        self.elements.len() + 2
+        self.rows.len() + 2
     }
 
     pub(crate) fn num_elements(&self) -> usize {
-        self.elements.len()
+        self.rows.len()
     }
 
     /// Get the selected index if we've selected something.
@@ -86,9 +100,9 @@ impl<'a> Table<'a> {
 
     /// Get the number of tests left.
     pub(crate) fn elements_left(&self) -> Option<usize> {
-        assert!(self.elements.len() <= self.selected_idx as usize);
+        assert!(self.rows.len() <= self.selected_idx as usize);
         if self.is_selected && self.selected_idx >= 0 {
-            Some(self.elements.len() - self.selected_idx as usize)
+            Some(self.rows.len() - self.selected_idx as usize)
         } else {
             None
         }
@@ -106,7 +120,7 @@ impl<'a> Table<'a> {
     pub(crate) fn navigate(&mut self, count: isize) -> isize {
         let old_selected_idx = self.selected_idx;
 
-        if self.elements.is_empty() || count == 0 {
+        if self.rows.is_empty() || count == 0 {
             return 0;
         }
 
@@ -122,8 +136,8 @@ impl<'a> Table<'a> {
 
         if self.selected_idx < 0 {
             self.selected_idx = 0;
-        } else if self.selected_idx >= self.elements.len() as isize {
-            self.selected_idx = self.elements.len() as isize - 1;
+        } else if self.selected_idx >= self.rows.len() as isize {
+            self.selected_idx = self.rows.len() as isize - 1;
         }
 
         if old_selected_idx != self.selected_idx {
@@ -166,10 +180,18 @@ impl<'a> Table<'a> {
         }
 
         self.first_row = cmp::min(
-            self.elements.len() as isize - self.display_height.get() as isize + 2,
+            self.rows.len() as isize - self.display_height.get() as isize + 2,
             self.first_row,
         );
         self.first_row = cmp::max(0, self.first_row);
+    }
+
+    pub(crate) fn get_patui_id(&self) -> Option<PatuiId> {
+        if self.is_selected {
+            Some(self.rows[self.selected_idx as usize].id)
+        } else {
+            None
+        }
     }
 }
 
@@ -188,10 +210,10 @@ impl<'a> WidgetRef for Table<'a> {
 
         self.display_height.set(area.height as usize);
 
-        let num_elems_to_display = cmp::min((area.height - 2) as usize, self.elements.len());
+        let num_elems_to_display = cmp::min((area.height - 2) as usize, self.rows.len());
 
         let elems = self
-            .elements
+            .rows
             .iter()
             .enumerate()
             .filter(|(i, _)| *i >= self.first_row as usize)
@@ -199,7 +221,8 @@ impl<'a> WidgetRef for Table<'a> {
             .map(|(i, row)| {
                 (
                     i,
-                    row.iter()
+                    row.elements
+                        .iter()
                         .enumerate()
                         .filter_map(|(j, elem)| {
                             if (is_short
@@ -259,27 +282,30 @@ mod tests {
     };
     use tracing_test::traced_test;
 
-    use crate::tui::widgets::patui_widget::ScrollType;
+    use crate::{tui::widgets::patui_widget::ScrollType, types::PatuiId};
 
-    use super::{Table, TableHeader};
+    use super::{Table, TableHeader, TableRow};
 
     fn create_tests_table<'a>(num_tests: usize) -> Table<'a> {
         let now = "2024-08-31 11:00:00";
 
         let tests = (0..num_tests)
             .map(|i| {
-                Vec::from([
-                    Text::from(format!("test{}", i)),
-                    Text::from(format!("test description {}", i)),
-                    Text::from(now).alignment(Alignment::Right),
-                    Text::from(now),
-                    "".into(),
-                    Text::from("0").alignment(Alignment::Right),
-                ])
+                TableRow::new(
+                    Vec::from([
+                        Text::from(format!("test{}", i)),
+                        Text::from(format!("test description {}", i)),
+                        Text::from(now).alignment(Alignment::Right),
+                        Text::from(now),
+                        "".into(),
+                        Text::from("0").alignment(Alignment::Right),
+                    ]),
+                    PatuiId::None,
+                )
             })
             .collect();
 
-        Table::new_with_elements(
+        Table::new_with_rows(
             tests,
             vec![
                 TableHeader::new("Name".into(), 0, Constraint::Min(12)),

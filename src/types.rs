@@ -53,17 +53,22 @@ impl From<PatuiTestStepId> for usize {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiId {
+    #[default]
+    None,
     Test(PatuiTestId),
-    Step(PatuiTestStepId),
+    Step(PatuiTestId, PatuiTestStepId),
 }
 
 impl Display for PatuiId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PatuiId::None => write!(f, "None"),
             PatuiId::Test(id) => write!(f, "Test({})", id),
-            PatuiId::Step(id) => write!(f, "Step({})", id),
+            PatuiId::Step(test_id, step_num) => {
+                write!(f, "Step(test_id={}, step={})", test_id, step_num)
+            }
         }
     }
 }
@@ -225,6 +230,7 @@ pub(crate) struct PatuiTestEditable {
 )]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum PatuiStepDetails {
+    Process(PatuiStepProcess),
     Shell(PatuiStepShell),
     Assertion(PatuiStepAssertion),
 }
@@ -245,6 +251,7 @@ impl PatuiStepDetails {
 
     pub(crate) fn inner_yaml(&self) -> Result<String> {
         Ok(match self {
+            PatuiStepDetails::Process(process) => serde_yaml::to_string(process)?,
             PatuiStepDetails::Shell(shell) => serde_yaml::to_string(shell)?,
             PatuiStepDetails::Assertion(assertion) => serde_yaml::to_string(assertion)?,
         })
@@ -289,6 +296,12 @@ impl PatuiStepDetails {
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStepProcess {
+    pub(crate) process: String,
+    pub(crate) args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepShell {
     pub(crate) shell: Option<String>,
     pub(crate) contents: String,
@@ -308,6 +321,20 @@ pub(crate) enum PatuiStepAssertionType {
     #[default]
     Equal,
     Contains,
+}
+
+pub(crate) struct PatuiInstance {
+    pub(crate) id: PatuiTestId,
+    pub(crate) test_id: PatuiTestId,
+    pub(crate) status: String,
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) steps: Vec<PatuiStepInstance>,
+}
+
+pub(crate) struct PatuiRun {
+    pub(crate) id: PatuiTestId,
+    pub(crate) steps: Vec<PatuiStepDetails>,
 }
 
 #[cfg(test)]

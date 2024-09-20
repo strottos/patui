@@ -2,6 +2,8 @@ use std::fmt::Debug;
 
 use ratatui::{buffer::Buffer, layout::Rect, widgets::WidgetRef};
 
+use crate::types::PatuiId;
+
 use super::{text::Text, ScrollableArea, Table};
 
 #[cfg(test)]
@@ -53,7 +55,7 @@ impl<'a> PatuiWidget<'a> {
         }
     }
 
-    pub(crate) fn num_widgets(&self) -> usize {
+    pub(crate) fn num_elements(&self) -> usize {
         match &self.inner {
             PatuiWidgetInner::Text(_) => 1,
             // PatuiWidget::Button(button) => button.num_widgets(),
@@ -108,6 +110,17 @@ impl<'a> PatuiWidget<'a> {
         match &mut self.inner {
             PatuiWidgetInner::Table(table) => Some(table),
             _ => None,
+        }
+    }
+
+    pub(crate) fn get_patui_id(&self) -> Option<PatuiId> {
+        match &self.inner {
+            PatuiWidgetInner::Text(text) => todo!(),
+            // PatuiWidget::Button(button) => button.get_patui_id(),
+            PatuiWidgetInner::ScrollableArea(scrollable_area) => scrollable_area.get_patui_id(),
+            PatuiWidgetInner::Table(table) => table.get_patui_id(),
+            #[cfg(test)]
+            PatuiWidgetInner::TestWidget(test_widget) => None,
         }
     }
 

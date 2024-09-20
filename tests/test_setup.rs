@@ -1,22 +1,13 @@
 mod types;
+mod utils;
 
-use std::process::Output;
-
-use assert_cmd::Command;
 use assertor::*;
 use tempfile::tempdir;
 
-use self::types::{PatuiTest, PatuiTestEditStatus, PatuiTestMinDisplay};
-
-fn run_patui(args: &[&str], stdin: Option<&str>) -> Output {
-    let mut cmd = Command::cargo_bin("patui").unwrap();
-    if let Some(stdin) = stdin {
-        cmd.write_stdin(stdin);
-    }
-    let output = cmd.args(args).ok().unwrap();
-
-    output
-}
+use self::{
+    types::{PatuiTest, PatuiTestEditStatus, PatuiTestMinDisplay},
+    utils::run_patui,
+};
 
 #[test]
 fn test_new_test() {

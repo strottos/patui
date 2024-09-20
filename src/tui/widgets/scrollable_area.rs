@@ -37,7 +37,7 @@ impl<'a> PatuiWidgetData<'a> {
     }
 
     fn num_widgets(&self) -> usize {
-        self.inner.num_widgets()
+        self.inner.num_elements()
     }
 
     fn set_selected(&self, selected: bool) -> &Self {
@@ -57,6 +57,7 @@ pub(crate) struct ScrollableArea<'a> {
     first_row: isize,
     first_col: isize,
     selected_idx: isize,
+    is_selected: bool,
     display_height: Cell<usize>,
     display_width: Cell<usize>,
     widgets: Vec<PatuiWidgetData<'a>>,
@@ -70,6 +71,7 @@ impl<'a> ScrollableArea<'a> {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(24),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -81,17 +83,22 @@ impl<'a> ScrollableArea<'a> {
     pub(crate) fn add_widget(&mut self, widget: PatuiWidget<'a>) -> &mut Self {
         self.widgets.push(PatuiWidgetData {
             inner: widget,
-            starting_idx: self.get_total_height(),
+            starting_idx: self.num_widgets(),
         });
         self
     }
 
     pub(crate) fn set_widgets(&mut self, widgets: Vec<PatuiWidget<'a>>) -> &mut Self {
+        let mut starting_idx = 0;
         self.widgets = widgets
             .into_iter()
-            .map(|widget| PatuiWidgetData {
-                inner: widget,
-                starting_idx: self.get_total_height(),
+            .map(|widget| {
+                let ret = PatuiWidgetData {
+                    inner: widget,
+                    starting_idx,
+                };
+                starting_idx += ret.num_widgets();
+                ret
             })
             .collect();
         self
@@ -137,7 +144,7 @@ impl<'a> ScrollableArea<'a> {
         if self.selected_idx == -1 && count < 0 {
             for (i, widget) in self.widgets.iter().enumerate().rev() {
                 if widget.is_selectable() {
-                    self.selected_idx = i as isize;
+                    self.set_selected_idx(i as isize);
                     self.first_row =
                         self.get_total_height() as isize - self.display_height.get() as isize;
                     count = 0;
@@ -170,7 +177,7 @@ impl<'a> ScrollableArea<'a> {
                             .unwrap()
                             .is_selectable()
                         {
-                            self.selected_idx = new_selected_idx;
+                            self.set_selected_idx(new_selected_idx);
                             self.first_row = 0;
                             break;
                         }
@@ -187,7 +194,7 @@ impl<'a> ScrollableArea<'a> {
                         .unwrap()
                         .is_selectable()
                     {
-                        self.selected_idx = new_selected_idx;
+                        self.set_selected_idx(new_selected_idx);
                         break;
                     }
                     new_selected_idx -= 1;
@@ -202,7 +209,7 @@ impl<'a> ScrollableArea<'a> {
                             .unwrap()
                             .is_selectable()
                         {
-                            self.selected_idx = new_selected_idx;
+                            self.set_selected_idx(new_selected_idx);
                             self.first_row = self.get_total_height() as isize
                                 - self.display_height.get() as isize;
                             break;
@@ -221,10 +228,18 @@ impl<'a> ScrollableArea<'a> {
         );
         if let Some((selected_row_from, selected_row_to)) = self.get_selected_rows() {
             if selected_row_to as isize - self.first_row >= self.display_height.get() as isize {
+                // eprintln!(
+                //     "Scrolling down {}",
+                //     selected_row_to as isize - self.display_height.get() as isize
+                // );
                 self.scroll(ScrollType::Single(
                     selected_row_to as isize - self.display_height.get() as isize,
                 ));
             } else if selected_row_from < self.first_row as usize {
+                // eprintln!(
+                //     "Scrolling up {}",
+                //     selected_row_from as isize - self.first_row
+                // );
                 self.scroll(ScrollType::Single(
                     selected_row_from as isize - self.first_row,
                 ));
@@ -240,11 +255,12 @@ impl<'a> ScrollableArea<'a> {
             }
         }
 
-        debug!(
-            "Navigation - Selected Index: {}, Selected Rows: {:?}",
-            self.selected_idx,
-            self.get_selected_rows(),
-        );
+        // eprintln!(
+        //     "Navigation - Selected Index: {}, Selected Rows: {:?}, First Row: {:?}",
+        //     self.selected_idx,
+        //     self.get_selected_rows(),
+        //     self.first_row,
+        // );
 
         self.selected_idx != old_selected_idx
     }
@@ -291,12 +307,12 @@ impl<'a> ScrollableArea<'a> {
     }
 
     pub(crate) fn get_selected_rows(&self) -> Option<(usize, usize)> {
-        if self.selected_idx == -1 {
+        if self.selected_idx == -1 || !self.is_selected {
             return None;
         }
 
         let mut current_row = 0;
-        for (i, widget) in self.widgets.iter().enumerate() {
+        for widget in self.widgets.iter() {
             let widget_height = widget.scrollable_height();
             let widget_size = widget.num_widgets();
             debug!(
@@ -382,12 +398,14 @@ impl<'a> ScrollableArea<'a> {
 
         for widget in &self.widgets {
             let widget_height = widget.scrollable_height();
+            // eprintln!("Widget height: {}", widget_height);
 
             let skip_lines = if current_row < self.first_row as usize {
                 self.first_row as usize - current_row
             } else {
                 0
             };
+            // eprintln!("Skip lines: {}", skip_lines);
 
             if current_row + widget_height <= self.first_row as usize {
                 current_row += widget_height;
@@ -399,6 +417,7 @@ impl<'a> ScrollableArea<'a> {
             } else {
                 false
             };
+            // eprintln!("selected: {}", selected);
 
             if (current_height == 0 && current_row < self.first_row as usize) || self.first_col > 0
             {
@@ -489,6 +508,7 @@ impl<'a> ScrollableArea<'a> {
 
     fn get_widget(&self, selected_idx: usize) -> Option<&PatuiWidgetData<'a>> {
         assert!(selected_idx < self.num_widgets());
+        debug!("Widgets: {:#?}", self.widgets);
         self.widgets
             .iter()
             .filter(|widget| widget.starting_idx <= selected_idx)
@@ -501,6 +521,19 @@ impl<'a> ScrollableArea<'a> {
             .iter_mut()
             .filter(|widget| widget.starting_idx <= selected_idx)
             .last()
+    }
+
+    pub(crate) fn get_patui_id(&self) -> Option<crate::types::PatuiId> {
+        if let Some(widget) = self.get_widget(self.selected_idx as usize) {
+            widget.inner.get_patui_id()
+        } else {
+            None
+        }
+    }
+
+    fn set_selected_idx(&mut self, idx: isize) {
+        self.selected_idx = idx;
+        self.is_selected = true;
     }
 }
 
@@ -554,7 +587,14 @@ impl<'a> WidgetRef for ScrollableArea<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::tui::widgets::{patui_widget::TestWidget, table::TableHeader, Table, Text};
+    use crate::{
+        tui::widgets::{
+            patui_widget::TestWidget,
+            table::{TableHeader, TableRow},
+            Table, Text,
+        },
+        types::PatuiId,
+    };
 
     use super::*;
     use assertor::*;
@@ -581,6 +621,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(24),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -621,6 +662,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(24),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -656,6 +698,7 @@ mod tests {
             first_row: 5,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(24),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -696,6 +739,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(5),
             display_width: Cell::new(24),
             widgets,
@@ -747,6 +791,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(20),
             display_width: Cell::new(24),
             widgets,
@@ -802,6 +847,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(5),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -867,6 +913,7 @@ mod tests {
             first_row: 4,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(5),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -932,6 +979,7 @@ mod tests {
             first_row: 6,
             first_col: 2,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(5),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -995,6 +1043,7 @@ mod tests {
             first_row: 3,
             first_col: 2,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(5),
             display_width: Cell::new(24),
             widgets: vec![],
@@ -1074,6 +1123,7 @@ mod tests {
             first_row: 2,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(5),
             display_width: Cell::new(24),
             widgets,
@@ -1111,6 +1161,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(30),
             display_width: Cell::new(60),
             widgets,
@@ -1156,6 +1207,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(30),
             display_width: Cell::new(60),
             widgets,
@@ -1201,6 +1253,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: 0,
+            is_selected: false,
             display_height: Cell::new(30),
             display_width: Cell::new(60),
             widgets,
@@ -1246,6 +1299,7 @@ mod tests {
             first_row: 36,
             first_col: 0,
             selected_idx: 9,
+            is_selected: false,
             display_height: Cell::new(30),
             display_width: Cell::new(60),
             widgets,
@@ -1291,6 +1345,7 @@ mod tests {
             first_row: 6,
             first_col: 0,
             selected_idx: 1,
+            is_selected: false,
             display_height: Cell::new(30),
             display_width: Cell::new(60),
             widgets,
@@ -1317,6 +1372,60 @@ mod tests {
 
     // TODO: Test with widget bigger than display with selection and navigation
 
+    fn scrollable_with_simple_table_widget<'a>(num_tests: usize) -> ScrollableArea<'a> {
+        let widgets = vec![PatuiWidgetData {
+            inner: PatuiWidget::new_table(Table::new_with_rows(
+                (1..num_tests)
+                    .map(|i| {
+                        TableRow::new(
+                            vec![
+                                RatatuiText::from(format!("Test{}_1", i)),
+                                RatatuiText::from(format!("Test{}_2", i)),
+                                RatatuiText::from(format!("Test{}_3", i)),
+                            ],
+                            PatuiId::Test((i as i64).into()),
+                        )
+                    })
+                    .collect(),
+                vec![
+                    TableHeader::new(RatatuiText::from("Header1"), 0, Constraint::Min(10)),
+                    TableHeader::new(RatatuiText::from("Header2"), 1, Constraint::Min(10)),
+                ],
+                vec![
+                    TableHeader::new(RatatuiText::from("Header1"), 0, Constraint::Min(10)),
+                    TableHeader::new(RatatuiText::from("Header2"), 1, Constraint::Min(10)),
+                    TableHeader::new(RatatuiText::from("Header3"), 2, Constraint::Min(10)),
+                ],
+            )),
+            starting_idx: 0,
+        }];
+
+        ScrollableArea {
+            first_row: 0,
+            first_col: 0,
+            selected_idx: -1,
+            is_selected: false,
+            display_height: Cell::new(24),
+            display_width: Cell::new(60),
+            widgets,
+            block: None,
+            style: Style::default(),
+        }
+    }
+
+    #[test]
+    fn test_scrollable_with_simple_table_widget_1() {
+        let mut scrollable_area = scrollable_with_simple_table_widget(30);
+
+        let rect = Rect::new(0, 0, 80, 24);
+        let mut buffer = Buffer::empty(rect);
+
+        scrollable_area.navigate(1, false);
+        scrollable_area.render_ref(rect, &mut buffer);
+
+        insta::assert_debug_snapshot!(buffer);
+    }
+
     fn scrollable_with_table_widget<'a>() -> ScrollableArea<'a> {
         let mut widgets = (0..4)
             .map(|i| PatuiWidgetData {
@@ -1334,23 +1443,32 @@ mod tests {
             })
             .collect::<Vec<_>>();
         widgets.push(PatuiWidgetData {
-            inner: PatuiWidget::new_table(Table::new_with_elements(
+            inner: PatuiWidget::new_table(Table::new_with_rows(
                 vec![
-                    vec![
-                        RatatuiText::from("Test1_1"),
-                        RatatuiText::from("Test1_2"),
-                        RatatuiText::from("Test1_3"),
-                    ],
-                    vec![
-                        RatatuiText::from("Test2_1"),
-                        RatatuiText::from("Test2_2"),
-                        RatatuiText::from("Test2_3"),
-                    ],
-                    vec![
-                        RatatuiText::from("Test3_1"),
-                        RatatuiText::from("Test3_2"),
-                        RatatuiText::from("Test3_3"),
-                    ],
+                    TableRow::new(
+                        vec![
+                            RatatuiText::from("Test1_1"),
+                            RatatuiText::from("Test1_2"),
+                            RatatuiText::from("Test1_3"),
+                        ],
+                        PatuiId::Test(1.into()),
+                    ),
+                    TableRow::new(
+                        vec![
+                            RatatuiText::from("Test2_1"),
+                            RatatuiText::from("Test2_2"),
+                            RatatuiText::from("Test2_3"),
+                        ],
+                        PatuiId::Test(2.into()),
+                    ),
+                    TableRow::new(
+                        vec![
+                            RatatuiText::from("Test3_1"),
+                            RatatuiText::from("Test3_2"),
+                            RatatuiText::from("Test3_3"),
+                        ],
+                        PatuiId::Test(3.into()),
+                    ),
                 ],
                 vec![
                     TableHeader::new(RatatuiText::from("Header1"), 0, Constraint::Min(10)),
@@ -1382,6 +1500,7 @@ mod tests {
             first_row: 0,
             first_col: 0,
             selected_idx: -1,
+            is_selected: false,
             display_height: Cell::new(24),
             display_width: Cell::new(60),
             widgets,
