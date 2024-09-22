@@ -10,7 +10,7 @@ pub(crate) fn run_patui(args: &[&str], stdin: Option<&str>) -> Output {
     let output = match cmd
         .args(args)
         .env("PATUI_LOG", "trace")
-        .env("PATUI_LOG_FILE", "/dev/stderr")
+        .env("PATUI_LOG_FILE", "./target/test_logs/patui.log.${datetime}")
         .ok()
     {
         Ok(output) => output,

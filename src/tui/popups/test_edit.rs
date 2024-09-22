@@ -10,8 +10,7 @@ use ratatui::{
 use super::PopupComponent;
 use crate::{
     tui::{
-        app::{Action, DbUpdate, HelpItem, PaneType},
-        error::{Error, ErrorType},
+        app::{Action, HelpItem, PaneType},
         widgets::{Button, TextArea},
     },
     types::PatuiTestDetails,

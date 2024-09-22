@@ -48,8 +48,8 @@ fn test_run_test_instance() {
     assert_that!(success);
 
     eprintln!("Output: {:#?}", String::from_utf8_lossy(&output.stdout));
-    let run_insert_output: Vec<PatuiRunStatus> = serde_json::from_slice(&output.stdout).unwrap();
-    let id = run_insert_output[0].id;
+    let run_insert_output: PatuiRunStatus = serde_json::from_slice(&output.stdout).unwrap();
+    let id = run_insert_output.id;
 
     let db = rusqlite::Connection::open(db_path).unwrap();
     let mut stmt = db
