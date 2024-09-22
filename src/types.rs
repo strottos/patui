@@ -1,8 +1,9 @@
 //! Data types used by the application separate from the database, usually inputs or outputs before
 //! they are ready to be put into DB.
 
-use std::{io::Read, process::Stdio, sync::Arc};
+use std::io::Read;
 
+use bytes::Bytes;
 use convert_case::{Case, Casing};
 use edit::edit;
 use eyre::Result;
@@ -10,10 +11,10 @@ use rusqlite::{
     types::{ToSqlOutput, Value},
     ToSql,
 };
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
-use crate::utils::get_current_time_string;
+use crate::utils::{get_current_time_string, get_current_timestamp};
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestEditable {
@@ -39,8 +40,9 @@ impl Default for PatuiTestDetails {
             description: "Default template".to_string(),
             creation_date: now.clone(),
             steps: vec![PatuiStep::Process(PatuiStepProcess {
-                process: "/usr/bin/env".to_string(),
+                command: "/usr/bin/env".to_string(),
                 args: vec!["ls".to_string(), "/".to_string()],
+                wait: true,
             })],
         }
     }
@@ -170,10 +172,16 @@ impl PatuiStep {
     }
 }
 
+fn step_process_wait_default() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepProcess {
-    pub(crate) process: String,
+    pub(crate) command: String,
     pub(crate) args: Vec<String>,
+    #[serde(default = "step_process_wait_default")]
+    pub(crate) wait: bool,
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
@@ -292,19 +300,31 @@ impl ToSql for PatuiRunStatus {
         })))
     }
 }
+
 // Result details
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTimestamp<T> {
-    timestamp: u64,
+    timestamp: i64,
     value: T,
+}
+
+impl<T> PatuiTimestamp<T> {
+    pub(crate) fn new(value: T) -> Self {
+        let now = get_current_timestamp();
+
+        PatuiTimestamp {
+            timestamp: now,
+            value,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunStepProcessResult {
-    pub(crate) stdin: Vec<PatuiTimestamp<String>>,
-    pub(crate) stdout: Vec<PatuiTimestamp<String>>,
-    pub(crate) stderr: Vec<PatuiTimestamp<String>>,
+    pub(crate) stdin: Vec<PatuiTimestamp<Bytes>>,
+    pub(crate) stdout: Vec<PatuiTimestamp<Bytes>>,
+    pub(crate) stderr: Vec<PatuiTimestamp<Bytes>>,
     pub(crate) exit_code: i32,
 }
 

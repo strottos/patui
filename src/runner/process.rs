@@ -1,16 +1,18 @@
 use std::{process::Stdio, sync::Arc};
 
-use crate::types::{PatuiRunStepProcessResult, PatuiStepProcess};
+use crate::types::{PatuiRunStepProcessResult, PatuiStepProcess, PatuiTimestamp};
 
 use super::TestRunner;
 
+use bytes::Bytes;
 use eyre::Result;
+use tokio::process::Command;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct PatuiRunStepProcessOps {
-    pub(crate) stdin: Arc<Stdio>,
-    pub(crate) stdout: Arc<Stdio>,
-    pub(crate) stderr: Arc<Stdio>,
+    pub(crate) stdin: Stdio,
+    pub(crate) stdout: Stdio,
+    pub(crate) stderr: Stdio,
 }
 
 impl<'a> TestRunner<'a> {
@@ -18,11 +20,37 @@ impl<'a> TestRunner<'a> {
         &self,
         process: &PatuiStepProcess,
     ) -> Result<(PatuiRunStepProcessResult, PatuiRunStepProcessOps)> {
-        todo!();
-        // let mut result = PatuiStepResult::default();
+        let mut cmd = Command::new(&process.command);
+        cmd.args(&process.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        // let mut cmd = Command::new(&step.command);
-        // cmd.arg(&step.args);
+        if process.wait {
+            self.spawn_process_and_wait(&mut cmd).await
+        } else {
+            todo!()
+        }
+    }
+
+    async fn spawn_process_and_wait(
+        &self,
+        cmd: &mut Command,
+    ) -> Result<(PatuiRunStepProcessResult, PatuiRunStepProcessOps)> {
+        let output = cmd.output().await?;
+
+        let ops = PatuiRunStepProcessOps {
+            stdin: Stdio::null(),
+            stdout: Stdio::null(),
+            stderr: Stdio::null(),
+        };
+
+        let mut result = PatuiRunStepProcessResult {
+            stdin: vec![],
+            stdout: vec![PatuiTimestamp::new(Bytes::from(output.stdout))],
+            stderr: vec![PatuiTimestamp::new(Bytes::from(output.stderr))],
+            exit_code: output.status.code().unwrap_or(-1),
+        };
 
         // let output = cmd.output()?;
 
@@ -30,6 +58,6 @@ impl<'a> TestRunner<'a> {
         // result.error = output.stderr;
         // result.exit_code = output.status.code().unwrap_or(-1);
 
-        // Ok(result)
+        Ok((result, ops))
     }
 }

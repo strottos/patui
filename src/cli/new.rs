@@ -127,7 +127,14 @@ impl NewRun {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         let run = db.new_run(self.test_id.into()).await?;
 
-        println!("{}", serde_json::to_string(&run)?);
+        let runner = crate::runner::TestRunner {
+            db: db.clone(),
+            run: &run,
+        };
+
+        let run_test = runner.run_test().await?;
+
+        println!("{}", serde_json::to_string(&run_test)?);
 
         Ok(())
     }
