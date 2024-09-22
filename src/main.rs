@@ -6,6 +6,7 @@ mod db;
 mod runner;
 mod tui;
 mod types;
+mod utils;
 
 use std::{env, fs::create_dir_all, sync::Arc};
 

@@ -1,16 +1,19 @@
 //! Data types used by the application separate from the database, usually inputs or outputs before
 //! they are ready to be put into DB.
 
-use std::io::Read;
+use std::{io::Read, process::Stdio, sync::Arc};
 
 use convert_case::{Case, Casing};
 use edit::edit;
 use eyre::Result;
-use rusqlite::{types::ToSqlOutput, ToSql};
-use serde::{Deserialize, Serialize};
+use rusqlite::{
+    types::{ToSqlOutput, Value},
+    ToSql,
+};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
-use crate::db::PatuiInstance;
+use crate::utils::get_current_time_string;
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestEditable {
@@ -29,7 +32,7 @@ pub(crate) struct PatuiTestDetails {
 
 impl Default for PatuiTestDetails {
     fn default() -> Self {
-        let now: String = chrono::Local::now().to_string();
+        let now = get_current_time_string();
 
         PatuiTestDetails {
             name: "Default".to_string(),
@@ -47,7 +50,7 @@ impl PatuiTestDetails {
     pub(crate) fn from_yaml_str(yaml: &str) -> Result<Self> {
         let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
 
-        let now: String = chrono::Local::now().to_string();
+        let now = get_current_time_string();
 
         let test = PatuiTestDetails {
             name: yaml_test.name,
@@ -282,31 +285,37 @@ pub(crate) enum PatuiRunStatus {
 
 impl ToSql for PatuiRunStatus {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Owned(rusqlite::types::Value::Text(
-            match self {
-                PatuiRunStatus::Pending => "pending".to_string(),
-                PatuiRunStatus::Ok => "ok".to_string(),
-                PatuiRunStatus::Error(_) => "error".to_string(),
-            },
-        )))
+        Ok(ToSqlOutput::Owned(Value::Text(match self {
+            PatuiRunStatus::Pending => "pending".to_string(),
+            PatuiRunStatus::Ok => "ok".to_string(),
+            PatuiRunStatus::Error(_) => "error".to_string(),
+        })))
     }
+}
+// Result details
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiTimestamp<T> {
+    timestamp: u64,
+    value: T,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiRunStepProcess {
-    pub(crate) stdout: String,
-    pub(crate) stderr: Vec<String>,
+pub(crate) struct PatuiRunStepProcessResult {
+    pub(crate) stdin: Vec<PatuiTimestamp<String>>,
+    pub(crate) stdout: Vec<PatuiTimestamp<String>>,
+    pub(crate) stderr: Vec<PatuiTimestamp<String>>,
     pub(crate) exit_code: i32,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiRunStep {
-    start_time: String,
-    end_time: String,
-    details: PatuiRunStepDetails,
+pub(crate) enum PatuiRunStepResult {
+    Process(PatuiRunStepProcessResult),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiRunStepDetails {
-    Process(PatuiRunStepProcess),
+pub(crate) struct PatuiRunStep {
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) result: PatuiRunStepResult,
 }
