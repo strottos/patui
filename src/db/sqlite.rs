@@ -4,12 +4,9 @@ use eyre::Result;
 use tokio_rusqlite::Connection;
 use tracing::{debug, trace};
 
-use crate::types::{PatuiStep, PatuiTestDetails};
+use crate::types::{PatuiRunStatus, PatuiRunStep, PatuiStep, PatuiTestDetails};
 
-use super::types::{
-    PatuiInstance, PatuiRun, PatuiRunDetails, PatuiRunStep, PatuiTest, PatuiTestHashable,
-    PatuiTestId,
-};
+use super::types::{PatuiInstance, PatuiRun, PatuiTest, PatuiTestHashable, PatuiTestId};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Database {
@@ -159,12 +156,12 @@ impl Database {
                 let mut stmt = conn.prepare("INSERT INTO test (name, desc, creation_date, last_updated, last_used_date, times_used, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
 
                 let test_id = stmt.insert((
-                    test_clone.name.clone(),
-                    test_clone.description.clone(),
+                    test_clone.name,
+                    test_clone.description,
                     test_clone.creation_date.clone(),
-                    test_clone.last_updated.clone(),
-                    test_clone.last_used_date.clone(),
-                    test_clone.times_used,
+                    test_clone.creation_date,
+                    None::<String>,
+                    0,
                     sql_encode_steps(&test_clone.steps)?,
                 ))?;
 
@@ -208,12 +205,11 @@ impl Database {
     pub(crate) async fn new_run(&self, test_id: PatuiTestId) -> Result<PatuiRun> {
         let test = self.get_test(test_id).await?;
 
-        let instance = self.get_or_new_instance(&test).await?;
+        let instance = self.get_or_new_instance(test).await?;
         let instance_id = instance.id;
 
-        let run_details = PatuiRunDetails::new(instance);
-
-        let run_details_clone = run_details.clone();
+        let start_time = chrono::Local::now().to_string();
+        let start_time_clone = start_time.clone();
 
         let run_id = self.conn
             .call(move |conn| {
@@ -221,10 +217,10 @@ impl Database {
 
                 let run_id = stmt.insert((
                     i64::from(instance_id),
-                    run_details_clone.start_time,
-                    run_details_clone.end_time,
-                    run_details_clone.status,
-                    sql_encode_step_runs(&run_details_clone.step_run_details)?,
+                    start_time_clone,
+                    None::<String>,
+                    PatuiRunStatus::Pending,
+                    sql_encode_step_runs(&vec![])?,
                 ))?;
 
                 Ok(run_id)
@@ -233,7 +229,11 @@ impl Database {
 
         Ok(PatuiRun {
             id: run_id.into(),
-            details: run_details,
+            instance,
+            start_time,
+            end_time: None,
+            status: PatuiRunStatus::Pending,
+            step_run_details: vec![],
         })
     }
 
@@ -280,11 +280,11 @@ impl Database {
         Ok(instance)
     }
 
-    async fn get_or_new_instance(&self, test: &PatuiTest) -> Result<PatuiInstance> {
+    async fn get_or_new_instance(&self, test: PatuiTest) -> Result<PatuiInstance> {
         debug!("Get or new instance");
         trace!("Get or new instance details {:?}", test);
 
-        let instance_hash = get_test_hash(test)?;
+        let instance_hash = get_test_hash(&test)?;
 
         let test_clone = test.clone();
 
@@ -395,9 +395,6 @@ mod tests {
             name: "test name".to_string(),
             description: "test description".to_string(),
             creation_date: "2021-01-01 00:00:00".to_string(),
-            last_updated: "2021-01-01 00:00:00".to_string(),
-            last_used_date: None,
-            times_used: 0,
             steps: vec![],
         };
 
@@ -450,9 +447,6 @@ mod tests {
             name: "test name".to_string(),
             description: "test description".to_string(),
             creation_date: "2021-01-01 00:00:00".to_string(),
-            last_updated: "2021-01-01 00:00:00".to_string(),
-            last_used_date: None,
-            times_used: 0,
             steps: vec![
                 PatuiStep::Shell(PatuiStepShell {
                     shell: Some("bash".to_string()),

@@ -156,7 +156,6 @@ impl<'a> TestEditComponent<'a> {
                 let mut new_test = test.clone();
                 new_test.name = self.name_component.get_text().clone();
                 new_test.description = self.desc_component.get_text().clone();
-                new_test.last_updated = now.format("%Y-%m-%d %H:%M:%S").to_string();
                 Ok(new_test)
             }
             None => {
@@ -166,9 +165,6 @@ impl<'a> TestEditComponent<'a> {
                     name: self.name_component.get_text().clone(),
                     description: self.desc_component.get_text().clone(),
                     creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
-                    last_updated: now.format("%Y-%m-%d %H:%M:%S").to_string(),
-                    last_used_date: None,
-                    times_used: 0,
                     steps: vec![],
                 })
             }

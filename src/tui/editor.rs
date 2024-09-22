@@ -4,18 +4,17 @@ use crate::db::{PatuiTest, PatuiTestStepId};
 use crate::types::{PatuiStep, PatuiTestDetails};
 
 pub(crate) fn create_test() -> Result<PatuiTestDetails> {
-    let template = crate::types::PatuiTestDetails::default().into_editable_yaml_string()?;
+    let template = crate::types::PatuiTestDetails::default().to_editable_yaml_string()?;
     let test = PatuiTestDetails::edit_yaml(template)?;
 
     Ok(test)
 }
 
 pub(crate) fn edit_test(mut test: PatuiTest) -> Result<PatuiTest> {
-    todo!();
-    //     let template = test.to_editable_yaml_string()?;
-    //     test = PatuiTestDetails::edit_yaml(template)?;
-    //
-    //     Ok(test)
+    let template = test.to_editable_yaml_string()?;
+    test = PatuiTest::edit_from_details(test, PatuiTestDetails::edit_yaml(template)?);
+
+    Ok(test)
 }
 
 pub(crate) fn edit_step(mut test: PatuiTest, step_num: PatuiTestStepId) -> Result<PatuiTest> {

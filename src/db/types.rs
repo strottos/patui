@@ -5,10 +5,10 @@
 
 use std::fmt::Display;
 
-use rusqlite::{types::ToSqlOutput, ToSql};
+use eyre::Result;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::types::{PatuiStep, PatuiTestDetails};
+use crate::types::{PatuiRunStatus, PatuiRunStep, PatuiStep, PatuiTestDetails, PatuiTestEditable};
 
 // IDs
 
@@ -131,25 +131,33 @@ pub(crate) struct PatuiTest {
 }
 
 impl From<PatuiTest> for PatuiTestDetails {
-    fn from(val: PatuiTest) -> Self {
+    fn from(test: PatuiTest) -> Self {
         PatuiTestDetails {
-            name: val.name,
-            description: val.description,
-            creation_date: val.creation_date,
-            last_updated: val.last_updated,
-            last_used_date: val.last_used_date,
-            times_used: val.times_used,
-            steps: val.steps,
+            name: test.name,
+            description: test.description,
+            creation_date: test.creation_date,
+            steps: test.steps,
+        }
+    }
+}
+
+impl From<&PatuiTest> for PatuiTestDetails {
+    fn from(test: &PatuiTest) -> Self {
+        PatuiTestDetails {
+            name: test.name.clone(),
+            description: test.description.clone(),
+            creation_date: test.creation_date.clone(),
+            steps: test.steps.clone(),
         }
     }
 }
 
 impl From<PatuiTest> for PatuiTestMinDisplay {
-    fn from(val: PatuiTest) -> Self {
+    fn from(test: PatuiTest) -> Self {
         PatuiTestMinDisplay {
-            id: val.id,
-            name: val.name,
-            description: val.description,
+            id: test.id,
+            name: test.name,
+            description: test.description,
         }
     }
 }
@@ -160,12 +168,37 @@ impl PatuiTest {
             id,
             name: details.name,
             description: details.description,
-            creation_date: details.creation_date,
-            last_updated: details.last_updated,
-            last_used_date: details.last_used_date,
-            times_used: details.times_used,
+            creation_date: details.creation_date.clone(),
+            last_updated: details.creation_date,
+            last_used_date: None,
+            times_used: 0,
             steps: details.steps,
         }
+    }
+
+    pub(crate) fn edit_from_details(test: PatuiTest, details: PatuiTestDetails) -> Self {
+        let now: String = chrono::Local::now().to_string();
+
+        PatuiTest {
+            id: test.id,
+            name: details.name,
+            description: details.description,
+            creation_date: test.creation_date,
+            last_updated: now,
+            last_used_date: test.last_used_date,
+            times_used: test.times_used,
+            steps: details.steps,
+        }
+    }
+
+    pub(crate) fn to_editable_yaml_string(&self) -> Result<String> {
+        let yaml_test = PatuiTestEditable {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            steps: self.steps.clone(),
+        };
+
+        Ok(serde_yaml::to_string(&yaml_test)?)
     }
 
     pub(crate) fn into_edited_test(self, status: String) -> PatuiTestEditStatus {
@@ -245,69 +278,11 @@ pub(crate) struct PatuiInstance {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiRunError {}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiRunStatus {
-    Pending,
-    Ok,
-    Error(PatuiRunError),
-}
-
-impl ToSql for PatuiRunStatus {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::from(match self {
-            PatuiRunStatus::Pending => 0,
-            PatuiRunStatus::Ok => 1,
-            PatuiRunStatus::Error(_) => 2, // TODO: Errors
-        }))
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiRunStepProcess {
-    pub(crate) stdout: String,
-    pub(crate) stderr: Vec<String>,
-    pub(crate) exit_code: i32,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiRunStep {
-    start_time: String,
-    end_time: String,
-    details: PatuiRunStepDetails,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiRunStepDetails {
-    Process(PatuiRunStepProcess),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiRunDetails {
+pub(crate) struct PatuiRun {
+    pub(crate) id: PatuiRunId,
     pub(crate) instance: PatuiInstance,
     pub(crate) start_time: String,
     pub(crate) end_time: Option<String>,
     pub(crate) status: PatuiRunStatus,
     pub(crate) step_run_details: Vec<PatuiRunStep>,
-}
-
-impl PatuiRunDetails {
-    pub(crate) fn new(instance: PatuiInstance) -> Self {
-        let now: String = chrono::Local::now().to_string();
-
-        PatuiRunDetails {
-            instance,
-            start_time: now,
-            end_time: None,
-            status: PatuiRunStatus::Pending,
-            step_run_details: vec![],
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiRun {
-    pub(crate) id: PatuiRunId,
-    pub(crate) details: PatuiRunDetails,
 }

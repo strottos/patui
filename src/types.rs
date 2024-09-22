@@ -6,8 +6,11 @@ use std::io::Read;
 use convert_case::{Case, Casing};
 use edit::edit;
 use eyre::Result;
+use rusqlite::{types::ToSqlOutput, ToSql};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
+
+use crate::db::PatuiInstance;
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestEditable {
@@ -16,14 +19,11 @@ pub(crate) struct PatuiTestEditable {
     pub(crate) steps: Vec<PatuiStep>,
 }
 
-#[derive(Debug, Clone, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestDetails {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) creation_date: String,
-    pub(crate) last_updated: String,
-    pub(crate) last_used_date: Option<String>,
-    pub(crate) times_used: u32,
     pub(crate) steps: Vec<PatuiStep>,
 }
 
@@ -35,27 +35,11 @@ impl Default for PatuiTestDetails {
             name: "Default".to_string(),
             description: "Default template".to_string(),
             creation_date: now.clone(),
-            last_updated: now,
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![PatuiStep::Shell(PatuiStepShell {
-                shell: Some("bash".to_string()),
-                contents: "echo 'Hello, world!'".to_string(),
-                location: None,
+            steps: vec![PatuiStep::Process(PatuiStepProcess {
+                process: "/usr/bin/env".to_string(),
+                args: vec!["ls".to_string(), "/".to_string()],
             })],
         }
-    }
-}
-
-// We don't take columns that imply this was used into account, otherwise it's a
-// different test.
-impl PartialEq for PatuiTestDetails {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && self.description == other.description
-            && self.creation_date == other.creation_date
-            && self.last_updated == other.last_updated
-            && self.steps == other.steps
     }
 }
 
@@ -68,10 +52,7 @@ impl PatuiTestDetails {
         let test = PatuiTestDetails {
             name: yaml_test.name,
             description: yaml_test.description,
-            creation_date: now.clone(),
-            last_updated: now,
-            last_used_date: None,
-            times_used: 0,
+            creation_date: now,
             steps: yaml_test.steps,
         };
 
@@ -94,11 +75,11 @@ impl PatuiTestDetails {
         }
     }
 
-    pub(crate) fn into_editable_yaml_string(self) -> Result<String> {
+    pub(crate) fn to_editable_yaml_string(&self) -> Result<String> {
         let yaml_test = PatuiTestEditable {
-            name: self.name,
-            description: self.description,
-            steps: self.steps,
+            name: self.name.clone(),
+            description: self.description.clone(),
+            steps: self.steps.clone(),
         };
 
         Ok(serde_yaml::to_string(&yaml_test)?)
@@ -285,4 +266,47 @@ mod tests {
 
         assert_that!(test).is_err();
     }
+}
+
+// Test runs
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunError {}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStatus {
+    Pending,
+    Ok,
+    Error(PatuiRunError),
+}
+
+impl ToSql for PatuiRunStatus {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Owned(rusqlite::types::Value::Text(
+            match self {
+                PatuiRunStatus::Pending => "pending".to_string(),
+                PatuiRunStatus::Ok => "ok".to_string(),
+                PatuiRunStatus::Error(_) => "error".to_string(),
+            },
+        )))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunStepProcess {
+    pub(crate) stdout: String,
+    pub(crate) stderr: Vec<String>,
+    pub(crate) exit_code: i32,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunStep {
+    start_time: String,
+    end_time: String,
+    details: PatuiRunStepDetails,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStepDetails {
+    Process(PatuiRunStepProcess),
 }

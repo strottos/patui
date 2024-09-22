@@ -86,7 +86,7 @@ impl NewTest {
             if self.no_edit {
                 pending_tests.push(template);
             } else {
-                let yaml_str = template.into_editable_yaml_string()?;
+                let yaml_str = template.to_editable_yaml_string()?;
                 let test = PatuiTestDetails::edit_yaml(yaml_str)?;
                 pending_tests.push(test);
             }
