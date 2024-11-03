@@ -8,7 +8,7 @@ mod test_details;
 mod test_list;
 
 pub(crate) use test_details::TestDetailsPane;
-pub(crate) use test_list::TestsPane;
+pub(crate) use test_list::TestListPane;
 
 pub(crate) trait Pane: std::fmt::Debug {
     /// Take input for the component and optionally send back an action to perform

@@ -1,105 +1,88 @@
 use crate::{
     tui::{
-        app::{Action, DbRead, EditorMode, HelpItem, PaneType},
-        widgets::{PatuiWidget, ScrollableArea, Text},
+        app::{Action, DbRead, EditorMode, HelpItem, PaneType, StatusChange},
+        widgets::{Text, TextDisplay},
     },
-    types::{PatuiTest, PatuiTestStepId},
+    types::{PatuiTest, PatuiTestId, PatuiTestStepId},
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::Result;
 use ratatui::{
+    layout::Alignment,
     prelude::{Frame, Rect},
-    text::Line,
-    widgets::{Borders, Padding},
+    style::{Color, Style},
+    widgets::{
+        Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        StatefulWidget, Widget, Wrap,
+    },
 };
 
 use super::Pane;
 
 #[derive(Debug)]
-pub(crate) struct TestDetailsPane<'a> {
+pub(crate) struct TestDetailsPane {
     test: PatuiTest,
-    selected_step: PatuiTestStepId,
 
-    is_focussed: bool,
-
-    scrollable_area: PatuiWidget<'a>,
+    text_display: TextDisplay,
 }
 
-impl<'a> TestDetailsPane<'a> {
+impl TestDetailsPane {
     pub(crate) fn new(test: PatuiTest) -> Self {
-        let mut scrollable_area = ScrollableArea::new_patui_widget();
+        let mut text = vec![];
 
-        scrollable_area.inner_scrollable_mut().unwrap().add_block(
-            "Test Details",
-            Borders::ALL,
-            Padding::symmetric(2, 1),
-        );
-
-        let mut text = Text::default();
-
-        text.push_line(Line::from(format!("Id: {}", test.id)));
-        text.push_line(Line::from(format!("Name: {}", test.details.name)));
-        text.push_line(Line::from(format!(
-            "Description: {}\n",
-            test.details.description
-        )));
-        text.push_line(Line::from(format!(
-            "Steps:{}",
-            if test.details.steps.is_empty() {
-                " []"
-            } else {
-                ""
-            }
-        )));
-        scrollable_area
-            .inner_scrollable_mut()
-            .unwrap()
-            .add_widget(PatuiWidget::new_text(text));
+        text.push(Text::new(
+            format!(
+                "Id: {}\nName: {}\nDescription: {}\nSteps:{}",
+                test.id,
+                test.details.name,
+                test.details.description,
+                if test.details.steps.is_empty() {
+                    " []"
+                } else {
+                    ""
+                }
+            ),
+            false,
+        ));
 
         for step in test.details.steps.iter() {
             let yaml = step.get_display_yaml().unwrap();
 
-            let mut text = Text::new(true);
-
-            yaml.into_iter().for_each(|line| {
-                text.push_line(Line::from(line));
-            });
-
-            scrollable_area
-                .inner_scrollable_mut()
-                .unwrap()
-                .add_widget(PatuiWidget::new_text(text));
+            text.push(Text::new(yaml, true));
         }
 
-        Self {
-            test,
-            selected_step: 0.into(),
+        let text_display = TextDisplay::new_with_text(text, Some("Test Details".to_string()), true);
 
-            is_focussed: false,
+        Self { test, text_display }
+    }
 
-            scrollable_area,
-        }
+    fn render_scrollbar(&self, f: &mut Frame, rect: Rect) {
+        // let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        //     .begin_symbol(Some("↑"))
+        //     .end_symbol(Some("↓"));
+
+        // let display_height = rect.height as usize;
+
+        // let mut scrollbar_state = ScrollbarState::new(100).position(0);
+
+        // f.render_stateful_widget(scrollbar, rect, &mut scrollbar_state);
     }
 }
 
-impl<'a> Pane for TestDetailsPane<'a> {
+impl Pane for TestDetailsPane {
     fn render(&self, f: &mut Frame, rect: Rect) {
-        f.render_widget(&self.scrollable_area, rect);
+        f.render_widget(&self.text_display, rect);
     }
 
     fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         let mut ret = vec![];
 
-        if let Action::ModeChange {
-            mode: PaneType::TestDetail(id),
-            ..
-        } = action
-        {
-            if self.test.id != *id {
-                ret.push(Action::DbRead(DbRead::TestDetail(*id)));
-            }
-        }
+        // if let Action::StatusChange(StatusChange::ModeChangeTestListWithDetails(id)) = action {
+        //     if self.test.id != *id {
+        //         ret.push(Action::DbRead(DbRead::TestDetail(*id)));
+        //     }
+        // }
 
         Ok(ret)
     }
@@ -108,32 +91,34 @@ impl<'a> Pane for TestDetailsPane<'a> {
         let mut actions = vec![];
 
         match (key.code, key.modifiers) {
-            (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                actions.push(Action::EditorMode(EditorMode::UpdateTestStep(
-                    self.test.id,
-                    self.selected_step,
-                )));
+            (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                self.text_display.navigate(1);
+                actions.push(Action::ClearKeys);
+                actions.push(Action::ForceRedraw);
             }
+            (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                self.text_display.navigate(-1);
+                actions.push(Action::ClearKeys);
+                actions.push(Action::ForceRedraw);
+            }
+            // (KeyCode::Char('e'), KeyModifiers::NONE) => {
+            //     if let Some(selected_step) = self.selected_step {
+            //         actions.push(Action::EditorMode(EditorMode::UpdateTestStep(
+            //             self.test.id,
+            //             selected_step,
+            //         )));
+            //     }
+            // }
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                if self.selected_step == 0.into() {
-                    actions.push(Action::ModeChange {
-                        mode: PaneType::TestDetail(self.test.id),
-                    });
+                if !self.text_display.is_selected() {
+                    actions.push(Action::StatusChange(StatusChange::ModeChangeTestList));
                 } else {
-                    self.selected_step = 0.into();
+                    self.text_display.set_unselected();
                 }
                 actions.push(Action::ClearKeys);
+                actions.push(Action::ForceRedraw);
             }
-            _ => {
-                if self
-                    .scrollable_area
-                    .inner_scrollable_mut()
-                    .unwrap()
-                    .input(key, false, true)?
-                {
-                    actions.push(Action::ClearKeys);
-                }
-            }
+            _ => {}
         }
 
         Ok(actions)
@@ -150,18 +135,14 @@ impl<'a> Pane for TestDetailsPane<'a> {
     }
 
     fn pane_type(&self) -> PaneType {
-        PaneType::TestDetail(self.test.id)
+        PaneType::TestDetail
     }
 
     fn pane_title(&self) -> String {
         format!("Test Details (id = {})", self.test.id)
     }
 
-    fn set_focus(&mut self, focus: bool) {
-        self.is_focussed = focus;
-        self.scrollable_area
-            .inner_scrollable_mut()
-            .unwrap()
-            .set_highlighted(focus);
+    fn set_focus(&mut self, is_focussed: bool) {
+        self.text_display.set_focus(is_focussed);
     }
 }

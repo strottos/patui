@@ -3,7 +3,11 @@
 //! that the types are consistent across the application and that the database schema is
 //! consistent.
 
-use std::{fmt::Display, io::Read};
+use std::{
+    fmt::Display,
+    io::Read,
+    ops::{AddAssign, SubAssign},
+};
 
 use convert_case::{Case, Casing};
 use edit::edit;
@@ -50,6 +54,30 @@ impl From<usize> for PatuiTestStepId {
 impl From<PatuiTestStepId> for usize {
     fn from(value: PatuiTestStepId) -> usize {
         value.0
+    }
+}
+
+impl PartialEq<usize> for PatuiTestStepId {
+    fn eq(&self, other: &usize) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<usize> for PatuiTestStepId {
+    fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl AddAssign<usize> for PatuiTestStepId {
+    fn add_assign(&mut self, rhs: usize) {
+        self.0 += rhs;
+    }
+}
+
+impl SubAssign<usize> for PatuiTestStepId {
+    fn sub_assign(&mut self, rhs: usize) {
+        self.0 -= rhs;
     }
 }
 
@@ -230,17 +258,17 @@ pub(crate) enum PatuiStepDetails {
 }
 
 impl PatuiStepDetails {
-    pub(crate) fn get_display_yaml(&self) -> Result<Vec<String>> {
-        let mut ret = vec![];
+    pub(crate) fn get_display_yaml(&self) -> Result<String> {
+        let mut ret = String::new();
 
         let name: &'static str = self.into();
-        ret.push(format!("- {}:", name.to_case(Case::Pascal)));
+        ret += &format!("- {}:\n", name.to_case(Case::Pascal));
         let yaml = self.inner_yaml()?;
         yaml.lines().for_each(|line| {
-            ret.push(format!("    {}", line));
+            ret += &format!("    {}\n", line);
         });
 
-        Ok(ret)
+        Ok(ret.trim().to_string())
     }
 
     pub(crate) fn inner_yaml(&self) -> Result<String> {

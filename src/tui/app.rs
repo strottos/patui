@@ -1,7 +1,11 @@
-use std::{cmp, sync::Arc};
+use std::{
+    cmp,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use eyre::Result;
+use eyre::{eyre, Result};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     widgets::Clear,
@@ -13,21 +17,14 @@ use tracing::{debug, trace};
 use super::{
     bottom_bar::BottomBar,
     error::{Error, ErrorType},
-    panes::{Pane, TestDetailsPane},
+    panes::{Pane, TestDetailsPane, TestListPane},
     popups::{ErrorComponent, HelpComponent, PopupComponent, TestEditComponent},
     terminal::{Event, Tui},
     top_bar::TopBar,
 };
-use crate::db::Database;
+use crate::{db::Database, types::PatuiTestId};
 
 pub(crate) use super::types::*;
-
-#[derive(Debug)]
-enum OtherPane {
-    Left(usize),
-    Right(usize),
-    None,
-}
 
 #[derive(Debug)]
 pub(crate) struct App {
@@ -35,11 +32,13 @@ pub(crate) struct App {
     last_key_events: Vec<KeyEvent>,
     db: Arc<Database>,
 
-    panes: Vec<Box<dyn Pane>>,
-    popups: Vec<Popup>,
-    selected_pane: usize,
-    other_pane: OtherPane,
+    selected_test_id: Option<PatuiTestId>,
+
+    panes: HashMap<PaneType, Box<dyn Pane>>,
+    selected_pane: PaneType,
+    mode: Mode,
     top_bar: TopBar,
+    popups: Vec<Popup>,
     bottom_bar: BottomBar,
 
     redraw: bool,
@@ -52,17 +51,22 @@ impl App {
         let top_bar = TopBar::new(vec!["Tests".to_string()]);
         let bottom_bar = BottomBar::new();
 
-        let panes: Vec<Box<dyn Pane>> = vec![Box::new(super::panes::TestsPane::new())];
+        let panes = HashMap::from([(
+            PaneType::TestList,
+            Box::new(TestListPane::new()) as Box<dyn Pane>,
+        )]);
 
         Ok(Self {
             should_quit: false,
             last_key_events,
             db,
 
+            selected_test_id: None,
+
             panes,
             popups: vec![],
-            selected_pane: 0,
-            other_pane: OtherPane::None,
+            selected_pane: PaneType::TestList,
+            mode: Mode::TestList,
             top_bar,
             bottom_bar,
 
@@ -162,7 +166,7 @@ impl App {
             self.last_key_events.clear();
             self.last_key_events.push(key);
         } else {
-            let crumb_last_pane = &PaneType::Test;
+            let crumb_last_pane = &PaneType::TestList;
             if let Some(popup) = self.popups.last_mut() {
                 for action in popup.component.input(&key, crumb_last_pane)?.into_iter() {
                     action_tx.send(action)?;
@@ -171,13 +175,16 @@ impl App {
                     action_tx.send(action)?;
                 }
             } else {
-                let panes_len = self.panes.len();
-                let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
-                for action in self.top_bar.input(&key, effective_panes_len)?.into_iter() {
-                    action_tx.send(action)?;
-                }
-                let pane = self.panes.get_mut(self.selected_pane).unwrap();
-                for action in pane.input(&key)?.into_iter() {
+                // TODO:
+                // let panes_len = self.panes.len();
+                // let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
+                // for action in self.top_bar.input(&key, effective_panes_len)?.into_iter() {
+                //     action_tx.send(action)?;
+                // }
+                let Some(selected_pane) = self.panes.get_mut(&self.selected_pane) else {
+                    panic!("Selected pane not found");
+                };
+                for action in selected_pane.input(&key)?.into_iter() {
                     action_tx.send(action)?;
                 }
                 for action in self.bottom_bar.input(&key, crumb_last_pane)?.into_iter() {
@@ -212,8 +219,12 @@ impl App {
                 ));
                 self.redraw = true;
             }
-            Action::ModeChange { ref mode } => {
-                self.handle_mode_change(mode, &mut extra_actions).await?;
+            Action::ForceRedraw => {
+                tui.draw(|f| self.render(f))?;
+            }
+            Action::StatusChange(mode_change) => {
+                self.handle_mode_change(mode_change, &mut extra_actions)
+                    .await?;
                 self.redraw = true;
             }
             Action::PopupCreate(ref popup_mode) => {
@@ -270,9 +281,15 @@ impl App {
                 };
                 self.redraw = true;
             }
-            Action::PaneChange(pane_idx) => {
-                self.handle_pane_change(*pane_idx, &mut extra_actions)
-                    .await?;
+            Action::PaneChange(selected_pane_type) => {
+                self.selected_pane = selected_pane_type.clone();
+                for (pane_type, pane) in self.panes.iter_mut() {
+                    if pane_type == selected_pane_type {
+                        pane.set_focus(true);
+                    } else {
+                        pane.set_focus(false);
+                    }
+                }
                 self.redraw = true;
             }
             Action::ClearKeys => self.last_key_events.clear(),
@@ -284,22 +301,23 @@ impl App {
         for action in self.top_bar.update(action)?.into_iter() {
             extra_actions.push(action);
         }
-        for component in self.panes.iter_mut() {
-            for action in component.update(action)?.into_iter() {
-                extra_actions.push(action);
-            }
+        let Some(selected_pane) = self.panes.get_mut(&self.selected_pane) else {
+            panic!("Selected pane not found");
+        };
+        for action in selected_pane.update(action)?.into_iter() {
+            extra_actions.push(action);
         }
 
         Ok(extra_actions)
     }
 
     fn get_help(&self) -> Vec<HelpItem> {
-        let crumb_last_pane = &PaneType::Test;
+        let crumb_last_pane = &PaneType::TestList;
         let mut keys = self.bottom_bar.keys(crumb_last_pane);
         keys.extend(if let Some(popup) = self.popups.last() {
             popup.component.keys(crumb_last_pane)
         } else {
-            let pane = self.panes.get(self.selected_pane).unwrap();
+            let pane = self.panes.get(&self.selected_pane).unwrap();
             pane.keys()
         });
 
@@ -308,7 +326,7 @@ impl App {
         keys
     }
 
-    fn render(&mut self, f: &mut Frame) {
+    fn render(&self, f: &mut Frame) {
         let fsize = f.area();
 
         let chunks = Layout::default()
@@ -325,37 +343,7 @@ impl App {
 
         self.top_bar.render(f, chunks[0]);
 
-        match self.other_pane {
-            OtherPane::Left(idx) => {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                    .split(chunks[1]);
-                let pane = self.panes.get_mut(idx).unwrap();
-                pane.set_focus(false);
-                pane.render(f, chunks[0]);
-                let pane = self.panes.get_mut(self.selected_pane).unwrap();
-                pane.set_focus(true);
-                pane.render(f, chunks[1]);
-            }
-            OtherPane::Right(idx) => {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                    .split(chunks[1]);
-                let pane = self.panes.get_mut(self.selected_pane).unwrap();
-                pane.set_focus(true);
-                pane.render(f, chunks[0]);
-                let pane = self.panes.get_mut(idx).unwrap();
-                pane.set_focus(false);
-                pane.render(f, chunks[1]);
-            }
-            OtherPane::None => {
-                let pane = self.panes.get_mut(self.selected_pane).unwrap();
-                pane.set_focus(true);
-                pane.render(f, chunks[1]);
-            }
-        }
+        self.render_centre(f, chunks[1]);
 
         // if self.error_component.has_error() {
         //     self.error_component.render(f, chunks[1]);
@@ -365,6 +353,30 @@ impl App {
         }
 
         self.bottom_bar.render(f, chunks[2], self.get_help());
+    }
+
+    fn render_centre(&self, f: &mut Frame, r: Rect) {
+        match self.mode {
+            Mode::TestList => {
+                let pane = self.panes.get(&PaneType::TestList).unwrap();
+                pane.render(f, r);
+            }
+            Mode::TestListWithDetails => {
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(r);
+                let Some(test_list_pane) = self.panes.get(&PaneType::TestList) else {
+                    panic!("Test list pane not found");
+                };
+                test_list_pane.render(f, chunks[0]);
+
+                let Some(test_detail_pane) = self.panes.get(&PaneType::TestDetail) else {
+                    panic!("Test detail pane not found");
+                };
+                test_detail_pane.render(f, chunks[1]);
+            }
+        }
     }
 
     fn render_create_popup(&self, f: &mut Frame, r: Rect, popup: &Popup) {
@@ -391,40 +403,59 @@ impl App {
 
     async fn handle_mode_change(
         &mut self,
-        selected_pane: &PaneType,
+        mode_change: &StatusChange,
         extra_actions: &mut Vec<Action>,
     ) -> Result<()> {
-        match selected_pane {
-            PaneType::Test => {
-                self.selected_pane = 0;
-                self.other_pane = OtherPane::None;
-                while self.panes.len() > 1 {
-                    self.panes.pop();
-                }
-            }
-            PaneType::TestDetail(id) => {
-                self.selected_pane = 0;
-                while self.panes.len() > 1 {
-                    self.panes.pop();
-                }
-                self.panes
-                    .push(Box::new(TestDetailsPane::new(self.db.get_test(*id).await?)));
-                self.other_pane = OtherPane::Right(1);
-            }
-            PaneType::TestDetailSelected(_) | PaneType::TestDetailStep(_, _) => {
-                self.selected_pane = 1;
-                self.other_pane = OtherPane::Left(0);
-            }
+        if self.panes.get(&PaneType::TestList).is_none() {
+            self.panes.insert(
+                PaneType::TestList,
+                Box::new(TestListPane::new()) as Box<dyn Pane>,
+            );
         }
+        match mode_change {
+            StatusChange::Reset | StatusChange::ModeChangeTestList => {
+                self.mode = Mode::TestList;
+                self.selected_pane = PaneType::TestList;
+                self.panes.remove(&PaneType::TestDetail);
+                self.panes
+                    .get_mut(&PaneType::TestList)
+                    .unwrap()
+                    .set_focus(true);
+                if mode_change == &StatusChange::Reset {
+                    self.selected_test_id = None;
+                    self.panes
+                        .get_mut(&PaneType::TestList)
+                        .unwrap()
+                        .update(&Action::StatusChange(StatusChange::Reset))?;
+                }
+            }
+            StatusChange::ModeChangeTestListWithDetails(patui_test_id) => {
+                self.mode = Mode::TestListWithDetails;
+                self.selected_test_id = Some(*patui_test_id);
+                self.selected_pane = PaneType::TestList;
+                self.panes.insert(
+                    PaneType::TestDetail,
+                    // TODO: This will slowdown with enough tests, need to optimize
+                    Box::new(TestDetailsPane::new(
+                        self.db.get_test(*patui_test_id).await?,
+                    )) as Box<dyn Pane>,
+                );
+                self.panes
+                    .get_mut(&PaneType::TestDetail)
+                    .unwrap()
+                    .set_focus(false);
+            }
+        };
 
-        let panes_len = self.panes.len();
-        let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
-        extra_actions.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
-            self.panes[0..effective_panes_len]
-                .iter()
-                .map(|pane| pane.pane_title())
-                .collect::<Vec<String>>(),
-        )));
+        // TODO:
+        // let panes_len = self.panes.len();
+        // let effective_panes_len = cmp::min(panes_len, self.selected_pane + 1);
+        // extra_actions.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
+        //     self.panes[0..effective_panes_len]
+        //         .iter()
+        //         .map(|pane| pane.pane_title())
+        //         .collect::<Vec<String>>(),
+        // )));
 
         self.popups.clear();
 
@@ -495,43 +526,6 @@ impl App {
             PopupMode::Error => unreachable!(), // Handled elsewhere, use Action::Error
         };
         self.popups.push(Popup::new(popup_mode.clone(), component));
-
-        Ok(())
-    }
-
-    async fn handle_pane_change(&mut self, pane_idx: usize, ret: &mut Vec<Action>) -> Result<()> {
-        self.selected_pane = pane_idx;
-        if pane_idx == 0 {
-            self.other_pane = OtherPane::None;
-            while self.panes.len() > 1 {
-                self.panes.pop();
-            }
-        } else if pane_idx == 1 {
-            while self.panes.len() > 2 {
-                self.panes.pop();
-            }
-            if self.panes.len() == 2 {
-                self.other_pane = OtherPane::Right(1);
-            } else {
-                self.other_pane = OtherPane::None;
-            }
-        } else {
-            while self.panes.len() > pane_idx {
-                self.panes.pop();
-            }
-            if self.panes.len() > pane_idx {
-                self.other_pane = OtherPane::Left(pane_idx - 1);
-            } else {
-                self.other_pane = OtherPane::None;
-            }
-        }
-        ret.push(Action::UpdateData(UpdateData::BreadcrumbTitles(
-            self.panes
-                .iter()
-                .map(|pane| pane.pane_title())
-                .collect::<Vec<String>>(),
-        )));
-        self.selected_pane = pane_idx;
 
         Ok(())
     }

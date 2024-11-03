@@ -258,13 +258,17 @@ impl<'a> ScrollableArea<'a> {
             ScrollType::HalfPageRight => self.display_width.get() as isize / 2,
             ScrollType::FullPageUp => -(self.display_height.get() as isize),
             ScrollType::FullPageDown => self.display_height.get() as isize,
+            ScrollType::Top => todo!(),
+            ScrollType::Bottom => todo!(),
         };
         let scroll_var_mut = match scroll_type {
             ScrollType::Single(_)
             | ScrollType::HalfPageUp
             | ScrollType::HalfPageDown
             | ScrollType::FullPageUp
-            | ScrollType::FullPageDown => &mut self.first_row,
+            | ScrollType::FullPageDown
+            | ScrollType::Top
+            | ScrollType::Bottom => &mut self.first_row,
             ScrollType::HalfPageLeft | ScrollType::HalfPageRight => &mut self.first_col,
         };
 
@@ -1361,6 +1365,8 @@ mod tests {
                     TableHeader::new(RatatuiText::from("Header2"), 1, Constraint::Min(10)),
                     TableHeader::new(RatatuiText::from("Header3"), 2, Constraint::Min(10)),
                 ],
+                None,
+                false,
             )),
             starting_idx: 4,
         });
@@ -1524,6 +1530,8 @@ mod tests {
                         TableHeader::new(RatatuiText::from("Header2"), 1, Constraint::Min(10)),
                         TableHeader::new(RatatuiText::from("Header3"), 2, Constraint::Min(10)),
                     ],
+                    None,
+                    false,
                 )),
                 starting_idx: 4,
             }],

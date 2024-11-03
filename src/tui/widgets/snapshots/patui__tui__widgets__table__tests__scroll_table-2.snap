@@ -3,11 +3,10 @@ source: src/tui/widgets/table.rs
 expression: buffer
 ---
 Buffer {
-    area: Rect { x: 0, y: 0, width: 120, height: 20 },
+    area: Rect { x: 0, y: 0, width: 120, height: 24 },
     content: [
         "Name                              Description                       Creation Date        Last Used            Times Used",
         "                                                                                                                        ",
-        "test10                            test description 10               2024-08-31 11:00:00                                0",
         "test11                            test description 11               2024-08-31 11:00:00                                0",
         "test12                            test description 12               2024-08-31 11:00:00                                0",
         "test13                            test description 13               2024-08-31 11:00:00                                0",
@@ -25,6 +24,11 @@ Buffer {
         "test25                            test description 25               2024-08-31 11:00:00                                0",
         "test26                            test description 26               2024-08-31 11:00:00                                0",
         "test27                            test description 27               2024-08-31 11:00:00                                0",
+        "test28                            test description 28               2024-08-31 11:00:00                                0",
+        "test29                            test description 29               2024-08-31 11:00:00                                0",
+        "test30                            test description 30               2024-08-31 11:00:00                                0",
+        "test31                            test description 31               2024-08-31 11:00:00                                0",
+        "test32                            test description 32               2024-08-31 11:00:00                                0",
     ],
     styles: [
         x: 0, y: 0, fg: White, bg: Black, underline: Reset, modifier: NONE,
@@ -44,7 +48,5 @@ Buffer {
         x: 89, y: 1, fg: White, bg: Black, underline: Reset, modifier: NONE,
         x: 109, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 110, y: 1, fg: White, bg: Black, underline: Reset, modifier: NONE,
-        x: 0, y: 4, fg: Black, bg: White, underline: Reset, modifier: NONE,
-        x: 0, y: 5, fg: White, bg: Black, underline: Reset, modifier: NONE,
     ]
 }

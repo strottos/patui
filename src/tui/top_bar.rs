@@ -92,7 +92,8 @@ impl TopBar {
         // Should always be at least 0 because level == 0 handled above
         self.selected_idx = level - 1;
 
-        ret.push(Action::PaneChange(level));
+        // TODO
+        // ret.push(Action::PaneChange(level));
 
         Ok(ret)
     }
@@ -100,7 +101,8 @@ impl TopBar {
     pub(crate) fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         match action {
             Action::PaneChange(level) => {
-                self.selected_idx = *level - 1;
+                // TODO
+                //self.selected_idx = *level - 1;
             }
             Action::UpdateData(UpdateData::BreadcrumbTitles(titles)) => {
                 self.panes_titles = titles.clone();

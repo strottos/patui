@@ -5,59 +5,25 @@ use eyre::Result;
 use super::{error::Error, popups::PopupComponent};
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub(crate) enum PaneType {
+pub(crate) enum Mode {
     #[default]
-    Test,
-    TestDetail(PatuiTestId),
-    TestDetailSelected(PatuiTestId),
-    TestDetailStep(PatuiTestId, PatuiTestStepId),
+    TestList,
+    TestListWithDetails,
 }
 
-impl PaneType {
-    pub(crate) fn is_test(&self) -> bool {
-        matches!(self, PaneType::Test)
-    }
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+pub(crate) enum StatusChange {
+    #[default]
+    Reset,
+    ModeChangeTestList,
+    ModeChangeTestListWithDetails(PatuiTestId),
+}
 
-    pub(crate) fn is_test_detail(&self) -> bool {
-        matches!(self, PaneType::TestDetail(_))
-    }
-
-    pub(crate) fn is_test_detail_selected(&self) -> bool {
-        matches!(self, PaneType::TestDetailSelected(_))
-    }
-
-    pub(crate) fn is_test_detail_step(&self) -> bool {
-        matches!(self, PaneType::TestDetailStep(_, _))
-    }
-
-    pub(crate) fn matched(&self, other_mode: &PaneType) -> bool {
-        match self {
-            PaneType::Test => *other_mode == PaneType::Test,
-            PaneType::TestDetail(_) => {
-                matches!(other_mode, PaneType::TestDetail(_))
-            }
-            PaneType::TestDetailSelected(_) => {
-                matches!(other_mode, PaneType::TestDetailSelected(_))
-            }
-            PaneType::TestDetailStep(_, _) => matches!(other_mode, PaneType::TestDetailStep(_, _)),
-        }
-    }
-
-    pub(crate) fn create_normal() -> Self {
-        PaneType::Test
-    }
-
-    pub(crate) fn create_test_detail(id: PatuiTestId) -> Self {
-        PaneType::TestDetail(id)
-    }
-
-    pub(crate) fn create_test_detail_with_selected_id(id: PatuiTestId) -> Self {
-        PaneType::TestDetailSelected(id)
-    }
-
-    pub(crate) fn create_test_detail_step(id: PatuiTestId, step_num: PatuiTestStepId) -> Self {
-        PaneType::TestDetailStep(id, step_num)
-    }
+#[derive(Default, Debug, Clone, Hash, Eq, PartialEq)]
+pub(crate) enum PaneType {
+    #[default]
+    TestList,
+    TestDetail,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -168,9 +134,10 @@ pub(crate) enum Action {
     ClearKeys,
     Resize(u16, u16),
     Quit,
+    ForceRedraw,
     Error(Error),
-    ModeChange { mode: PaneType },
-    PaneChange(usize),
+    StatusChange(StatusChange),
+    PaneChange(PaneType),
     PopupCreate(PopupMode),
     PopupClose,
     EditorMode(EditorMode),

@@ -1,0 +1,38 @@
+---
+source: src/tui/widgets/table.rs
+expression: buffer
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 120, height: 24 },
+    content: [
+        "┌───────────────────────────────────────────────────────My Table───────────────────────────────────────────────────────┐",
+        "│                                                                                                                      ↑",
+        "│  Name                           Description                    Creation Date        Last Used            Times Used  ║",
+        "│                                                                                                                      █",
+        "│  test3                          test description 3             2024-08-31 11:00:00                                0  █",
+        "│  test4                          test description 4             2024-08-31 11:00:00                                0  █",
+        "│  test5                          test description 5             2024-08-31 11:00:00                                0  █",
+        "│  test6                          test description 6             2024-08-31 11:00:00                                0  █",
+        "│  test7                          test description 7             2024-08-31 11:00:00                                0  █",
+        "│  test8                          test description 8             2024-08-31 11:00:00                                0  █",
+        "│  test9                          test description 9             2024-08-31 11:00:00                                0  █",
+        "│  test10                         test description 10            2024-08-31 11:00:00                                0  █",
+        "│  test11                         test description 11            2024-08-31 11:00:00                                0  █",
+        "│  test12                         test description 12            2024-08-31 11:00:00                                0  ║",
+        "│  test13                         test description 13            2024-08-31 11:00:00                                0  ║",
+        "│  test14                         test description 14            2024-08-31 11:00:00                                0  ║",
+        "│  test15                         test description 15            2024-08-31 11:00:00                                0  ║",
+        "│  test16                         test description 16            2024-08-31 11:00:00                                0  ║",
+        "│  test17                         test description 17            2024-08-31 11:00:00                                0  ║",
+        "│  test18                         test description 18            2024-08-31 11:00:00                                0  ║",
+        "│  test19                         test description 19            2024-08-31 11:00:00                                0  ║",
+        "│  test20                         test description 20            2024-08-31 11:00:00                                0  ║",
+        "│                                                                                                                      ↓",
+        "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘",
+    ],
+    styles: [
+        x: 0, y: 0, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 3, y: 9, fg: Black, bg: White, underline: Reset, modifier: NONE,
+        x: 117, y: 9, fg: White, bg: Black, underline: Reset, modifier: NONE,
+    ]
+}

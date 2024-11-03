@@ -1,0 +1,22 @@
+---
+source: src/tui/widgets/text_display.rs
+expression: buffer
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 50, height: 10 },
+    content: [
+        "┌──────────────────Block Title───────────────────┐",
+        "│                                                │",
+        "│  Hello, World!                                 │",
+        "│  Here's some selectable text                   │",
+        "│  With lots of other text that's really quite   │",
+        "│  we're going to be displaying...               │",
+        "│  Hello, World!                                 │",
+        "│  Here's some non-selectable text               │",
+        "│                                                │",
+        "└────────────────────────────────────────────────┘",
+    ],
+    styles: [
+        x: 0, y: 0, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+    ]
+}
