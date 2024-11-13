@@ -5,7 +5,10 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Style},
     text::{Line, Text as RatatuiText},
-    widgets::{Block, Borders, Padding, Paragraph, WidgetRef, Wrap},
+    widgets::{
+        Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        StatefulWidget, WidgetRef, Wrap,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -66,6 +69,10 @@ impl TextDisplay {
 
     pub(crate) fn set_unselected(&mut self) {
         self.selected_idx = None;
+    }
+
+    pub(crate) fn num_elements(&self) -> usize {
+        self.text.iter().map(|t| t.text.split("\n").count()).sum()
     }
 
     pub(crate) fn num_display_lines(&self) -> usize {
@@ -219,11 +226,39 @@ impl TextDisplay {
 
         paragraph.render_ref(area, buf);
     }
+
+    fn render_scrollbar(&self, area: Rect, buf: &mut Buffer) {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓"));
+
+        let num_elements = self.num_elements();
+        let display_height = self.num_display_lines();
+
+        let scrollbar_height = if num_elements <= display_height {
+            0
+        } else {
+            num_elements + 1 - display_height
+        };
+
+        let mut scrollbar_state = ScrollbarState::new(scrollbar_height).position(self.first_row);
+
+        scrollbar.render(area, buf, &mut scrollbar_state);
+    }
 }
 
 impl WidgetRef for TextDisplay {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         self.render_text(area, buf);
+        if self.block_title.is_some() {
+            let scrollbar_area = Rect {
+                x: area.x + area.width - 1,
+                y: area.y + 1,
+                width: 1,
+                height: area.height - 2,
+            };
+            self.render_scrollbar(scrollbar_area, buf);
+        }
     }
 }
 

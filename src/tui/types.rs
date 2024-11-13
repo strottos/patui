@@ -73,6 +73,7 @@ pub(crate) struct Popup {
     pub(crate) mode: PopupMode,
     pub(crate) component: Box<dyn PopupComponent>,
 }
+
 impl Popup {
     pub(crate) fn new(mode: PopupMode, component: Box<dyn PopupComponent>) -> Self {
         Self { mode, component }

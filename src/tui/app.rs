@@ -51,10 +51,14 @@ impl App {
         let top_bar = TopBar::new(vec!["Tests".to_string()]);
         let bottom_bar = BottomBar::new();
 
-        let panes = HashMap::from([(
+        let mut panes = HashMap::from([(
             PaneType::TestList,
             Box::new(TestListPane::new()) as Box<dyn Pane>,
         )]);
+
+        panes.get_mut(&PaneType::TestList).unwrap().set_focus(true);
+
+        tracing::trace!("panes: {:#?}", panes);
 
         Ok(Self {
             should_quit: false,
@@ -149,6 +153,9 @@ impl App {
 
         self.last_key_events.push(key);
 
+        // TODO: This needs sorting out to enable multiple keys to be sent to things
+        // and to clearout after timeouts, etc.
+
         // Always have a fallback to check for double ctrl-c and quit, can't be
         // overridden
         if self.last_key_events[self.last_key_events.len().saturating_sub(2)..]
@@ -171,9 +178,6 @@ impl App {
                 for action in popup.component.input(&key, crumb_last_pane)?.into_iter() {
                     action_tx.send(action)?;
                 }
-                for action in self.bottom_bar.input(&key, crumb_last_pane)?.into_iter() {
-                    action_tx.send(action)?;
-                }
             } else {
                 // TODO:
                 // let panes_len = self.panes.len();
@@ -187,9 +191,10 @@ impl App {
                 for action in selected_pane.input(&key)?.into_iter() {
                     action_tx.send(action)?;
                 }
-                for action in self.bottom_bar.input(&key, crumb_last_pane)?.into_iter() {
-                    action_tx.send(action)?;
-                }
+            }
+
+            for action in self.bottom_bar.input(&key, crumb_last_pane)?.into_iter() {
+                action_tx.send(action)?;
             }
         }
 
@@ -327,6 +332,8 @@ impl App {
     }
 
     fn render(&self, f: &mut Frame) {
+        tracing::trace!("self.panes: {:#?}", self.panes);
+
         let fsize = f.area();
 
         let chunks = Layout::default()
@@ -345,9 +352,6 @@ impl App {
 
         self.render_centre(f, chunks[1]);
 
-        // if self.error_component.has_error() {
-        //     self.error_component.render(f, chunks[1]);
-        // } else
         if let Some(popup) = self.popups.last() {
             self.render_create_popup(f, chunks[1], popup);
         }

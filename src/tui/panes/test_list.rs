@@ -31,6 +31,7 @@ pub(crate) struct TestListPane<'a> {
 
 impl<'a> TestListPane<'a> {
     pub(crate) fn new() -> Self {
+        // Dummy temporary table to be replaced with actual data
         let mut table = Table::new_with_elements(
             vec![vec!["Loading tests...".into()]],
             vec![TableHeader::new("Name".into(), 0, Constraint::Min(12))],
@@ -38,8 +39,6 @@ impl<'a> TestListPane<'a> {
             Some("Tests List"),
             false,
         );
-
-        table.set_focus(true);
 
         Self {
             initialized: false,
@@ -55,6 +54,8 @@ impl<'a> TestListPane<'a> {
         self.tests = tests;
         self.loading = false;
         self.initialized = true;
+
+        let is_focussed = self.table.is_focussed();
 
         self.table = Table::new_with_elements(
             self.tests
@@ -81,12 +82,23 @@ impl<'a> TestListPane<'a> {
             Some("Tests List"),
             true,
         );
+
+        self.table.set_focus(is_focussed);
     }
 
     fn get_selected_test_id(&self) -> Option<PatuiTestId> {
         self.table
             .selected_idx()
             .map(|idx| self.tests[idx].id.into())
+    }
+
+    fn change_test_detail(&self) -> Vec<Action> {
+        let Some(id) = self.get_selected_test_id() else {
+            panic!("No test selected");
+        };
+        vec![Action::StatusChange(
+            StatusChange::ModeChangeTestListWithDetails(id),
+        )]
     }
 }
 
@@ -156,64 +168,70 @@ impl<'a> Pane for TestListPane<'a> {
             }
             (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
                 self.table.scroll(ScrollType::FullPageDown);
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
             (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
                 self.table.scroll(ScrollType::FullPageUp);
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
             (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                 self.table.scroll(ScrollType::HalfPageDown);
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
                 self.table.scroll(ScrollType::HalfPageUp);
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
             (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
                 self.table.scroll(ScrollType::Single(1));
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
             (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
                 self.table.scroll(ScrollType::Single(-1));
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
-            (KeyCode::Char('g'), KeyModifiers::NONE) => {
-                self.table.scroll(ScrollType::Top);
-                actions.push(Action::ClearKeys);
-                actions.push(Action::ForceRedraw);
-            }
-            (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
-                self.table.scroll(ScrollType::Bottom);
+            (KeyCode::Char('g'), KeyModifiers::NONE)
+            | (KeyCode::Char('G'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('H'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('M'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('L'), KeyModifiers::SHIFT) => {
+                let selected_idx = match key.code {
+                    KeyCode::Char('g') => 0,
+                    KeyCode::Char('G') => self.table.num_elements() - 1,
+                    KeyCode::Char('H') => self.table.first_row(),
+                    KeyCode::Char('M') => {
+                        (self.table.first_row() + self.table.display_height()) / 2
+                    }
+                    KeyCode::Char('L') => self.table.first_row() + self.table.display_height() - 1,
+                    _ => unreachable!(),
+                };
+                self.table.set_selected_idx(selected_idx);
+                actions.extend(self.change_test_detail());
                 actions.push(Action::ClearKeys);
                 actions.push(Action::ForceRedraw);
             }
             (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
                 if self.table.navigate(-1) != 0 {
-                    let Some(id) = self.get_selected_test_id() else {
-                        panic!("No test selected");
-                    };
-                    actions.push(Action::StatusChange(
-                        StatusChange::ModeChangeTestListWithDetails(id),
-                    ));
+                    actions.extend(self.change_test_detail());
                     actions.push(Action::ForceRedraw);
                 }
                 actions.push(Action::ClearKeys);
             }
             (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
                 if self.table.navigate(1) != 0 {
-                    let Some(id) = self.get_selected_test_id() else {
-                        panic!("No test selected");
-                    };
-                    actions.push(Action::StatusChange(
-                        StatusChange::ModeChangeTestListWithDetails(id),
-                    ));
+                    actions.extend(self.change_test_detail());
                     actions.push(Action::ForceRedraw);
                 }
                 actions.push(Action::ClearKeys);
@@ -264,6 +282,7 @@ impl<'a> Pane for TestListPane<'a> {
     }
 
     fn set_focus(&mut self, focus: bool) {
+        tracing::trace!("Setting focus to {}", focus);
         self.table.set_focus(focus);
     }
 }

@@ -259,6 +259,7 @@ impl<'a> PopupComponent for TestEditComponent<'a> {
                 self.selected_component_idx =
                     (self.selected_component_idx + 1) % self.num_components();
                 self.activate_selected();
+                ret.push(Action::ForceRedraw);
                 ret.push(Action::ClearKeys);
             }
             (KeyCode::BackTab, KeyModifiers::SHIFT) => {
@@ -266,10 +267,12 @@ impl<'a> PopupComponent for TestEditComponent<'a> {
                     - 1)
                     % self.num_components();
                 self.activate_selected();
+                ret.push(Action::ForceRedraw);
                 ret.push(Action::ClearKeys);
             }
             (KeyCode::Enter, KeyModifiers::CONTROL) => {
                 ret.extend(self.crupdate_test(mode));
+                ret.push(Action::ForceRedraw);
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.is_ok_button() {
@@ -290,6 +293,7 @@ impl<'a> PopupComponent for TestEditComponent<'a> {
                 if let Some(selected_component) = self.selected_component() {
                     if selected_component.input(key) {
                         ret.push(Action::ClearKeys);
+                        ret.push(Action::ForceRedraw);
                     }
                 }
             }

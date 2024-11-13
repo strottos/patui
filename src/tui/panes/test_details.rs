@@ -56,35 +56,11 @@ impl TestDetailsPane {
 
         Self { test, text_display }
     }
-
-    fn render_scrollbar(&self, f: &mut Frame, rect: Rect) {
-        // let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-        //     .begin_symbol(Some("↑"))
-        //     .end_symbol(Some("↓"));
-
-        // let display_height = rect.height as usize;
-
-        // let mut scrollbar_state = ScrollbarState::new(100).position(0);
-
-        // f.render_stateful_widget(scrollbar, rect, &mut scrollbar_state);
-    }
 }
 
 impl Pane for TestDetailsPane {
     fn render(&self, f: &mut Frame, rect: Rect) {
         f.render_widget(&self.text_display, rect);
-    }
-
-    fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
-        let mut ret = vec![];
-
-        // if let Action::StatusChange(StatusChange::ModeChangeTestListWithDetails(id)) = action {
-        //     if self.test.id != *id {
-        //         ret.push(Action::DbRead(DbRead::TestDetail(*id)));
-        //     }
-        // }
-
-        Ok(ret)
     }
 
     fn input(&mut self, key: &KeyEvent) -> Result<Vec<Action>> {

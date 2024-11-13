@@ -1,5 +1,6 @@
 use std::{cell::Cell, cmp};
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Rect},
@@ -10,6 +11,8 @@ use ratatui::{
         ScrollbarState, StatefulWidget, Table as RatatuiTable, WidgetRef,
     },
 };
+
+use crate::tui::app::Action;
 
 use super::patui_widget::ScrollType;
 
@@ -85,6 +88,7 @@ impl SelectedData {
             self.selected_idx = selected_idx as isize;
             self.is_selected = true;
         }
+        self.calculate_first_row_from_selected_idx();
     }
 
     pub(crate) fn add_selected_idx(&mut self, count: isize) -> isize {
@@ -120,23 +124,13 @@ impl SelectedData {
         debug_assert!(self.selected_idx >= 0 && self.selected_idx < self.num_elements as isize);
         self.is_selected = true;
 
-        let min_first_row = cmp::max(
-            0,
-            self.selected_idx - self.num_display_elements.get() as isize + 1,
-        ) as usize;
-        self.first_row = cmp::max(self.first_row, min_first_row);
-
-        let max_first_row = cmp::min(self.first_row, self.selected_idx as usize);
-        self.first_row = cmp::min(self.first_row, max_first_row);
+        self.calculate_first_row_from_selected_idx();
 
         self.selected_idx - old_selected_idx
     }
 
     pub(crate) fn set_first_row(&mut self, first_row: usize) {
         debug_assert!(first_row < self.num_elements);
-        debug_assert!(
-            !self.selectable || !self.is_selected || first_row < self.selected_idx as usize
-        );
         self.first_row = first_row;
     }
 
@@ -170,6 +164,17 @@ impl SelectedData {
 
     pub(crate) fn set_display_height(&self, height: usize) {
         self.num_display_elements.set(height);
+    }
+
+    fn calculate_first_row_from_selected_idx(&mut self) {
+        let min_first_row = cmp::max(
+            0,
+            self.selected_idx - self.num_display_elements.get() as isize + 1,
+        ) as usize;
+        self.first_row = cmp::max(self.first_row, min_first_row);
+
+        let max_first_row = cmp::min(self.first_row, self.selected_idx as usize);
+        self.first_row = cmp::min(self.first_row, max_first_row);
     }
 }
 
@@ -232,12 +237,13 @@ impl<'a> Table<'a> {
         }
     }
 
-    pub(crate) fn scrollable_height(&self) -> usize {
-        self.elements.len() + 2
-    }
-
     pub(crate) fn num_elements(&self) -> usize {
         self.elements.len()
+    }
+
+    /// Get the first row we're displaying
+    pub(crate) fn first_row(&self) -> usize {
+        self.selected_data.first_row()
     }
 
     /// Get the selected index if we've selected something.
@@ -245,12 +251,9 @@ impl<'a> Table<'a> {
         self.selected_data.selected_idx()
     }
 
-    /// Get the number of elements left.
-    pub(crate) fn elements_left(&self) -> Option<usize> {
-        self.selected_idx().map(|selected_idx| {
-            debug_assert!(self.elements.len() <= selected_idx);
-            self.elements.len() - selected_idx as usize
-        })
+    /// Get the display height
+    pub(crate) fn display_height(&self) -> usize {
+        self.selected_data.num_display_elements()
     }
 
     /// Navigate the table. This function will move the selected index by `count` elements. If we
@@ -266,16 +269,37 @@ impl<'a> Table<'a> {
         self.selected_data.add_selected_idx(count)
     }
 
+    pub(crate) fn set_selected_idx(&mut self, selected_idx: usize) {
+        if !self.selected_data.is_selectable() || self.elements.is_empty() {
+            return;
+        }
+        self.selected_data.set_selected_idx(selected_idx);
+    }
+
     pub(crate) fn scroll(&mut self, scroll_type: ScrollType) {
         let display_height = self.selected_data.num_display_elements();
-        self.selected_data.add_first_row(match scroll_type {
-            ScrollType::Single(count) => count,
-            ScrollType::FullPageDown => display_height as isize,
-            ScrollType::FullPageUp => -(display_height as isize),
-            ScrollType::HalfPageDown => (display_height / 2) as isize,
-            ScrollType::HalfPageUp => -((display_height / 2) as isize),
+        match scroll_type {
+            ScrollType::Single(count) => self.selected_data.add_first_row(count),
+            ScrollType::FullPageDown => self.selected_data.add_first_row(display_height as isize),
+            ScrollType::FullPageUp => self.selected_data.add_first_row(-(display_height as isize)),
+            ScrollType::HalfPageDown => self
+                .selected_data
+                .add_first_row((display_height / 2) as isize),
+            ScrollType::HalfPageUp => self
+                .selected_data
+                .add_first_row(-((display_height / 2) as isize)),
+            ScrollType::Top => self.selected_data.set_first_row(0),
+            ScrollType::Bottom => self
+                .selected_data
+                .set_first_row(
+                    cmp::max(0, self.elements.len() as isize - display_height as isize) as usize,
+                ),
             _ => unreachable!(),
-        });
+        };
+    }
+
+    pub(crate) fn is_focussed(&self) -> bool {
+        self.is_focussed
     }
 
     pub(crate) fn set_focus(&mut self, focus: bool) {

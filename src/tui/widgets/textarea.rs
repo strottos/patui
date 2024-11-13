@@ -175,13 +175,3 @@ impl WidgetRef for TextArea<'_> {
         self.inner.render(area, buf);
     }
 }
-
-// impl PatuiWidget for TextArea<'_> {
-//     fn scrollable_height(&self) -> usize {
-//         self.height as usize + 2
-//     }
-//
-//     fn num_widgets(&self) -> usize {
-//         1
-//     }
-// }

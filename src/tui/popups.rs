@@ -20,7 +20,7 @@ pub(crate) trait PopupComponent: std::fmt::Debug {
     /// Render the component into the rect given
     fn render_inner(&self, _f: &mut Frame, _rect: Rect);
 
-    /// Render the component into the rect given
+    /// Render the component including the block
     fn render(&self, f: &mut Frame, rect: Rect, title: &str) {
         let block = Block::bordered().title(title);
 
