@@ -2,6 +2,7 @@
 //! they are ready to be put into DB.
 
 mod process;
+mod transform_stream;
 
 use std::io::Read;
 
@@ -21,6 +22,7 @@ use crate::{
 };
 
 pub(crate) use process::{PatuiRunStepProcessResult, PatuiStepProcess};
+pub(crate) use transform_stream::{PatuiStepTransformStream, PatuiStepTransformStreamFlavour};
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestEditable {

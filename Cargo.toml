@@ -11,7 +11,7 @@ homepage = "https://github.com/strottos/patui"
 [dependencies]
 better-panic = { git = "https://github.com/strottos/better-panic", branch = "upgrade-backtrace" } # Includes a fix that stops hanging on ARM Windows targets.
 bytes = { version = "1.8.0", features = ["serde"] }
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5.16", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
 color-eyre = { git = "https://github.com/eyre-rs/eyre/" }
 #color-eyre = "0.6.3"
