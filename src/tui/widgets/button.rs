@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Block, Borders, Clear, Paragraph, Widget},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -59,6 +59,7 @@ pub(crate) struct ButtonWidget<'a> {
 impl<'a> Widget for ButtonWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default().borders(Borders::ALL).style(self.style);
+        Clear.render(area, buf);
         self.text
             .block(block)
             .alignment(Alignment::Center)

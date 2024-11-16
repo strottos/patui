@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use eyre::{eyre, Result};
+use eyre::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     widgets::Clear,
@@ -22,7 +22,7 @@ use super::{
     terminal::{Event, Tui},
     top_bar::TopBar,
 };
-use crate::{db::Database, types::PatuiTestId};
+use crate::db::{Database, PatuiTestId};
 
 pub(crate) use super::types::*;
 
@@ -264,7 +264,7 @@ impl App {
                 tracing::trace!("Got db change: {:?}", db_change);
                 match db_change.clone() {
                     DbCreate::Test(details) => {
-                        let test = self.db.new_test(&details).await?;
+                        let test = self.db.new_test(details).await?;
                         extra_actions.push(Action::UpdateData(UpdateData::Tests(
                             self.db.get_tests().await?,
                         )));
@@ -523,9 +523,10 @@ impl App {
     async fn handle_popup_create(&mut self, popup_mode: &PopupMode) -> Result<()> {
         let component: Box<dyn PopupComponent> = match popup_mode {
             PopupMode::CreateTest => Box::new(TestEditComponent::new()),
-            PopupMode::UpdateTest(id) => Box::new(TestEditComponent::new_update(
-                self.db.get_test(*id).await?.details,
-            )?),
+            PopupMode::UpdateTest(id) => todo!(),
+            // Box::new(TestEditComponent::new_update(
+            //     self.db.get_test(*id).await?.details,
+            // )?),
             PopupMode::Help => Box::new(HelpComponent::new(self.get_help())),
             PopupMode::Error => unreachable!(), // Handled elsewhere, use Action::Error
         };

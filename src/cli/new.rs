@@ -98,11 +98,12 @@ impl NewTest {
         let mut edited_tests = vec![];
 
         for test in pending_tests.into_iter() {
-            match db.new_test(&test).await {
+            let test_name = test.name.clone();
+            match db.new_test(test).await {
                 Ok(test) => {
-                    edited_tests.push(test.to_edited_test("ok".to_string()));
+                    edited_tests.push(test.into_edited_test("ok".to_string()));
                 }
-                Err(e) => eprintln!("err for test {}: {}", test.name, e),
+                Err(e) => eprintln!("err for test {}: {}", test_name, e),
             }
         }
 

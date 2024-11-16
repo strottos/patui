@@ -1,128 +1,65 @@
-//! Data types used in the application, these are the types that are used to interact with the
-//! database. Every type that is used in the database should be defined here. This is to ensure
-//! that the types are consistent across the application and that the database schema is
-//! consistent.
+//! Data types used by the application separate from the database, usually inputs or outputs before
+//! they are ready to be put into DB.
 
-use std::{
-    fmt::Display,
-    io::Read,
-    ops::{AddAssign, SubAssign},
-};
+mod process;
+
+use std::io::Read;
 
 use convert_case::{Case, Casing};
 use edit::edit;
 use eyre::Result;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use rusqlite::{
+    types::{ToSqlOutput, Value},
+    ToSql,
+};
+use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTestId(i64);
+use crate::{
+    db::{PatuiInstance, PatuiRun, PatuiTest},
+    utils::{get_current_time_string, get_current_timestamp},
+};
 
-impl Display for PatuiTestId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<i64> for PatuiTestId {
-    fn from(value: i64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<PatuiTestId> for i64 {
-    fn from(value: PatuiTestId) -> i64 {
-        value.0
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTestStepId(usize);
-
-impl Display for PatuiTestStepId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<usize> for PatuiTestStepId {
-    fn from(value: usize) -> Self {
-        Self(value)
-    }
-}
-
-impl From<PatuiTestStepId> for usize {
-    fn from(value: PatuiTestStepId) -> usize {
-        value.0
-    }
-}
-
-impl PartialEq<usize> for PatuiTestStepId {
-    fn eq(&self, other: &usize) -> bool {
-        self.0 == *other
-    }
-}
-
-impl PartialOrd<usize> for PatuiTestStepId {
-    fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(other)
-    }
-}
-
-impl AddAssign<usize> for PatuiTestStepId {
-    fn add_assign(&mut self, rhs: usize) {
-        self.0 += rhs;
-    }
-}
-
-impl SubAssign<usize> for PatuiTestStepId {
-    fn sub_assign(&mut self, rhs: usize) {
-        self.0 -= rhs;
-    }
-}
+pub(crate) use process::{PatuiRunStepProcessResult, PatuiStepProcess};
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiId {
-    Test(PatuiTestId),
-    Step(PatuiTestStepId),
+pub(crate) struct PatuiTestEditable {
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) steps: Vec<PatuiStep>,
 }
 
-impl Display for PatuiId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PatuiId::Test(id) => write!(f, "Test({})", id),
-            PatuiId::Step(id) => write!(f, "Step({})", id),
+impl From<&PatuiTest> for PatuiTestEditable {
+    fn from(test: &PatuiTest) -> Self {
+        PatuiTestEditable {
+            name: test.name.clone(),
+            description: test.description.clone(),
+            steps: test.steps.clone(),
         }
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestDetails {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) creation_date: String,
-    pub(crate) last_updated: String,
-    pub(crate) last_used_date: Option<String>,
-    pub(crate) times_used: u32,
-    pub(crate) steps: Vec<PatuiStepDetails>,
+    pub(crate) steps: Vec<PatuiStep>,
 }
 
 impl Default for PatuiTestDetails {
     fn default() -> Self {
-        let now: String = chrono::Local::now().to_string();
+        let now = get_current_time_string();
 
         PatuiTestDetails {
             name: "Default".to_string(),
             description: "Default template".to_string(),
             creation_date: now.clone(),
-            last_updated: now,
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![PatuiStepDetails::Shell(PatuiStepShell {
-                shell: Some("bash".to_string()),
-                contents: "echo 'Hello, world!'".to_string(),
-                location: None,
+            steps: vec![PatuiStep::Process(PatuiStepProcess {
+                command: "/usr/bin/env".to_string(),
+                args: vec!["ls".to_string(), "/".to_string()],
+                tty: Some((24, 80)),
+                wait: true,
             })],
         }
     }
@@ -132,15 +69,12 @@ impl PatuiTestDetails {
     pub(crate) fn from_yaml_str(yaml: &str) -> Result<Self> {
         let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
 
-        let now: String = chrono::Local::now().to_string();
+        let now = get_current_time_string();
 
         let test = PatuiTestDetails {
             name: yaml_test.name,
             description: yaml_test.description,
-            creation_date: now.clone(),
-            last_updated: now,
-            last_used_date: None,
-            times_used: 0,
+            creation_date: now,
             steps: yaml_test.steps,
         };
 
@@ -174,70 +108,7 @@ impl PatuiTestDetails {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct PatuiTest {
-    pub(crate) id: PatuiTestId,
-    pub(crate) details: PatuiTestDetails,
-}
-
-impl PatuiTest {
-    pub(crate) fn to_min_display_test(&self) -> Result<PatuiTestMinDisplay> {
-        Ok(PatuiTestMinDisplay {
-            id: self.id.clone(),
-            name: self.details.name.clone(),
-            description: self.details.description.clone(),
-        })
-    }
-
-    pub(crate) fn to_edited_test(&self, status: String) -> PatuiTestEditStatus {
-        PatuiTestEditStatus {
-            id: self.id,
-            name: Some(self.details.name.clone()),
-            description: Some(self.details.description.clone()),
-            status,
-        }
-    }
-}
-
-impl Serialize for PatuiTest {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("PatuiTest", 8)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("name", &self.details.name)?;
-        state.serialize_field("description", &self.details.description)?;
-        state.serialize_field("creation_date", &self.details.creation_date)?;
-        state.serialize_field("last_updated", &self.details.last_updated)?;
-        state.serialize_field("last_used_date", &self.details.last_used_date)?;
-        state.serialize_field("times_used", &self.details.times_used)?;
-        state.serialize_field("steps", &self.details.steps)?;
-        state.end()
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTestMinDisplay {
-    pub(crate) id: PatuiTestId,
-    pub(crate) name: String,
-    pub(crate) description: String,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTestEditStatus {
-    pub(crate) id: PatuiTestId,
-    pub(crate) name: Option<String>,
-    pub(crate) description: Option<String>,
-    pub(crate) status: String,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTestEditable {
-    pub(crate) name: String,
-    pub(crate) description: String,
-    pub(crate) steps: Vec<PatuiStepDetails>,
-}
+// Test steps
 
 #[derive(
     Debug,
@@ -252,12 +123,14 @@ pub(crate) struct PatuiTestEditable {
     VariantNames,
 )]
 #[strum(serialize_all = "snake_case")]
-pub(crate) enum PatuiStepDetails {
+pub(crate) enum PatuiStep {
+    Process(PatuiStepProcess),
     Shell(PatuiStepShell),
+
     Assertion(PatuiStepAssertion),
 }
 
-impl PatuiStepDetails {
+impl PatuiStep {
     pub(crate) fn get_display_yaml(&self) -> Result<String> {
         let mut ret = String::new();
 
@@ -273,22 +146,23 @@ impl PatuiStepDetails {
 
     pub(crate) fn inner_yaml(&self) -> Result<String> {
         Ok(match self {
-            PatuiStepDetails::Shell(shell) => serde_yaml::to_string(shell)?,
-            PatuiStepDetails::Assertion(assertion) => serde_yaml::to_string(assertion)?,
+            PatuiStep::Process(process) => serde_yaml::to_string(process)?,
+            PatuiStep::Shell(shell) => serde_yaml::to_string(shell)?,
+            PatuiStep::Assertion(assertion) => serde_yaml::to_string(assertion)?,
         })
     }
 
     pub(crate) fn to_editable_yaml(&self) -> Result<String> {
         match self {
-            PatuiStepDetails::Shell(shell) => Ok(serde_yaml::to_string(&shell.contents)?),
+            PatuiStep::Shell(shell) => Ok(serde_yaml::to_string(&shell.contents)?),
             _ => self.inner_yaml(),
         }
     }
 
-    pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStepDetails) -> Result<Self> {
+    pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStep) -> Result<Self> {
         loop {
             yaml_str = edit(&yaml_str)?;
-            match PatuiStepDetails::from_yaml_str(&yaml_str, step) {
+            match PatuiStep::from_yaml_str(&yaml_str, step) {
                 Ok(step) => {
                     return Ok(step);
                 }
@@ -301,17 +175,17 @@ impl PatuiStepDetails {
         }
     }
 
-    pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStepDetails) -> Result<Self> {
+    pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStep) -> Result<Self> {
         Ok(match step {
-            PatuiStepDetails::Shell(shell_step) => {
+            PatuiStep::Shell(shell_step) => {
                 let contents = serde_yaml::from_str::<PatuiStepShell>(yaml)?;
-                PatuiStepDetails::Shell(PatuiStepShell {
+                PatuiStep::Shell(PatuiStepShell {
                     shell: shell_step.shell.clone(),
                     contents: contents.contents,
                     location: shell_step.location.clone(),
                 })
             }
-            _ => serde_yaml::from_str::<PatuiStepDetails>(yaml)?,
+            _ => serde_yaml::from_str::<PatuiStep>(yaml)?,
         })
     }
 }
@@ -336,6 +210,122 @@ pub(crate) enum PatuiStepAssertionType {
     #[default]
     Equal,
     Contains,
+}
+
+// Test runs
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunError {}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStatus {
+    Pending,
+    Ok,
+    Error(PatuiRunError),
+}
+
+impl ToSql for PatuiRunStatus {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Owned(Value::Text(match self {
+            PatuiRunStatus::Pending => "pending".to_string(),
+            PatuiRunStatus::Ok => "ok".to_string(),
+            PatuiRunStatus::Error(_) => "error".to_string(),
+        })))
+    }
+}
+
+// Result details
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiTimestamp<T> {
+    timestamp: i64,
+    value: T,
+}
+
+impl<T> PatuiTimestamp<T> {
+    pub(crate) fn new(value: T) -> Self {
+        let now = get_current_timestamp();
+
+        PatuiTimestamp {
+            timestamp: now,
+            value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStepResult {
+    Process(PatuiRunStepProcessResult),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunStep {
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) result: PatuiRunStepResult,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiRunStepResultDisplay {
+    Process(),
+}
+
+impl TryFrom<PatuiRunStepResult> for PatuiRunStepResultDisplay {
+    type Error = eyre::Report;
+
+    fn try_from(value: PatuiRunStepResult) -> std::result::Result<Self, Self::Error> {
+        match value {
+            PatuiRunStepResult::Process(process) => Ok(PatuiRunStepResultDisplay::Process()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunStepDisplay {
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) result: PatuiRunStepResultDisplay,
+}
+
+impl TryFrom<PatuiRunStep> for PatuiRunStepDisplay {
+    type Error = eyre::Report;
+
+    fn try_from(value: PatuiRunStep) -> std::result::Result<Self, Self::Error> {
+        Ok(PatuiRunStepDisplay {
+            start_time: value.start_time,
+            end_time: value.end_time,
+            result: value.result.try_into()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiRunDisplay {
+    pub(crate) id: i64,
+    pub(crate) instance: PatuiInstance,
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) status: PatuiRunStatus,
+    pub(crate) step_run_details: Vec<PatuiRunStepDisplay>,
+}
+
+impl TryFrom<PatuiRun> for PatuiRunDisplay {
+    type Error = eyre::Report;
+
+    fn try_from(value: PatuiRun) -> std::result::Result<Self, Self::Error> {
+        Ok(PatuiRunDisplay {
+            id: value.id.into(),
+            instance: value.instance,
+            start_time: value.start_time,
+            end_time: value.end_time,
+            status: value.status,
+            step_run_details: value
+                .step_run_details
+                .into_iter()
+                .map(|step| step.try_into())
+                .collect::<Result<Vec<PatuiRunStepDisplay>>>()?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -384,19 +374,17 @@ mod tests {
         assert_that!(details.name).is_equal_to("test name".to_string());
         assert_that!(details.description).is_equal_to("test description".to_string());
         assert_that!(details.steps).has_length(2);
-        assert_that!(details.steps[0]).is_equal_to(PatuiStepDetails::Shell(PatuiStepShell {
+        assert_that!(details.steps[0]).is_equal_to(PatuiStep::Shell(PatuiStepShell {
             shell: Some("bash".to_string()),
             contents: "echo 'Hello, world!'".to_string(),
             location: None,
         }));
-        assert_that!(details.steps[1]).is_equal_to(PatuiStepDetails::Assertion(
-            PatuiStepAssertion {
-                assertion: PatuiStepAssertionType::Equal,
-                negate: false,
-                lhs: "foo".to_string(),
-                rhs: "bar".to_string(),
-            },
-        ));
+        assert_that!(details.steps[1]).is_equal_to(PatuiStep::Assertion(PatuiStepAssertion {
+            assertion: PatuiStepAssertionType::Equal,
+            negate: false,
+            lhs: "foo".to_string(),
+            rhs: "bar".to_string(),
+        }));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use crate::{
+    db::{PatuiTest, PatuiTestStepId},
     tui::{
         app::{Action, DbRead, EditorMode, HelpItem, PaneType, StatusChange},
         widgets::{Text, TextDisplay},
     },
-    types::{PatuiTest, PatuiTestId, PatuiTestStepId},
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -35,21 +35,28 @@ impl TestDetailsPane {
             format!(
                 "Id: {}\nName: {}\nDescription: {}\nSteps:{}",
                 test.id,
-                test.details.name,
-                test.details.description,
-                if test.details.steps.is_empty() {
-                    " []"
-                } else {
-                    ""
-                }
+                test.name,
+                test.description,
+                if test.steps.is_empty() { " []" } else { "" }
             ),
             false,
         ));
 
-        for step in test.details.steps.iter() {
-            let yaml = step.get_display_yaml().unwrap();
-
-            text.push(Text::new(yaml, true));
+        for (idx, step) in test.steps.iter().enumerate() {
+            match step.get_display_yaml() {
+                Ok(yaml) => {
+                    text.push(Text::new(yaml, true));
+                }
+                Err(err) => {
+                    text.push(Text::new(
+                        format!(
+                            "Err reading PatuiStep into yaml from step {}: {:?}\n\tErr: {}",
+                            idx, step, err
+                        ),
+                        true,
+                    ));
+                }
+            }
         }
 
         let text_display = TextDisplay::new_with_text(text, Some("Test Details".to_string()), true);

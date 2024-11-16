@@ -8,13 +8,13 @@ use ratatui::{
 };
 
 use crate::{
+    db::{PatuiTest, PatuiTestId},
     tui::{
         app::{
             Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, StatusChange, UpdateData,
         },
         widgets::{ScrollType, Table, TableHeader},
     },
-    types::{PatuiTest, PatuiTestId},
 };
 
 use super::Pane;
@@ -62,9 +62,9 @@ impl<'a> TestListPane<'a> {
                 .iter()
                 .map(|test| {
                     vec![
-                        Text::from(test.details.name.clone()),
-                        Text::from(test.details.description.clone()),
-                        Text::from(test.details.creation_date.clone()),
+                        Text::from(test.name.clone()),
+                        Text::from(test.description.clone()),
+                        Text::from(test.creation_date.clone()),
                     ]
                 })
                 .collect::<Vec<Vec<Text>>>(),

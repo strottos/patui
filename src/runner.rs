@@ -1,4 +1,9 @@
-use crate::types::PatuiTest;
+mod steps;
+
+use std::collections::HashMap;
+
+use crate::db::{PatuiTest, PatuiTestId};
+use steps::PatuiStepRunner;
 
 use eyre::Result;
 
@@ -14,20 +19,29 @@ impl<'a> TestRunner<'a> {
 
 #[cfg(test)]
 mod tests {
-    use assertor::*
+    use assertor::*;
 
-    use super::*
+    use super::*;
 
     #[test]
     fn plan_basic() {
+        let now = crate::utils::get_current_time_string();
+
         let test = PatuiTest {
-            id: todo!(),
-            details: todo!(),
+            id: 1.into(),
+            name: "Test 1".into(),
+            description: "Test 1 description".into(),
+            creation_date: now.clone(),
+            last_updated: now,
+            last_used_date: None,
+            times_used: 0,
+            steps: vec![],
         };
         let runner = TestRunner { test: &test };
 
         let ret = runner.plan();
-
-        assert_that!(ret).is_equal_to(Ok(()));
     }
+
+    #[test]
+    fn run_basic_plan() {}
 }

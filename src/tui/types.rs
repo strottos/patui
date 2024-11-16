@@ -1,4 +1,5 @@
-use crate::types::{PatuiTest, PatuiTestDetails, PatuiTestId, PatuiTestStepId};
+use crate::db::{PatuiTest, PatuiTestId, PatuiTestStepId};
+use crate::types::PatuiTestDetails;
 use crossterm::event::KeyEvent;
 use eyre::Result;
 
@@ -121,6 +122,7 @@ pub(crate) trait Component: std::fmt::Debug {
         Ok(vec![])
     }
 }
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum EditorMode {
     CreateTest,

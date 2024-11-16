@@ -29,12 +29,7 @@ impl ErrorComponent {
 impl PopupComponent for ErrorComponent {
     fn render_inner(&self, f: &mut Frame, r: Rect) {
         let error_widget = Paragraph::new(Text::from(self.error.display()))
-            .alignment(Alignment::Center)
-            .block(
-                Block::default()
-                    .title(self.error.title())
-                    .borders(Borders::ALL),
-            )
+            .alignment(Alignment::Left)
             .wrap(Wrap { trim: false });
 
         f.render_widget(error_widget, r);

@@ -10,6 +10,7 @@ homepage = "https://github.com/strottos/patui"
 
 [dependencies]
 better-panic = { git = "https://github.com/strottos/better-panic", branch = "upgrade-backtrace" } # Includes a fix that stops hanging on ARM Windows targets.
+bytes = { version = "1.8.0", features = ["serde"] }
 chrono = "0.4.38"
 clap = { version = "4.5.16", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
 color-eyre = { git = "https://github.com/eyre-rs/eyre/" }
@@ -25,6 +26,7 @@ human-panic = "2.0.1"
 indexmap = "2.4.0"
 lazy_static = "1.5.0"
 libc = "0.2.158"
+portable-pty = { version = "0.8.1", features = ["serde"] }
 ratatui = { version = "0.28.1", features = ["unstable-widget-ref"] }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 serde = "1.0.209"
@@ -33,7 +35,7 @@ serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
-tokio = { version = "1.39.3", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread", "time"] }
 tokio-rusqlite = "0.5.1"
 tokio-util = "0.7.11"
 tracing = "0.1.40"

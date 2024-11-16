@@ -3,9 +3,9 @@
 
 mod cli;
 mod db;
-mod runner;
 mod tui;
-pub(crate) mod types;
+mod types;
+mod utils;
 
 use std::{env, fs::create_dir_all, sync::Arc};
 
