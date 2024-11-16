@@ -60,6 +60,8 @@ impl Default for PatuiTestDetails {
                 args: vec!["ls".to_string(), "/".to_string()],
                 tty: Some((24, 80)),
                 wait: true,
+                input: None,
+                cwd: None,
             })],
         }
     }

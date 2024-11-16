@@ -16,6 +16,8 @@ pub(crate) struct PatuiStepProcess {
     pub(crate) tty: Option<(u16, u16)>,
     #[serde(default = "step_process_wait_default")]
     pub(crate) wait: bool,
+    pub(crate) input: Option<String>,
+    pub(crate) cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]

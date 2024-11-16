@@ -3,6 +3,7 @@
 
 mod cli;
 mod db;
+mod runner;
 mod tui;
 mod types;
 mod utils;
