@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
 
 use crate::{
-    db::{PatuiInstance, PatuiRun, PatuiTest},
+    db::{PatuiInstance, PatuiRun, PatuiTestDb, PatuiTestId},
     utils::{get_current_time_string, get_current_timestamp},
 };
 
@@ -31,12 +31,53 @@ pub(crate) struct PatuiTestEditable {
     pub(crate) steps: Vec<PatuiStep>,
 }
 
-impl From<&PatuiTest> for PatuiTestEditable {
-    fn from(test: &PatuiTest) -> Self {
+impl From<&PatuiTestDb> for PatuiTestEditable {
+    fn from(test: &PatuiTestDb) -> Self {
         PatuiTestEditable {
             name: test.name.clone(),
             description: test.description.clone(),
             steps: test.steps.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct PatuiTest {
+    pub(crate) id: PatuiTestId,
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) steps: Vec<PatuiStep>,
+}
+
+impl PatuiTest {
+    pub(crate) fn edit_from_details(test_id: PatuiTestId, details: PatuiTestDetails) -> Self {
+        PatuiTest {
+            id: test_id,
+            name: details.name,
+            description: details.description,
+            steps: details.steps,
+        }
+    }
+}
+
+impl From<PatuiTestDb> for PatuiTest {
+    fn from(value: PatuiTestDb) -> Self {
+        PatuiTest {
+            id: value.id,
+            name: value.name,
+            description: value.description,
+            steps: value.steps,
+        }
+    }
+}
+
+impl From<&PatuiTestDb> for PatuiTest {
+    fn from(value: &PatuiTestDb) -> Self {
+        PatuiTest {
+            id: value.id.clone(),
+            name: value.name.clone(),
+            description: value.description.clone(),
+            steps: value.steps.clone(),
         }
     }
 }
@@ -129,6 +170,7 @@ impl PatuiTestDetails {
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum PatuiStep {
     Process(PatuiStepProcess),
+    TransformStream(PatuiStepTransformStream),
     Shell(PatuiStepShell),
 
     Assertion(PatuiStepAssertion),
@@ -151,6 +193,7 @@ impl PatuiStep {
     pub(crate) fn inner_yaml(&self) -> Result<String> {
         Ok(match self {
             PatuiStep::Process(process) => serde_yaml::to_string(process)?,
+            PatuiStep::TransformStream(stream) => todo!(),
             PatuiStep::Shell(shell) => serde_yaml::to_string(shell)?,
             PatuiStep::Assertion(assertion) => serde_yaml::to_string(assertion)?,
         })

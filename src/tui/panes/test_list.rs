@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::{
-    db::{PatuiTest, PatuiTestId},
+    db::{PatuiTestDb, PatuiTestId},
     tui::{
         app::{
             Action, DbRead, EditorMode, HelpItem, PaneType, PopupMode, StatusChange, UpdateData,
@@ -24,7 +24,7 @@ pub(crate) struct TestListPane<'a> {
     initialized: bool,
     loading: bool,
 
-    tests: Vec<PatuiTest>,
+    tests: Vec<PatuiTestDb>,
 
     table: Table<'a>,
 }
@@ -50,7 +50,7 @@ impl<'a> TestListPane<'a> {
         }
     }
 
-    pub(crate) fn update_tests(&mut self, tests: Vec<PatuiTest>) {
+    pub(crate) fn update_tests(&mut self, tests: Vec<PatuiTestDb>) {
         self.tests = tests;
         self.loading = false;
         self.initialized = true;

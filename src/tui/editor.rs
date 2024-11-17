@@ -1,8 +1,8 @@
 use eyre::{eyre, Result};
 
 use crate::{
-    db::{PatuiTest, PatuiTestStepId},
-    types::{PatuiStep, PatuiTestDetails},
+    db::{PatuiTestDb, PatuiTestStepId},
+    types::{PatuiStep, PatuiTest, PatuiTestDetails},
 };
 
 pub(crate) fn create_test() -> Result<PatuiTestDetails> {
@@ -12,14 +12,14 @@ pub(crate) fn create_test() -> Result<PatuiTestDetails> {
     Ok(test)
 }
 
-pub(crate) fn edit_test(mut test: PatuiTest) -> Result<PatuiTest> {
+pub(crate) fn edit_test(test: PatuiTestDb) -> Result<PatuiTest> {
     let template = test.to_editable_yaml_string()?;
-    test = PatuiTest::edit_from_details(test, PatuiTestDetails::edit_yaml(template)?);
+    let ret = PatuiTest::edit_from_details(test.id, PatuiTestDetails::edit_yaml(template)?);
 
-    Ok(test)
+    Ok(ret)
 }
 
-pub(crate) fn edit_step(mut test: PatuiTest, step_num: PatuiTestStepId) -> Result<PatuiTest> {
+pub(crate) fn edit_step(mut test: PatuiTestDb, step_num: PatuiTestStepId) -> Result<PatuiTestDb> {
     todo!();
     // let step = test
     //     .details

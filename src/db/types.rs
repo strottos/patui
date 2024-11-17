@@ -144,7 +144,7 @@ impl Display for PatuiId {
 // Test templates
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct PatuiTest {
+pub(crate) struct PatuiTestDb {
     pub(crate) id: PatuiTestId,
     pub(crate) name: String,
     pub(crate) description: String,
@@ -155,8 +155,8 @@ pub(crate) struct PatuiTest {
     pub(crate) steps: Vec<PatuiStep>,
 }
 
-impl From<PatuiTest> for PatuiTestDetails {
-    fn from(test: PatuiTest) -> Self {
+impl From<PatuiTestDb> for PatuiTestDetails {
+    fn from(test: PatuiTestDb) -> Self {
         PatuiTestDetails {
             name: test.name,
             description: test.description,
@@ -166,8 +166,8 @@ impl From<PatuiTest> for PatuiTestDetails {
     }
 }
 
-impl From<&PatuiTest> for PatuiTestDetails {
-    fn from(test: &PatuiTest) -> Self {
+impl From<&PatuiTestDb> for PatuiTestDetails {
+    fn from(test: &PatuiTestDb) -> Self {
         PatuiTestDetails {
             name: test.name.clone(),
             description: test.description.clone(),
@@ -177,8 +177,8 @@ impl From<&PatuiTest> for PatuiTestDetails {
     }
 }
 
-impl From<PatuiTest> for PatuiTestMinDisplay {
-    fn from(test: PatuiTest) -> Self {
+impl From<PatuiTestDb> for PatuiTestMinDisplay {
+    fn from(test: PatuiTestDb) -> Self {
         PatuiTestMinDisplay {
             id: test.id,
             name: test.name,
@@ -187,9 +187,9 @@ impl From<PatuiTest> for PatuiTestMinDisplay {
     }
 }
 
-impl PatuiTest {
+impl PatuiTestDb {
     pub(crate) fn new_from_details(id: PatuiTestId, details: PatuiTestDetails) -> Self {
-        PatuiTest {
+        PatuiTestDb {
             id,
             name: details.name,
             description: details.description,
@@ -197,21 +197,6 @@ impl PatuiTest {
             last_updated: details.creation_date,
             last_used_date: None,
             times_used: 0,
-            steps: details.steps,
-        }
-    }
-
-    pub(crate) fn edit_from_details(test: PatuiTest, details: PatuiTestDetails) -> Self {
-        let now: String = chrono::Local::now().to_string();
-
-        PatuiTest {
-            id: test.id,
-            name: details.name,
-            description: details.description,
-            creation_date: test.creation_date,
-            last_updated: now,
-            last_used_date: test.last_used_date,
-            times_used: test.times_used,
             steps: details.steps,
         }
     }
@@ -232,7 +217,7 @@ impl PatuiTest {
     }
 }
 
-impl Serialize for PatuiTest {
+impl Serialize for PatuiTestDb {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -258,8 +243,8 @@ pub(crate) struct PatuiTestHashable<'a> {
     pub(crate) steps: Vec<&'a PatuiStep>,
 }
 
-impl<'a> From<&'a PatuiTest> for PatuiTestHashable<'a> {
-    fn from(test: &'a PatuiTest) -> Self {
+impl<'a> From<&'a PatuiTestDb> for PatuiTestHashable<'a> {
+    fn from(test: &'a PatuiTestDb) -> Self {
         PatuiTestHashable {
             id: test.id,
             name: &test.name,

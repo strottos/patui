@@ -129,7 +129,9 @@ pub(crate) struct NewRun {
 
 impl NewRun {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let run = db.new_run(self.test_id.into()).await?;
+        let test = db.get_test(self.test_id.into()).await?;
+        let instance = db.get_or_new_instance(test).await?;
+        let run = db.new_run(instance).await?;
 
         let runner = TestRunner {
             db: db.clone(),

@@ -4,8 +4,8 @@ use clap::{Args, Parser};
 use eyre::Result;
 
 use crate::{
-    db::{Database, PatuiTest},
-    types::PatuiTestDetails,
+    db::Database,
+    types::{PatuiTest, PatuiTestDetails},
 };
 
 #[derive(Debug, Args)]
@@ -37,10 +37,10 @@ pub(crate) struct EditTest {
 
 impl EditTest {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
-        let mut test = db.get_test(self.id.into()).await?;
+        let test = db.get_test(self.id.into()).await?;
 
         let yaml_str = test.to_editable_yaml_string()?;
-        test = PatuiTest::edit_from_details(test, PatuiTestDetails::edit_yaml(yaml_str)?);
+        let test = PatuiTest::edit_from_details(test.id, PatuiTestDetails::edit_yaml(yaml_str)?);
 
         db.edit_test(&test).await?;
         eprintln!("Successfully saved test ({}): {}", test.id, test.name);

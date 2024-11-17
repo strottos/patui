@@ -1,5 +1,5 @@
 use crate::{
-    db::{PatuiTest, PatuiTestStepId},
+    db::{PatuiTestDb, PatuiTestStepId},
     tui::{
         app::{Action, DbRead, EditorMode, HelpItem, PaneType, StatusChange},
         widgets::{Text, TextDisplay},
@@ -22,13 +22,13 @@ use super::Pane;
 
 #[derive(Debug)]
 pub(crate) struct TestDetailsPane {
-    test: PatuiTest,
+    test: PatuiTestDb,
 
     text_display: TextDisplay,
 }
 
 impl TestDetailsPane {
-    pub(crate) fn new(test: PatuiTest) -> Self {
+    pub(crate) fn new(test: PatuiTestDb) -> Self {
         let mut text = vec![];
 
         text.push(Text::new(

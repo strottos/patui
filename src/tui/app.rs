@@ -254,7 +254,7 @@ impl App {
                     }
                     DbRead::TestDetail(id) => {
                         extra_actions.push(Action::UpdateData(UpdateData::TestDetail(
-                            self.db.get_test(*id).await?,
+                            self.db.get_test(*id).await?.into(),
                         )));
                     }
                 };
@@ -268,7 +268,7 @@ impl App {
                         extra_actions.push(Action::UpdateData(UpdateData::Tests(
                             self.db.get_tests().await?,
                         )));
-                        extra_actions.push(Action::UpdateData(UpdateData::TestDetail(test)));
+                        extra_actions.push(Action::UpdateData(UpdateData::TestDetail(test.into())));
                     }
                 };
                 self.redraw = true;
@@ -504,14 +504,14 @@ impl App {
                 let test = self.db.get_test(*id).await?;
                 let test = super::editor::edit_test(test)?;
                 let test_id = test.id;
-                ret.push(Action::DbUpdate(DbUpdate::Test(test)));
+                ret.push(Action::DbUpdate(DbUpdate::Test(test.into())));
                 ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
             }
             EditorMode::UpdateTestStep(id, step_num) => {
                 let test = self.db.get_test(*id).await?;
                 let test = super::editor::edit_step(test, *step_num)?;
                 let test_id = test.id;
-                ret.push(Action::DbUpdate(DbUpdate::Test(test)));
+                ret.push(Action::DbUpdate(DbUpdate::Test(test.into())));
                 ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
             }
         };

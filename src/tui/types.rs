@@ -1,5 +1,5 @@
-use crate::db::{PatuiTest, PatuiTestId, PatuiTestStepId};
-use crate::types::PatuiTestDetails;
+use crate::db::{PatuiTestDb, PatuiTestId, PatuiTestStepId};
+use crate::types::{PatuiTest, PatuiTestDetails};
 use crossterm::event::KeyEvent;
 use eyre::Result;
 
@@ -45,7 +45,7 @@ pub(crate) enum DbUpdate {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum UpdateData {
-    Tests(Vec<PatuiTest>),
+    Tests(Vec<PatuiTestDb>),
     TestDetail(PatuiTest),
     BreadcrumbTitles(Vec<String>),
 }

@@ -4,8 +4,11 @@ use eyre::Result;
 use tokio_rusqlite::Connection;
 use tracing::{debug, trace};
 
-use super::types::{PatuiInstance, PatuiRun, PatuiTest, PatuiTestHashable, PatuiTestId};
-use crate::types::{PatuiRunStatus, PatuiRunStep, PatuiStep, PatuiTestDetails};
+use super::types::{PatuiInstance, PatuiRun, PatuiTestDb, PatuiTestHashable, PatuiTestId};
+use crate::{
+    types::{PatuiRunStatus, PatuiRunStep, PatuiStep, PatuiTest, PatuiTestDetails},
+    utils::get_current_time_string,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Database {
@@ -82,7 +85,7 @@ impl Database {
         Ok(ret)
     }
 
-    pub(crate) async fn get_test(&self, id: PatuiTestId) -> Result<PatuiTest> {
+    pub(crate) async fn get_test(&self, id: PatuiTestId) -> Result<PatuiTestDb> {
         debug!("Getting test ({})...", id);
 
         let test = self
@@ -93,7 +96,7 @@ impl Database {
                 let test = stmt.query_row([i64::from(id)], |row| {
                     let steps = sql_decode_steps(row.get(7)?)?;
 
-                    Ok(PatuiTest {
+                    Ok(PatuiTestDb {
                         id,
                         name: row.get(1)?,
                         description: row.get(2)?,
@@ -112,7 +115,7 @@ impl Database {
         Ok(test)
     }
 
-    pub(crate) async fn get_tests(&self) -> Result<Vec<PatuiTest>> {
+    pub(crate) async fn get_tests(&self) -> Result<Vec<PatuiTestDb>> {
         debug!("Getting tests...");
 
         let tests = self
@@ -123,7 +126,7 @@ impl Database {
                     .query_map([], |row| {
                         let steps = sql_decode_steps(row.get(7)?)?;
                         let id: i64 = row.get(0)?;
-                        Ok(PatuiTest {
+                        Ok(PatuiTestDb {
                             id: id.into(),
                             name: row.get(1)?,
                             description: row.get(2)?,
@@ -134,7 +137,7 @@ impl Database {
                             steps,
                         })
                     })?
-                .collect::<std::result::Result<Vec<PatuiTest>, rusqlite::Error>>()?;
+                .collect::<std::result::Result<Vec<PatuiTestDb>, rusqlite::Error>>()?;
 
                 Ok(tests)
             })
@@ -143,7 +146,7 @@ impl Database {
         Ok(tests)
     }
 
-    pub(crate) async fn new_test(&self, details: PatuiTestDetails) -> Result<PatuiTest> {
+    pub(crate) async fn new_test(&self, details: PatuiTestDetails) -> Result<PatuiTestDb> {
         debug!("New test");
         trace!("New test details {:?}", details);
 
@@ -167,7 +170,7 @@ impl Database {
             })
             .await?;
 
-        Ok(PatuiTest::new_from_details(test_id.into(), details))
+        Ok(PatuiTestDb::new_from_details(test_id.into(), details))
     }
 
     pub(crate) async fn edit_test(&self, test: &PatuiTest) -> Result<()> {
@@ -178,17 +181,16 @@ impl Database {
 
         self.conn
             .call(move |conn| {
-                let mut stmt = conn.prepare("UPDATE test SET name = ?1, desc = ?2, creation_date = ?3, last_updated = ?4, last_used_date = ?5, times_used = ?6, steps = ?7 WHERE id = ?8")?;
+                let mut stmt = conn.prepare("UPDATE test SET name = ?1, desc = ?2, last_updated = ?3, steps = ?4 WHERE id = ?5")?;
 
                 let id: i64 = test_clone.id.into();
+
+                let now = get_current_time_string();
 
                 stmt.execute((
                     test_clone.name,
                     test_clone.description,
-                    test_clone.creation_date,
-                    test_clone.last_updated,
-                    test_clone.last_used_date,
-                    test_clone.times_used,
+                    now,
                     sql_encode_steps(&test_clone.steps)?,
                     id,
                 ))?;
@@ -200,10 +202,48 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) async fn new_run(&self, test_id: PatuiTestId) -> Result<PatuiRun> {
-        let test = self.get_test(test_id).await?;
+    pub(crate) async fn get_or_new_instance(&self, test: PatuiTestDb) -> Result<PatuiInstance> {
+        debug!("Get or new instance");
+        trace!("Get or new instance details {:?}", test);
 
-        let instance = self.get_or_new_instance(test).await?;
+        let instance_hash = get_test_hash(&test)?;
+
+        let instance = self.get_instance(instance_hash, (&test).into()).await?;
+        if let Some(instance) = instance {
+            return Ok(instance);
+        }
+
+        let instance = self.conn.call(move |conn| {
+            let mut stmt = conn.prepare("INSERT INTO instance (test_id, hash, name, desc, creation_date, last_updated, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
+
+            let instance_id = stmt.insert((
+                i64::from(test.id),
+                instance_hash,
+                &test.name,
+                &test.description,
+                &test.creation_date,
+                &test.last_updated,
+                sql_encode_steps(&test.steps)?,
+            ))?;
+
+            let instance = PatuiInstance {
+                id: instance_id.into(),
+                test_id: test.id,
+                hash: instance_hash,
+                name: test.name,
+                description: test.description,
+                creation_date: test.creation_date,
+                last_updated: test.last_updated,
+                steps: test.steps,
+            };
+
+            Ok(instance)
+        }).await?;
+
+        Ok(instance)
+    }
+
+    pub(crate) async fn new_run(&self, instance: PatuiInstance) -> Result<PatuiRun> {
         let instance_id = instance.id;
 
         let start_time = chrono::Local::now().to_string();
@@ -249,10 +289,6 @@ impl Database {
                     id: test_id.into(),
                     name: row.get(2)?,
                     description: row.get(3)?,
-                    creation_date: row.get(4)?,
-                    last_updated: row.get(5)?,
-                    last_used_date: None, // Irrelevant in PartialEq
-                    times_used: 0, // Irrelevant in PartialEq
                     steps: steps.clone(),
                 };
 
@@ -277,55 +313,10 @@ impl Database {
 
         Ok(instance)
     }
-
-    async fn get_or_new_instance(&self, test: PatuiTest) -> Result<PatuiInstance> {
-        debug!("Get or new instance");
-        trace!("Get or new instance details {:?}", test);
-
-        let instance_hash = get_test_hash(&test)?;
-
-        let test_clone = test.clone();
-
-        let instance = self.get_instance(instance_hash, test_clone).await?;
-        if let Some(instance) = instance {
-            return Ok(instance);
-        }
-
-        let test_clone = test.clone();
-
-        let instance_id = self.conn.call(move |conn| {
-            let mut stmt = conn.prepare("INSERT INTO instance (test_id, hash, name, desc, creation_date, last_updated, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
-
-            let instance_id = stmt.insert((
-                i64::from(test_clone.id),
-                instance_hash,
-                test_clone.name,
-                test_clone.description,
-                test_clone.creation_date,
-                test_clone.last_updated,
-                sql_encode_steps(&test_clone.steps)?,
-            ))?;
-
-            Ok(instance_id)
-        }).await?;
-
-        let instance = PatuiInstance {
-            id: instance_id.into(),
-            test_id: test.id,
-            hash: instance_hash,
-            name: test.name.clone(),
-            description: test.description.clone(),
-            creation_date: test.creation_date.clone(),
-            last_updated: test.last_updated.clone(),
-            steps: test.steps.clone(),
-        };
-
-        Ok(instance)
-    }
 }
 
 // Need a custom hash for the test to be able to do faster database lookups for test details
-fn get_test_hash(test: &PatuiTest) -> Result<i64> {
+fn get_test_hash(test: &PatuiTestDb) -> Result<i64> {
     let hashable_test = <PatuiTestHashable>::from(test);
     trace!("Test {:#?}", hashable_test);
     let encoded_test: Vec<u8> = bincode::serialize(&hashable_test).unwrap();
