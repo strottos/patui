@@ -4,8 +4,8 @@ use eyre::Result;
 use tokio_rusqlite::Connection;
 use tracing::{debug, trace};
 
-use super::{PatuiTest, PatuiTestId};
-use crate::types::{PatuiStep, PatuiTestDetails};
+use super::types::{PatuiInstance, PatuiRun, PatuiTest, PatuiTestHashable, PatuiTestId};
+use crate::types::{PatuiRunStatus, PatuiRunStep, PatuiStep, PatuiTestDetails};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Database {
@@ -199,6 +199,145 @@ impl Database {
 
         Ok(())
     }
+
+    pub(crate) async fn new_run(&self, test_id: PatuiTestId) -> Result<PatuiRun> {
+        let test = self.get_test(test_id).await?;
+
+        let instance = self.get_or_new_instance(test).await?;
+        let instance_id = instance.id;
+
+        let start_time = chrono::Local::now().to_string();
+        let start_time_clone = start_time.clone();
+
+        let run_id = self.conn
+            .call(move |conn| {
+                let mut stmt = conn.prepare("INSERT INTO run (instance_id, start_time, end_time, status, step_run_details) VALUES (?1, ?2, ?3, ?4, ?5)")?;
+
+                let run_id = stmt.insert((
+                    i64::from(instance_id),
+                    start_time_clone,
+                    None::<String>,
+                    PatuiRunStatus::Pending,
+                    sql_encode_step_runs(&vec![])?,
+                ))?;
+
+                Ok(run_id)
+            })
+            .await?;
+
+        Ok(PatuiRun {
+            id: run_id.into(),
+            instance,
+            start_time,
+            end_time: None,
+            status: PatuiRunStatus::Pending,
+            step_run_details: vec![],
+        })
+    }
+
+    async fn get_instance(&self, hash: i64, test: PatuiTest) -> Result<Option<PatuiInstance>> {
+        let instance = self.conn.call(move |conn| {
+            let mut stmt = conn.prepare("SELECT id, test_id, name, desc, creation_date, last_updated, steps FROM instance WHERE hash = ?1")?;
+
+            let mut rows = stmt.query([hash])?;
+
+            while let Some(row) = rows.next()? {
+                let test_id: i64 = row.get(1)?;
+                let steps = sql_decode_steps(row.get(6)?)?;
+
+                let possible_test = PatuiTest {
+                    id: test_id.into(),
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    creation_date: row.get(4)?,
+                    last_updated: row.get(5)?,
+                    last_used_date: None, // Irrelevant in PartialEq
+                    times_used: 0, // Irrelevant in PartialEq
+                    steps: steps.clone(),
+                };
+
+                if possible_test == test {
+                    let id: i64 = row.get(0)?;
+
+                    return Ok(Some(PatuiInstance {
+                        id: id.into(),
+                        test_id: test_id.into(),
+                        hash,
+                        name: row.get(2)?,
+                        description: row.get(3)?,
+                        creation_date: row.get(4)?,
+                        last_updated: row.get(5)?,
+                        steps,
+                    }));
+                }
+            }
+
+            Ok(None)
+        }).await?;
+
+        Ok(instance)
+    }
+
+    async fn get_or_new_instance(&self, test: PatuiTest) -> Result<PatuiInstance> {
+        debug!("Get or new instance");
+        trace!("Get or new instance details {:?}", test);
+
+        let instance_hash = get_test_hash(&test)?;
+
+        let test_clone = test.clone();
+
+        let instance = self.get_instance(instance_hash, test_clone).await?;
+        if let Some(instance) = instance {
+            return Ok(instance);
+        }
+
+        let test_clone = test.clone();
+
+        let instance_id = self.conn.call(move |conn| {
+            let mut stmt = conn.prepare("INSERT INTO instance (test_id, hash, name, desc, creation_date, last_updated, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?;
+
+            let instance_id = stmt.insert((
+                i64::from(test_clone.id),
+                instance_hash,
+                test_clone.name,
+                test_clone.description,
+                test_clone.creation_date,
+                test_clone.last_updated,
+                sql_encode_steps(&test_clone.steps)?,
+            ))?;
+
+            Ok(instance_id)
+        }).await?;
+
+        let instance = PatuiInstance {
+            id: instance_id.into(),
+            test_id: test.id,
+            hash: instance_hash,
+            name: test.name.clone(),
+            description: test.description.clone(),
+            creation_date: test.creation_date.clone(),
+            last_updated: test.last_updated.clone(),
+            steps: test.steps.clone(),
+        };
+
+        Ok(instance)
+    }
+}
+
+// Need a custom hash for the test to be able to do faster database lookups for test details
+fn get_test_hash(test: &PatuiTest) -> Result<i64> {
+    let hashable_test = <PatuiTestHashable>::from(test);
+    trace!("Test {:#?}", hashable_test);
+    let encoded_test: Vec<u8> = bincode::serialize(&hashable_test).unwrap();
+    let hash = blake3::hash(encoded_test.as_slice());
+    let hash: u64 = hash
+        .as_bytes()
+        .iter()
+        .take(8)
+        .fold(0, |acc, &x| acc * 256 + x as u64);
+
+    trace!("Hash {}", hash);
+    Ok(hash as i64)
 }
 
 fn sql_decode_steps(steps: String) -> std::result::Result<Vec<PatuiStep>, rusqlite::Error> {
@@ -209,6 +348,14 @@ fn sql_decode_steps(steps: String) -> std::result::Result<Vec<PatuiStep>, rusqli
 
 fn sql_encode_steps(steps: &Vec<PatuiStep>) -> std::result::Result<String, rusqlite::Error> {
     let ret = serde_json::to_string(steps)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(ret)
+}
+
+fn sql_encode_step_runs(
+    run_steps: &Vec<PatuiRunStep>,
+) -> std::result::Result<String, rusqlite::Error> {
+    let ret = serde_json::to_string(run_steps)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     Ok(ret)
 }

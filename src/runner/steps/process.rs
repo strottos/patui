@@ -6,7 +6,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::types::PatuiStepProcess;
 
-use super::{PatuiStepData, PatuiStepDataFlavour};
+use super::{PatuiStepData, PatuiStepDataFlavour, PatuiStepRunnerTrait};
 
 enum PatuiProcess {
     None,
@@ -51,91 +51,6 @@ impl PatuiStepRunnerProcess {
         }
     }
 
-    pub(crate) fn setup(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    pub(crate) fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
-        if self.step.tty.is_some() {
-            match sub {
-                _ => Err(eyre!("Invalid subscription")),
-            }
-        } else {
-            match sub {
-                "stdin" => Err(eyre!("Cannot subscribe to stdin, must use publish")),
-                "stdout" => Ok(self.stdout.0.subscribe()),
-                "stderr" => Ok(self.stderr.0.subscribe()),
-                _ => Err(eyre!("Invalid subscription")),
-            }
-        }
-    }
-
-    pub(crate) fn publish(&self, publ: &str, data: PatuiStepData) -> Result<()> {
-        assert!(data.data().is_bytes());
-        match publ {
-            "stdin" => {
-                if let PatuiProcess::Std(_) = &self.process {
-                    let stdin_tx = self.stdin.1.clone();
-                    let _ = stdin_tx.send(data);
-                }
-
-                Ok(())
-            }
-            _ => Err(eyre!("Invalid publisher")),
-        }
-    }
-
-    pub(crate) async fn wait(&mut self, action: &str) -> Result<PatuiStepData> {
-        match action {
-            "exit_code" => {
-                let code: i64 = match &mut self.process {
-                    PatuiProcess::Std(child) => child.wait().await?.code().unwrap_or(-1) as i64,
-                    PatuiProcess::Pty(child) => child.wait()?.exit_code() as i64,
-                    _ => return Err(eyre!("Process not started")),
-                };
-
-                Ok(PatuiStepData::new(PatuiStepDataFlavour::Number(code)))
-            }
-            _ => Err(eyre!("Invalid action")),
-        }
-    }
-
-    pub(crate) async fn check(&mut self, action: &str) -> Result<PatuiStepData> {
-        match action {
-            "exit_code" => {
-                let status = match &mut self.process {
-                    PatuiProcess::Std(child) => child
-                        .try_wait()?
-                        .ok_or_else(|| eyre!("Process not exited"))?
-                        .code()
-                        .unwrap_or(-1),
-                    PatuiProcess::Pty(child) => child
-                        .try_wait()?
-                        .map(|x| x.exit_code() as i32)
-                        .unwrap_or(-1),
-                    _ => return Err(eyre!("Process not started")),
-                };
-
-                let status = format!("{}", status);
-
-                Ok(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                    Bytes::from(status),
-                )))
-            }
-            _ => Err(eyre!("Invalid action")),
-        }
-    }
-
-    pub(crate) async fn run(&mut self) -> Result<()> {
-        if let Some(tty) = self.step.tty {
-            self.run_pty(tty)?;
-        } else {
-            self.run_std().await?;
-        };
-
-        Ok(())
-    }
-
     fn run_pty(&mut self, tty: (u16, u16)) -> Result<()> {
         let pty_system = portable_pty::native_pty_system();
 
@@ -162,7 +77,7 @@ impl PatuiStepRunnerProcess {
         Ok(())
     }
 
-    async fn run_std(&mut self) -> Result<()> {
+    fn run_std(&mut self) -> Result<()> {
         let mut child = tokio::process::Command::new(&self.step.command)
             .args(&self.step.args)
             .stdin(std::process::Stdio::piped())
@@ -249,6 +164,93 @@ impl PatuiStepRunnerProcess {
     }
 }
 
+impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
+    fn setup(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
+        if self.step.tty.is_some() {
+            match sub {
+                _ => Err(eyre!("Invalid subscription")),
+            }
+        } else {
+            match sub {
+                "stdin" => Err(eyre!("Cannot subscribe to stdin, must use publish")),
+                "stdout" => Ok(self.stdout.0.subscribe()),
+                "stderr" => Ok(self.stderr.0.subscribe()),
+                _ => Err(eyre!("Invalid subscription")),
+            }
+        }
+    }
+
+    fn publish(&self, publ: &str, data: PatuiStepData) -> Result<()> {
+        assert!(data.data().is_bytes());
+        match publ {
+            "stdin" => {
+                if let PatuiProcess::Std(_) = &self.process {
+                    let stdin_tx = self.stdin.1.clone();
+                    let _ = stdin_tx.send(data);
+                }
+
+                Ok(())
+            }
+            _ => Err(eyre!("Invalid publisher")),
+        }
+    }
+
+    async fn wait(&mut self, action: &str) -> Result<PatuiStepData> {
+        match action {
+            "exit_code" => {
+                let code: i64 = match &mut self.process {
+                    PatuiProcess::Std(child) => child.wait().await?.code().unwrap_or(-1) as i64,
+                    PatuiProcess::Pty(child) => child.wait()?.exit_code() as i64,
+                    _ => return Err(eyre!("Process not started")),
+                };
+
+                Ok(PatuiStepData::new(PatuiStepDataFlavour::Number(code)))
+            }
+            _ => Err(eyre!("Invalid action")),
+        }
+    }
+
+    fn check(&mut self, action: &str) -> Result<PatuiStepData> {
+        match action {
+            "exit_code" => {
+                let status = match &mut self.process {
+                    PatuiProcess::Std(child) => child
+                        .try_wait()?
+                        .ok_or_else(|| eyre!("Process not exited"))?
+                        .code()
+                        .unwrap_or(-1),
+                    PatuiProcess::Pty(child) => child
+                        .try_wait()?
+                        .map(|x| x.exit_code() as i32)
+                        .unwrap_or(-1),
+                    _ => return Err(eyre!("Process not started")),
+                };
+
+                let status = format!("{}", status);
+
+                Ok(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
+                    Bytes::from(status),
+                )))
+            }
+            _ => Err(eyre!("Invalid action")),
+        }
+    }
+
+    fn run(&mut self) -> Result<bool> {
+        if let Some(tty) = self.step.tty {
+            self.run_pty(tty)?;
+        } else {
+            self.run_std()?;
+        };
+
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{process::Command, sync::Mutex, time::Duration};
@@ -301,7 +303,7 @@ mod tests {
         let mut stdout_rx = step_runner_process.subscribe("stdout").unwrap();
 
         assert_that!(step_runner_process.setup()).is_ok();
-        assert_that!(step_runner_process.run().await).is_ok();
+        assert_that!(step_runner_process.run()).is_ok();
 
         let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
         tracing::trace!("Received: {:?}", ret);

@@ -3,7 +3,7 @@ use tokio::sync::broadcast;
 
 use crate::types::{PatuiStepTransformStream, PatuiStepTransformStreamFlavour};
 
-use super::{PatuiStepData, PatuiStepDataFlavour};
+use super::{PatuiStepData, PatuiStepDataFlavour, PatuiStepRunnerTrait};
 
 pub(crate) struct PatuiStepRunnerTransformStream {
     step: PatuiStepTransformStream,
@@ -29,12 +29,14 @@ impl PatuiStepRunnerTransformStream {
             output: (output_tx, output_rx),
         }
     }
+}
 
-    pub(crate) fn setup(&mut self) -> Result<()> {
+impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
+    fn setup(&mut self) -> Result<()> {
         Ok(())
     }
 
-    pub(crate) async fn run(&mut self) -> Result<()> {
+    fn run(&mut self) -> Result<bool> {
         let input_rx = self.input.1.subscribe();
         let output_tx = self.output.0.clone();
 
@@ -67,17 +69,17 @@ impl PatuiStepRunnerTransformStream {
             }
         });
 
-        Ok(())
+        Ok(true)
     }
 
-    pub(crate) fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
+    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         match sub {
             "output" => Ok(self.output.0.subscribe()),
             _ => Err(eyre!("Invalid subscription")),
         }
     }
 
-    pub(crate) fn publish(&self, publ: &str, data: PatuiStepData) -> Result<()> {
+    fn publish(&self, publ: &str, data: PatuiStepData) -> Result<()> {
         match publ {
             "input" => {
                 self.input
@@ -89,14 +91,6 @@ impl PatuiStepRunnerTransformStream {
         }
 
         Ok(())
-    }
-
-    pub(crate) async fn wait(&mut self, action: &str) -> Result<PatuiStepData> {
-        unimplemented!();
-    }
-
-    pub(crate) async fn check(&mut self, action: &str) -> Result<PatuiStepData> {
-        unimplemented!();
     }
 }
 
@@ -125,7 +119,7 @@ mod tests {
         let mut output = output.unwrap();
 
         assert_that!(step_runner_transform_stream.setup()).is_ok();
-        assert_that!(step_runner_transform_stream.run().await).is_ok();
+        assert_that!(step_runner_transform_stream.run()).is_ok();
 
         let input = PatuiStepData::new(PatuiStepDataFlavour::Bytes(Bytes::from(
             "{\"key\": \"value\"}".to_string(),
@@ -157,7 +151,7 @@ mod tests {
         let mut output = output.unwrap();
 
         assert_that!(step_runner_transform_stream.setup()).is_ok();
-        assert_that!(step_runner_transform_stream.run().await).is_ok();
+        assert_that!(step_runner_transform_stream.run()).is_ok();
 
         let input = PatuiStepData::new(PatuiStepDataFlavour::String(
             "{\"key\": \"value\"}".to_string(),

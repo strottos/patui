@@ -1,19 +1,19 @@
 mod steps;
 
-use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::db::{PatuiTest, PatuiTestId};
-use steps::PatuiStepRunner;
+use crate::db::{Database, PatuiRun};
 
 use eyre::Result;
 
-struct TestRunner<'a> {
-    test: &'a PatuiTest,
+pub(crate) struct TestRunner {
+    pub(crate) run: PatuiRun,
+    pub(crate) db: Arc<Database>,
 }
 
-impl<'a> TestRunner<'a> {
-    fn plan(&self) -> Result<()> {
-        Ok(())
+impl TestRunner {
+    pub(crate) async fn run_test(mut self) -> Result<PatuiRun> {
+        todo!();
     }
 }
 
@@ -26,20 +26,6 @@ mod tests {
     #[test]
     fn plan_basic() {
         let now = crate::utils::get_current_time_string();
-
-        let test = PatuiTest {
-            id: 1.into(),
-            name: "Test 1".into(),
-            description: "Test 1 description".into(),
-            creation_date: now.clone(),
-            last_updated: now,
-            last_used_date: None,
-            times_used: 0,
-            steps: vec![],
-        };
-        let runner = TestRunner { test: &test };
-
-        let ret = runner.plan();
     }
 
     #[test]

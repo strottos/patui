@@ -1,22 +1,13 @@
 mod types;
+mod utils;
 
-use std::process::Output;
-
-use assert_cmd::Command;
 use assertor::*;
 use tempfile::tempdir;
 
-use self::types::{PatuiTest, PatuiTestEditStatus, PatuiTestMinDisplay};
-
-fn run_patui(args: &[&str], stdin: Option<&str>) -> Output {
-    let mut cmd = Command::cargo_bin("patui").unwrap();
-    if let Some(stdin) = stdin {
-        cmd.write_stdin(stdin);
-    }
-    let output = cmd.args(args).ok().unwrap();
-
-    output
-}
+use self::{
+    types::{PatuiTest, PatuiTestEditStatus, PatuiTestMinDisplay},
+    utils::run_patui,
+};
 
 #[test]
 fn test_new_test() {
@@ -201,8 +192,8 @@ fn test_new_test_with_shell() {
     assert_that!(test.description).is_equal_to("test description".to_string());
     assert_that!(test.steps).has_length(1);
     let shell_step = match &test.steps[0] {
-        types::PatuiStepDetails::Shell(shell) => shell,
-        types::PatuiStepDetails::Assertion(_) => panic!("Expected shell step"),
+        types::PatuiStep::Shell(shell) => shell,
+        types::PatuiStep::Assertion(_) => panic!("Expected shell step"),
     };
     assert_that!(shell_step.shell).is_equal_to(Some("bash".to_string()));
     assert_that!(shell_step.contents).is_equal_to("echo 'Hello, world!'".to_string());

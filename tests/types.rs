@@ -10,12 +10,12 @@ pub struct PatuiTest {
     pub last_updated: String,
     pub last_used_date: Option<String>,
     pub times_used: u32,
-    pub steps: Vec<PatuiStepDetails>,
+    pub steps: Vec<PatuiStep>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, EnumIter, EnumDiscriminants, VariantNames)]
 #[strum(serialize_all = "snake_case")]
-pub enum PatuiStepDetails {
+pub enum PatuiStep {
     Shell(PatuiStepShell),
     Assertion(PatuiStepAssertion),
 }
@@ -55,4 +55,42 @@ pub struct PatuiTestMinDisplay {
     pub id: i64,
     pub name: String,
     pub description: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PatuiRunStatus {
+    pub id: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PatuiInstance {
+    pub(crate) id: i64,
+    pub(crate) test_id: i64,
+    pub(crate) hash: i64,
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) creation_date: String,
+    pub(crate) last_updated: String,
+    pub(crate) steps: Vec<PatuiStep>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PatuiRun {
+    pub(crate) id: i64,
+    pub(crate) instance: PatuiInstance,
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) status: PatuiRunStatus,
+    pub(crate) step_run_details: Vec<PatuiRunStep>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) enum PatuiRunStepResult {}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PatuiRunStep {
+    pub(crate) start_time: String,
+    pub(crate) end_time: Option<String>,
+    pub(crate) result: PatuiRunStepResult,
 }

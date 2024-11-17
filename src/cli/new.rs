@@ -3,7 +3,11 @@ use std::{io::Read, sync::Arc};
 use clap::{Args, Parser};
 use eyre::Result;
 
-use crate::{db::Database, types::PatuiTestDetails};
+use crate::{
+    db::Database,
+    runner::TestRunner,
+    types::{PatuiRunDisplay, PatuiTestDetails},
+};
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[clap(rename_all = "lower")]
@@ -28,6 +32,7 @@ impl Command {
     pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
         match &self.command {
             NewCommand::Test(new_test) => new_test.handle(db).await,
+            NewCommand::Run(new_run) => new_run.handle(db).await,
         }
     }
 }
@@ -35,10 +40,11 @@ impl Command {
 #[derive(Parser, Debug)]
 pub(crate) enum NewCommand {
     Test(NewTest),
+    Run(NewRun),
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Edit an existing test")]
+#[command(about = "Create a new test")]
 pub(crate) struct NewTest {
     // Use a standard template
     #[arg(short, long)]
@@ -108,6 +114,37 @@ impl NewTest {
         }
 
         println!("{}", serde_json::to_string(&edited_tests)?);
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command(about = "Create a test run")]
+pub(crate) struct NewRun {
+    // Test ID to run
+    #[arg(short, long)]
+    pub(crate) test_id: i64,
+}
+
+impl NewRun {
+    pub(crate) async fn handle(&self, db: Arc<Database>) -> Result<()> {
+        let run = db.new_run(self.test_id.into()).await?;
+
+        let runner = TestRunner {
+            db: db.clone(),
+            run,
+        };
+
+        let run = runner.run_test().await?;
+
+        let res = if let Ok(run_display) = run.clone().try_into() {
+            serde_json::to_string::<PatuiRunDisplay>(&run_display)?
+        } else {
+            serde_json::to_string(&run)?
+        };
+
+        println!("{}", res);
 
         Ok(())
     }
