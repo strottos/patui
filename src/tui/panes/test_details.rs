@@ -43,7 +43,7 @@ impl TestDetailsPane {
         ));
 
         for (idx, step) in test.steps.iter().enumerate() {
-            match step.get_display_yaml() {
+            match step.details.get_display_yaml() {
                 Ok(yaml) => {
                     text.push(Text::new(yaml, true));
                 }

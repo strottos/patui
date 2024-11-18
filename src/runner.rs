@@ -28,7 +28,8 @@ mod tests {
     use crate::{
         db::PatuiInstance,
         types::{
-            PatuiStep, PatuiStepProcess, PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
+            PatuiStep, PatuiStepDetails, PatuiStepProcess, PatuiStepTransformStream,
+            PatuiStepTransformStreamFlavour,
         },
     };
 
@@ -50,17 +51,26 @@ mod tests {
                     creation_date: now.clone(),
                     last_updated: now,
                     steps: vec![
-                        PatuiStep::Process(PatuiStepProcess {
-                            command: "foo".into(),
-                            args: vec![],
-                            tty: None,
-                            wait: false,
-                            input: None,
-                            cwd: None,
-                        }),
-                        PatuiStep::TransformStream(PatuiStepTransformStream {
-                            flavour: PatuiStepTransformStreamFlavour::Json,
-                        }),
+                        PatuiStep {
+                            name: "FooProcess".to_string(),
+                            depends_on: todo!(),
+                            details: PatuiStepDetails::Process(PatuiStepProcess {
+                                command: "foo".into(),
+                                args: vec![],
+                                tty: None,
+                                wait: false,
+                                input: None,
+                                cwd: None,
+                            }),
+                        },
+                        PatuiStep {
+                            name: "FooTransform".to_string(),
+                            depends_on: vec![],
+                            details: PatuiStepDetails::TransformStream(PatuiStepTransformStream {
+                                flavour: PatuiStepTransformStreamFlavour::Json,
+                                input: todo!(),
+                            }),
+                        },
                     ],
                 },
                 start_time: todo!(),

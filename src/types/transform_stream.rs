@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::PatuiStepDataTransfer;
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepTransformStreamFlavour {
     Utf8,
@@ -14,5 +16,6 @@ pub(crate) enum PatuiStepTransformStreamFlavour {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepTransformStream {
+    pub(crate) input: PatuiStepDataTransfer,
     pub(crate) flavour: PatuiStepTransformStreamFlavour,
 }

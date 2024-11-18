@@ -1,9 +1,11 @@
 use eyre::{eyre, Result};
 use tokio::sync::broadcast;
 
-use crate::types::{PatuiStepTransformStream, PatuiStepTransformStreamFlavour};
+use crate::types::{
+    PatuiStepData, PatuiStepDataFlavour, PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
+};
 
-use super::{PatuiStepData, PatuiStepDataFlavour, PatuiStepRunnerTrait};
+use super::PatuiStepRunnerTrait;
 
 pub(crate) struct PatuiStepRunnerTransformStream {
     step: PatuiStepTransformStream,
@@ -103,6 +105,8 @@ mod tests {
     use tokio::time::timeout;
     use tracing_test::traced_test;
 
+    use crate::types::PatuiStepDataTransfer;
+
     use super::*;
 
     #[traced_test]
@@ -111,6 +115,7 @@ mod tests {
         let mut step_runner_transform_stream =
             PatuiStepRunnerTransformStream::new(&PatuiStepTransformStream {
                 flavour: PatuiStepTransformStreamFlavour::Json,
+                input: PatuiStepDataTransfer::None,
             });
 
         let output = step_runner_transform_stream.subscribe("output");
@@ -143,6 +148,7 @@ mod tests {
         let mut step_runner_transform_stream =
             PatuiStepRunnerTransformStream::new(&PatuiStepTransformStream {
                 flavour: PatuiStepTransformStreamFlavour::Json,
+                input: PatuiStepDataTransfer::None,
             });
 
         let output = step_runner_transform_stream.subscribe("output");

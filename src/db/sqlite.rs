@@ -358,10 +358,11 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::types::{
-        PatuiStep, PatuiStepAssertion, PatuiStepAssertionType, PatuiStepShell, PatuiTestDetails,
+        PatuiStepAssertion, PatuiStepAssertionType, PatuiStepDetails, PatuiStepShell,
+        PatuiTestDetails,
     };
 
-    use super::Database;
+    use super::*;
 
     async fn setup_db() -> (Database, Connection, tempfile::TempDir) {
         let tmpdir = tempdir().unwrap();
@@ -437,17 +438,25 @@ mod tests {
             description: "test description".to_string(),
             creation_date: "2021-01-01 00:00:00".to_string(),
             steps: vec![
-                PatuiStep::Shell(PatuiStepShell {
-                    shell: Some("bash".to_string()),
-                    contents: "echo 'hello'".to_string(),
-                    location: None,
-                }),
-                PatuiStep::Assertion(PatuiStepAssertion {
-                    assertion: PatuiStepAssertionType::Equal,
-                    negate: false,
-                    lhs: "foo".to_string(),
-                    rhs: "bar".to_string(),
-                }),
+                PatuiStep {
+                    name: "test step 1".to_string(),
+                    depends_on: vec![],
+                    details: PatuiStepDetails::Shell(PatuiStepShell {
+                        shell: Some("bash".to_string()),
+                        contents: "echo 'hello'".to_string(),
+                        location: None,
+                    }),
+                },
+                PatuiStep {
+                    name: "test step 2".to_string(),
+                    depends_on: vec![],
+                    details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                        assertion: PatuiStepAssertionType::Equal,
+                        negate: false,
+                        lhs: "foo".to_string(),
+                        rhs: "bar".to_string(),
+                    }),
+                },
             ],
         };
 
@@ -473,17 +482,21 @@ mod tests {
         let steps: Vec<PatuiStep> =
             serde_json::from_str(&row.get::<usize, String>(2).unwrap()).unwrap();
         assert_that!(steps).has_length(2);
-        assert_that!(steps.first()).is_equal_to(Some(&PatuiStep::Shell(PatuiStepShell {
-            shell: Some("bash".to_string()),
-            contents: "echo 'hello'".to_string(),
-            location: None,
-        })));
-        assert_that!(steps.get(1)).is_equal_to(Some(&PatuiStep::Assertion(PatuiStepAssertion {
-            assertion: PatuiStepAssertionType::Equal,
-            negate: false,
-            lhs: "foo".to_string(),
-            rhs: "bar".to_string(),
-        })));
+        assert_that!(steps.first().unwrap().details).is_equal_to(&PatuiStepDetails::Shell(
+            PatuiStepShell {
+                shell: Some("bash".to_string()),
+                contents: "echo 'hello'".to_string(),
+                location: None,
+            },
+        ));
+        assert_that!(steps.get(1).unwrap().details).is_equal_to(&PatuiStepDetails::Assertion(
+            PatuiStepAssertion {
+                assertion: PatuiStepAssertionType::Equal,
+                negate: false,
+                lhs: "foo".to_string(),
+                rhs: "bar".to_string(),
+            },
+        ));
 
         let row = rows.next().unwrap();
         assert_that!(row.is_none()).is_true();

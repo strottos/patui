@@ -6,9 +6,10 @@ mod transform_stream;
 
 use std::io::Read;
 
+use bytes::Bytes;
 use convert_case::{Case, Casing};
 use edit::edit;
-use eyre::Result;
+use eyre::{eyre, Result};
 use rusqlite::{
     types::{ToSqlOutput, Value},
     ToSql,
@@ -98,14 +99,18 @@ impl Default for PatuiTestDetails {
             name: "Default".to_string(),
             description: "Default template".to_string(),
             creation_date: now.clone(),
-            steps: vec![PatuiStep::Process(PatuiStepProcess {
-                command: "/usr/bin/env".to_string(),
-                args: vec!["ls".to_string(), "/".to_string()],
-                tty: Some((24, 80)),
-                wait: true,
-                input: None,
-                cwd: None,
-            })],
+            steps: vec![PatuiStep {
+                name: "DefaultProcess".to_string(),
+                depends_on: vec![],
+                details: PatuiStepDetails::Process(PatuiStepProcess {
+                    command: "/usr/bin/env".to_string(),
+                    args: vec!["ls".to_string(), "/".to_string()],
+                    tty: Some((24, 80)),
+                    wait: true,
+                    input: None,
+                    cwd: None,
+                }),
+            }],
         }
     }
 }
@@ -155,6 +160,13 @@ impl PatuiTestDetails {
 
 // Test steps
 
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStep {
+    pub(crate) name: String,
+    pub(crate) depends_on: Vec<PatuiStep>,
+    pub(crate) details: PatuiStepDetails,
+}
+
 #[derive(
     Debug,
     Clone,
@@ -168,7 +180,7 @@ impl PatuiTestDetails {
     VariantNames,
 )]
 #[strum(serialize_all = "snake_case")]
-pub(crate) enum PatuiStep {
+pub(crate) enum PatuiStepDetails {
     Process(PatuiStepProcess),
     TransformStream(PatuiStepTransformStream),
     Shell(PatuiStepShell),
@@ -176,7 +188,7 @@ pub(crate) enum PatuiStep {
     Assertion(PatuiStepAssertion),
 }
 
-impl PatuiStep {
+impl PatuiStepDetails {
     pub(crate) fn get_display_yaml(&self) -> Result<String> {
         let mut ret = String::new();
 
@@ -192,24 +204,24 @@ impl PatuiStep {
 
     pub(crate) fn inner_yaml(&self) -> Result<String> {
         Ok(match self {
-            PatuiStep::Process(process) => serde_yaml::to_string(process)?,
-            PatuiStep::TransformStream(stream) => todo!(),
-            PatuiStep::Shell(shell) => serde_yaml::to_string(shell)?,
-            PatuiStep::Assertion(assertion) => serde_yaml::to_string(assertion)?,
+            PatuiStepDetails::Process(process) => serde_yaml::to_string(process)?,
+            PatuiStepDetails::TransformStream(stream) => todo!(),
+            PatuiStepDetails::Shell(shell) => serde_yaml::to_string(shell)?,
+            PatuiStepDetails::Assertion(assertion) => serde_yaml::to_string(assertion)?,
         })
     }
 
     pub(crate) fn to_editable_yaml(&self) -> Result<String> {
         match self {
-            PatuiStep::Shell(shell) => Ok(serde_yaml::to_string(&shell.contents)?),
+            PatuiStepDetails::Shell(shell) => Ok(serde_yaml::to_string(&shell.contents)?),
             _ => self.inner_yaml(),
         }
     }
 
-    pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStep) -> Result<Self> {
+    pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStepDetails) -> Result<Self> {
         loop {
             yaml_str = edit(&yaml_str)?;
-            match PatuiStep::from_yaml_str(&yaml_str, step) {
+            match PatuiStepDetails::from_yaml_str(&yaml_str, step) {
                 Ok(step) => {
                     return Ok(step);
                 }
@@ -222,19 +234,93 @@ impl PatuiStep {
         }
     }
 
-    pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStep) -> Result<Self> {
+    pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStepDetails) -> Result<Self> {
         Ok(match step {
-            PatuiStep::Shell(shell_step) => {
+            PatuiStepDetails::Shell(shell_step) => {
                 let contents = serde_yaml::from_str::<PatuiStepShell>(yaml)?;
-                PatuiStep::Shell(PatuiStepShell {
+                PatuiStepDetails::Shell(PatuiStepShell {
                     shell: shell_step.shell.clone(),
                     contents: contents.contents,
                     location: shell_step.location.clone(),
                 })
             }
-            _ => serde_yaml::from_str::<PatuiStep>(yaml)?,
+            _ => serde_yaml::from_str::<PatuiStepDetails>(yaml)?,
         })
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStepData {
+    pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
+    pub(crate) data: PatuiStepDataFlavour,
+}
+
+impl PatuiStepData {
+    pub(crate) fn new(data: PatuiStepDataFlavour) -> Self {
+        let timestamp = chrono::Utc::now();
+        Self { timestamp, data }
+    }
+
+    pub(crate) fn into_data(self) -> PatuiStepDataFlavour {
+        self.data
+    }
+
+    pub(crate) fn data(&self) -> &PatuiStepDataFlavour {
+        &self.data
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiStepDataFlavour {
+    Bytes(Bytes),
+    String(String),
+    Number(i64),
+    Json(serde_json::Value),
+    Yaml(serde_yaml::Value),
+}
+
+impl PatuiStepDataFlavour {
+    pub(crate) fn as_bytes(&self) -> Result<&Bytes> {
+        match self {
+            Self::Bytes(bytes) => Ok(bytes),
+            _ => Err(eyre!("not bytes")),
+        }
+    }
+
+    pub(crate) fn as_number(&self) -> Result<i64> {
+        match self {
+            Self::Number(number) => Ok(*number),
+            _ => Err(eyre!("not number")),
+        }
+    }
+
+    pub(crate) fn is_bytes(&self) -> bool {
+        matches!(self, Self::Bytes(_))
+    }
+
+    pub(crate) fn is_string(&self) -> bool {
+        matches!(self, Self::String(_))
+    }
+
+    pub(crate) fn is_number(&self) -> bool {
+        matches!(self, Self::Number(_))
+    }
+
+    pub(crate) fn is_json(&self) -> bool {
+        matches!(self, Self::Json(_))
+    }
+
+    pub(crate) fn is_yaml(&self) -> bool {
+        matches!(self, Self::Yaml(_))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiStepDataTransfer {
+    #[default]
+    None,
+    Fixed(PatuiStepDataFlavour),
+    Ref(Box<(PatuiStep, String)>),
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
@@ -405,14 +491,18 @@ mod tests {
             name: test name
             description: test description
             steps:
-              - !Shell
-                shell: bash
-                contents: echo 'Hello, world!'
-              - !Assertion
-                assertion: Equal
-                negate: false
-                lhs: foo
-                rhs: bar
+              - name: foo
+                depends_on: []
+                details: !Shell
+                  shell: bash
+                  contents: echo 'Hello, world!'
+              - name: bar
+                depends_on: []
+                details: !Assertion
+                  assertion: Equal
+                  negate: false
+                  lhs: foo
+                  rhs: bar
             "#,
         );
 
@@ -421,17 +511,21 @@ mod tests {
         assert_that!(details.name).is_equal_to("test name".to_string());
         assert_that!(details.description).is_equal_to("test description".to_string());
         assert_that!(details.steps).has_length(2);
-        assert_that!(details.steps[0]).is_equal_to(PatuiStep::Shell(PatuiStepShell {
-            shell: Some("bash".to_string()),
-            contents: "echo 'Hello, world!'".to_string(),
-            location: None,
-        }));
-        assert_that!(details.steps[1]).is_equal_to(PatuiStep::Assertion(PatuiStepAssertion {
-            assertion: PatuiStepAssertionType::Equal,
-            negate: false,
-            lhs: "foo".to_string(),
-            rhs: "bar".to_string(),
-        }));
+        assert_that!(details.steps[0].details).is_equal_to(PatuiStepDetails::Shell(
+            PatuiStepShell {
+                shell: Some("bash".to_string()),
+                contents: "echo 'Hello, world!'".to_string(),
+                location: None,
+            },
+        ));
+        assert_that!(details.steps[1].details).is_equal_to(PatuiStepDetails::Assertion(
+            PatuiStepAssertion {
+                assertion: PatuiStepAssertionType::Equal,
+                negate: false,
+                lhs: "foo".to_string(),
+                rhs: "bar".to_string(),
+            },
+        ));
     }
 
     #[test]

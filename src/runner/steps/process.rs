@@ -4,9 +4,9 @@ use futures::StreamExt;
 use tokio::{io::AsyncWriteExt, sync::broadcast};
 use tokio_util::io::ReaderStream;
 
-use crate::types::PatuiStepProcess;
+use crate::types::{PatuiStepData, PatuiStepDataFlavour, PatuiStepProcess};
 
-use super::{PatuiStepData, PatuiStepDataFlavour, PatuiStepRunnerTrait};
+use super::PatuiStepRunnerTrait;
 
 enum PatuiProcess {
     None,

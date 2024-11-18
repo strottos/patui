@@ -2,7 +2,7 @@ use eyre::{eyre, Result};
 
 use crate::{
     db::{PatuiTestDb, PatuiTestStepId},
-    types::{PatuiStep, PatuiTest, PatuiTestDetails},
+    types::{PatuiTest, PatuiTestDetails},
 };
 
 pub(crate) fn create_test() -> Result<PatuiTestDetails> {
