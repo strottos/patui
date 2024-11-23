@@ -1,0 +1,26 @@
+name: simple_process
+description: A test that spawns an ls process and checks the output for expected behaviour
+steps:
+  - name: run_coreutils_cat
+    details: !Process
+      command: /usr/bin/env
+      args:
+        - coreutils
+        - cat
+      input: file("./tests/data/test.txt")
+
+  - name: coreutils_cat_lines
+    details: !TransformStream
+      flavour: Utf8Lines
+
+  - name: check_output
+    details: !Assertion
+      expr: coreutils_cat_lines.output.len() == 2
+
+  - name: check_output
+    details: !Assertion
+      expr: coreutils_cat_lines.output[0] == "Hello, World!"
+
+  - name: check_output
+    details: !Assertion
+      expr: coreutils_cat_lines.output[1] == "Stuffmore"

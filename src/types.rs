@@ -1,6 +1,8 @@
 //! Data types used by the application separate from the database, usually inputs or outputs before
 //! they are ready to be put into DB.
 
+mod expr;
+mod other;
 mod process;
 mod transform_stream;
 
@@ -22,27 +24,41 @@ use crate::{
     utils::{get_current_time_string, get_current_timestamp},
 };
 
-pub(crate) use process::{PatuiRunStepProcessResult, PatuiStepProcess};
-pub(crate) use transform_stream::{PatuiStepTransformStream, PatuiStepTransformStreamFlavour};
+pub(crate) use other::{
+    PatuiStepAssertion, PatuiStepAssertionEditable, PatuiStepRead, PatuiStepReadEditable,
+    PatuiStepWrite, PatuiStepWriteEditable,
+};
+pub(crate) use process::{PatuiRunStepProcessResult, PatuiStepProcess, PatuiStepProcessEditable};
+pub(crate) use transform_stream::{
+    PatuiStepTransformStream, PatuiStepTransformStreamEditable, PatuiStepTransformStreamFlavour,
+};
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+/// PatuiTestEditable is for editing tests before they are saved to the
+/// database. This is usually used for sending back to the user for them
+/// to edit as strings in something like YAML format.
+///
+/// We often label things as optional when they have defaults for the
+/// `Editable` types.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestEditable {
     pub(crate) name: String,
-    pub(crate) description: String,
-    pub(crate) steps: Vec<PatuiStep>,
+    pub(crate) description: Option<String>,
+    pub(crate) steps: Option<Vec<PatuiStepEditable>>,
 }
 
 impl From<&PatuiTestDb> for PatuiTestEditable {
     fn from(test: &PatuiTestDb) -> Self {
         PatuiTestEditable {
             name: test.name.clone(),
-            description: test.description.clone(),
-            steps: test.steps.clone(),
+            description: Some(test.description.clone()),
+            steps: Some(test.steps.iter().map(|x| x.into()).collect()),
         }
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// PatuiTest is the type used for tests after they have been saved to the
+/// database. This is used for running tests and displaying them to the user.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PatuiTest {
     pub(crate) id: PatuiTestId,
     pub(crate) name: String,
@@ -83,7 +99,7 @@ impl From<&PatuiTestDb> for PatuiTest {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestDetails {
     pub(crate) name: String,
     pub(crate) description: String,
@@ -101,6 +117,7 @@ impl Default for PatuiTestDetails {
             creation_date: now.clone(),
             steps: vec![PatuiStep {
                 name: "DefaultProcess".to_string(),
+                when: None,
                 depends_on: vec![],
                 details: PatuiStepDetails::Process(PatuiStepProcess {
                     command: "/usr/bin/env".to_string(),
@@ -123,9 +140,12 @@ impl PatuiTestDetails {
 
         let test = PatuiTestDetails {
             name: yaml_test.name,
-            description: yaml_test.description,
+            description: yaml_test.description.unwrap_or_else(|| "".to_string()),
             creation_date: now,
-            steps: yaml_test.steps,
+            steps: yaml_test
+                .steps
+                .map(|steps| steps.iter().map(|s| s.into()).collect())
+                .unwrap_or_else(Vec::new),
         };
 
         Ok(test)
@@ -150,27 +170,203 @@ impl PatuiTestDetails {
     pub(crate) fn to_editable_yaml_string(&self) -> Result<String> {
         let yaml_test = PatuiTestEditable {
             name: self.name.clone(),
-            description: self.description.clone(),
-            steps: self.steps.clone(),
+            description: Some(self.description.clone()),
+            steps: Some(self.steps.iter().map(|step| step.into()).collect()),
         };
 
         Ok(serde_yaml::to_string(&yaml_test)?)
+    }
+
+    pub(crate) fn simple_process() -> PatuiTestDetails {
+        // NB: If any of these unwraps don't work the templates need updating, tests should catch
+        // this.
+        Self::from_yaml_str(include_str!("../templates/simple_process.yaml")).unwrap()
+    }
+
+    pub(crate) fn streaming_process() -> PatuiTestDetails {
+        Self::from_yaml_str(include_str!("../templates/streaming_process.yaml")).unwrap()
+    }
+
+    pub(crate) fn simple_socket() -> PatuiTestDetails {
+        todo!()
+    }
+
+    pub(crate) fn streaming_socket() -> PatuiTestDetails {
+        todo!()
+    }
+
+    pub(crate) fn complex_process_and_socket() -> PatuiTestDetails {
+        todo!()
     }
 }
 
 // Test steps
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+/// PatuiStepEditable is to endable users ability to edit steps before they
+/// are saved to the database, similar to PatuiTestEditable.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStepEditable {
+    pub(crate) name: String,
+    pub(crate) when: Option<Option<String>>,
+    pub(crate) depends_on: Option<Vec<PatuiStepEditable>>,
+    pub(crate) details: PatuiStepDetailsEditable,
+}
+
+impl From<PatuiStep> for PatuiStepEditable {
+    fn from(step: PatuiStep) -> Self {
+        PatuiStepEditable {
+            name: step.name,
+            when: Some(step.when),
+            depends_on: Some(step.depends_on.into_iter().map(|x| x.into()).collect()),
+            details: match step.details {
+                PatuiStepDetails::Process(process) => {
+                    PatuiStepDetailsEditable::Process(PatuiStepProcessEditable {
+                        command: process.command,
+                        args: Some(process.args),
+                        tty: Some(process.tty),
+                        wait: Some(process.wait),
+                        input: process.input.map(|x| Some(x)),
+                        cwd: process.cwd.map(|x| Some(x)),
+                    })
+                }
+                PatuiStepDetails::TransformStream(stream) => {
+                    PatuiStepDetailsEditable::TransformStream(PatuiStepTransformStreamEditable {
+                        input: Some(stream.input.into()),
+                        flavour: stream.flavour,
+                    })
+                }
+                PatuiStepDetails::Assertion(assertion) => {
+                    PatuiStepDetailsEditable::Assertion(PatuiStepAssertionEditable {
+                        expr: assertion.expr.clone(),
+                    })
+                }
+                PatuiStepDetails::Read(patui_step_read) => {
+                    PatuiStepDetailsEditable::Read(PatuiStepReadEditable {
+                        r#in: patui_step_read.r#in.clone(),
+                    })
+                }
+                PatuiStepDetails::Write(patui_step_write) => {
+                    PatuiStepDetailsEditable::Write(PatuiStepWriteEditable {
+                        out: patui_step_write.out.clone(),
+                    })
+                }
+            },
+        }
+    }
+}
+
+impl From<&PatuiStep> for PatuiStepEditable {
+    fn from(value: &PatuiStep) -> Self {
+        PatuiStepEditable {
+            name: value.name.clone(),
+            when: Some(value.when.clone()),
+            depends_on: Some(value.depends_on.iter().map(|x| x.into()).collect()),
+            details: match &value.details {
+                PatuiStepDetails::Process(process) => {
+                    PatuiStepDetailsEditable::Process(PatuiStepProcessEditable {
+                        command: process.command.clone(),
+                        args: Some(process.args.clone()),
+                        tty: Some(process.tty),
+                        wait: Some(process.wait),
+                        input: process.input.clone().map(|x| Some(x)),
+                        cwd: process.cwd.clone().map(|x| Some(x)),
+                    })
+                }
+                PatuiStepDetails::TransformStream(stream) => {
+                    PatuiStepDetailsEditable::TransformStream(PatuiStepTransformStreamEditable {
+                        input: Some(stream.input.clone().into()),
+                        flavour: stream.flavour.clone(),
+                    })
+                }
+                PatuiStepDetails::Assertion(assertion) => {
+                    PatuiStepDetailsEditable::Assertion(PatuiStepAssertionEditable {
+                        expr: assertion.expr.clone(),
+                    })
+                }
+                PatuiStepDetails::Read(patui_step_read) => {
+                    PatuiStepDetailsEditable::Read(PatuiStepReadEditable {
+                        r#in: patui_step_read.r#in.clone(),
+                    })
+                }
+                PatuiStepDetails::Write(patui_step_write) => {
+                    PatuiStepDetailsEditable::Write(PatuiStepWriteEditable {
+                        out: patui_step_write.out.clone(),
+                    })
+                }
+            },
+        }
+    }
+}
+
+/// PatuiStep is the type used for steps after they have been saved to the
+/// database. This is used for running tests and displaying them to the user.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStep {
     pub(crate) name: String,
+    pub(crate) when: Option<String>,
     pub(crate) depends_on: Vec<PatuiStep>,
     pub(crate) details: PatuiStepDetails,
+}
+
+impl From<&PatuiStepEditable> for PatuiStep {
+    fn from(value: &PatuiStepEditable) -> Self {
+        PatuiStep {
+            name: value.name.clone(),
+            when: value.when.clone().unwrap_or(None),
+            depends_on: value
+                .depends_on
+                .as_ref()
+                .map(|x| x.iter().map(|x| x.into()).collect())
+                .unwrap_or_else(Vec::new),
+            details: match &value.details {
+                PatuiStepDetailsEditable::Process(process) => {
+                    PatuiStepDetails::Process(PatuiStepProcess {
+                        command: process.command.clone(),
+                        args: process.args.clone().unwrap_or_else(Vec::new),
+                        tty: process.tty.unwrap_or(None),
+                        wait: process.wait.unwrap_or(true),
+                        input: process.input.clone().unwrap_or(None),
+                        cwd: process.cwd.clone().map(|x| x.unwrap_or_else(String::new)),
+                    })
+                }
+                PatuiStepDetailsEditable::TransformStream(stream) => {
+                    PatuiStepDetails::TransformStream(PatuiStepTransformStream {
+                        input: stream.input.clone().unwrap_or_default(),
+                        flavour: stream.flavour.clone(),
+                    })
+                }
+                PatuiStepDetailsEditable::Assertion(assertion) => {
+                    PatuiStepDetails::Assertion(PatuiStepAssertion {
+                        expr: assertion.expr.clone(),
+                    })
+                }
+                PatuiStepDetailsEditable::Read(patui_step_read_editable) => {
+                    PatuiStepDetails::Read(PatuiStepRead {
+                        r#in: patui_step_read_editable.r#in.clone(),
+                    })
+                }
+                PatuiStepDetailsEditable::Write(patui_step_write_editable) => {
+                    PatuiStepDetails::Write(PatuiStepWrite {
+                        out: patui_step_write_editable.out.clone(),
+                    })
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) enum PatuiStepDetailsEditable {
+    Process(PatuiStepProcessEditable),
+    TransformStream(PatuiStepTransformStreamEditable),
+    Read(PatuiStepReadEditable),
+    Write(PatuiStepWriteEditable),
+    Assertion(PatuiStepAssertionEditable),
 }
 
 #[derive(
     Debug,
     Clone,
-    Eq,
     PartialEq,
     Deserialize,
     Serialize,
@@ -183,8 +379,8 @@ pub(crate) struct PatuiStep {
 pub(crate) enum PatuiStepDetails {
     Process(PatuiStepProcess),
     TransformStream(PatuiStepTransformStream),
-    Shell(PatuiStepShell),
-
+    Read(PatuiStepRead),
+    Write(PatuiStepWrite),
     Assertion(PatuiStepAssertion),
 }
 
@@ -205,15 +401,15 @@ impl PatuiStepDetails {
     pub(crate) fn inner_yaml(&self) -> Result<String> {
         Ok(match self {
             PatuiStepDetails::Process(process) => serde_yaml::to_string(process)?,
-            PatuiStepDetails::TransformStream(stream) => todo!(),
-            PatuiStepDetails::Shell(shell) => serde_yaml::to_string(shell)?,
+            PatuiStepDetails::TransformStream(stream) => serde_yaml::to_string(stream)?,
             PatuiStepDetails::Assertion(assertion) => serde_yaml::to_string(assertion)?,
+            PatuiStepDetails::Read(patui_step_read) => serde_yaml::to_string(patui_step_read)?,
+            PatuiStepDetails::Write(patui_step_write) => serde_yaml::to_string(patui_step_write)?,
         })
     }
 
     pub(crate) fn to_editable_yaml(&self) -> Result<String> {
         match self {
-            PatuiStepDetails::Shell(shell) => Ok(serde_yaml::to_string(&shell.contents)?),
             _ => self.inner_yaml(),
         }
     }
@@ -236,20 +432,12 @@ impl PatuiStepDetails {
 
     pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStepDetails) -> Result<Self> {
         Ok(match step {
-            PatuiStepDetails::Shell(shell_step) => {
-                let contents = serde_yaml::from_str::<PatuiStepShell>(yaml)?;
-                PatuiStepDetails::Shell(PatuiStepShell {
-                    shell: shell_step.shell.clone(),
-                    contents: contents.contents,
-                    location: shell_step.location.clone(),
-                })
-            }
             _ => serde_yaml::from_str::<PatuiStepDetails>(yaml)?,
         })
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepData {
     pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
     pub(crate) data: PatuiStepDataFlavour,
@@ -270,7 +458,7 @@ impl PatuiStepData {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepDataFlavour {
     Bytes(Bytes),
     String(String),
@@ -315,7 +503,7 @@ impl PatuiStepDataFlavour {
     }
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepDataTransfer {
     #[default]
     None,
@@ -323,34 +511,12 @@ pub(crate) enum PatuiStepDataTransfer {
     Ref(Box<(PatuiStep, String)>),
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepShell {
-    pub(crate) shell: Option<String>,
-    pub(crate) contents: String,
-    pub(crate) location: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepAssertion {
-    pub(crate) assertion: PatuiStepAssertionType,
-    pub(crate) negate: bool,
-    pub(crate) lhs: String,
-    pub(crate) rhs: String,
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, EnumIter, VariantArray)]
-pub(crate) enum PatuiStepAssertionType {
-    #[default]
-    Equal,
-    Contains,
-}
-
 // Test runs
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiRunError {}
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiRunStatus {
     Pending,
     Ok,
@@ -369,7 +535,7 @@ impl ToSql for PatuiRunStatus {
 
 // Result details
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTimestamp<T> {
     timestamp: i64,
     value: T,
@@ -386,19 +552,19 @@ impl<T> PatuiTimestamp<T> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiRunStepResult {
     Process(PatuiRunStepProcessResult),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunStep {
     pub(crate) start_time: String,
     pub(crate) end_time: Option<String>,
     pub(crate) result: PatuiRunStepResult,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiRunStepResultDisplay {
     Process(),
 }
@@ -413,7 +579,7 @@ impl TryFrom<PatuiRunStepResult> for PatuiRunStepResultDisplay {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunStepDisplay {
     pub(crate) start_time: String,
     pub(crate) end_time: Option<String>,
@@ -432,7 +598,7 @@ impl TryFrom<PatuiRunStep> for PatuiRunStepDisplay {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunDisplay {
     pub(crate) id: i64,
     pub(crate) instance: PatuiInstance,
@@ -463,6 +629,8 @@ impl TryFrom<PatuiRun> for PatuiRunDisplay {
 
 #[cfg(test)]
 mod tests {
+    use self::expr::PatuiExpr;
+
     use super::*;
     use assertor::*;
     use textwrap::dedent;
@@ -493,16 +661,13 @@ mod tests {
             steps:
               - name: foo
                 depends_on: []
-                details: !Shell
-                  shell: bash
-                  contents: echo 'Hello, world!'
+                details: !Process
+                  command: /bin/cat
+                  input: Hello, world!
               - name: bar
                 depends_on: []
                 details: !Assertion
-                  assertion: Equal
-                  negate: false
-                  lhs: foo
-                  rhs: bar
+                  expr: foo == "bar"
             "#,
         );
 
@@ -511,19 +676,19 @@ mod tests {
         assert_that!(details.name).is_equal_to("test name".to_string());
         assert_that!(details.description).is_equal_to("test description".to_string());
         assert_that!(details.steps).has_length(2);
-        assert_that!(details.steps[0].details).is_equal_to(PatuiStepDetails::Shell(
-            PatuiStepShell {
-                shell: Some("bash".to_string()),
-                contents: "echo 'Hello, world!'".to_string(),
-                location: None,
+        assert_that!(details.steps[0].details).is_equal_to(PatuiStepDetails::Process(
+            PatuiStepProcess {
+                command: "/bin/cat".to_string(),
+                args: vec![],
+                tty: None,
+                wait: true,
+                input: Some("Hello, world!".to_string()),
+                cwd: None,
             },
         ));
         assert_that!(details.steps[1].details).is_equal_to(PatuiStepDetails::Assertion(
             PatuiStepAssertion {
-                assertion: PatuiStepAssertionType::Equal,
-                negate: false,
-                lhs: "foo".to_string(),
-                rhs: "bar".to_string(),
+                expr: "foo == \"bar\"".try_into().unwrap(),
             },
         ));
     }
@@ -539,5 +704,21 @@ mod tests {
         let test = PatuiTestDetails::from_yaml_str(&yaml);
 
         assert_that!(test).is_err();
+    }
+
+    #[test]
+    fn test_simple_process_yaml() {
+        let details = PatuiTestDetails::simple_process();
+
+        assert_that!(details.name).is_equal_to("simple_process".to_string());
+        assert_that!(details.steps).has_length(5);
+    }
+
+    #[test]
+    fn test_streaming_process_yaml() {
+        let details = PatuiTestDetails::streaming_process();
+
+        assert_that!(details.name).is_equal_to("streaming_process".to_string());
+        assert_that!(details.steps).has_length(9);
     }
 }

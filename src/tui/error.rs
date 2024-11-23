@@ -1,11 +1,11 @@
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ErrorType {
     Error,
     // Warning,
     Info,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Error {
     type_: ErrorType,
     display: String,

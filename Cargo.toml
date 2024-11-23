@@ -21,6 +21,7 @@ convert_case = "0.6.0"
 crossterm = { version = "0.28.1", features = ["event-stream", "serde"] }
 derive_builder = "0.20.0"
 edit = "0.1.5"
+either = { version = "1.13.0", features = ["serde"] }
 etcetera = "0.8.0"
 eyre = "0.6.12"
 futures = "0.3.30"

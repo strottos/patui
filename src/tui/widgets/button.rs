@@ -11,7 +11,7 @@ pub(crate) struct Button {
     state: State,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) enum State {
     #[default]
     Normal,

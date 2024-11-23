@@ -357,10 +357,7 @@ mod tests {
     use rusqlite::Connection;
     use tempfile::tempdir;
 
-    use crate::types::{
-        PatuiStepAssertion, PatuiStepAssertionType, PatuiStepDetails, PatuiStepShell,
-        PatuiTestDetails,
-    };
+    use crate::types::{PatuiStepAssertion, PatuiStepDetails, PatuiStepProcess, PatuiTestDetails};
 
     use super::*;
 
@@ -440,21 +437,23 @@ mod tests {
             steps: vec![
                 PatuiStep {
                     name: "test step 1".to_string(),
+                    when: None,
                     depends_on: vec![],
-                    details: PatuiStepDetails::Shell(PatuiStepShell {
-                        shell: Some("bash".to_string()),
-                        contents: "echo 'hello'".to_string(),
-                        location: None,
+                    details: PatuiStepDetails::Process(PatuiStepProcess {
+                        command: "bash".to_string(),
+                        args: vec![],
+                        tty: None,
+                        wait: false,
+                        input: None,
+                        cwd: None,
                     }),
                 },
                 PatuiStep {
                     name: "test step 2".to_string(),
+                    when: None,
                     depends_on: vec![],
                     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                        assertion: PatuiStepAssertionType::Equal,
-                        negate: false,
-                        lhs: "foo".to_string(),
-                        rhs: "bar".to_string(),
+                        expr: "foo == bar".try_into().unwrap(),
                     }),
                 },
             ],
@@ -482,19 +481,19 @@ mod tests {
         let steps: Vec<PatuiStep> =
             serde_json::from_str(&row.get::<usize, String>(2).unwrap()).unwrap();
         assert_that!(steps).has_length(2);
-        assert_that!(steps.first().unwrap().details).is_equal_to(&PatuiStepDetails::Shell(
-            PatuiStepShell {
-                shell: Some("bash".to_string()),
-                contents: "echo 'hello'".to_string(),
-                location: None,
+        assert_that!(steps.first().unwrap().details).is_equal_to(&PatuiStepDetails::Process(
+            PatuiStepProcess {
+                command: "bash".to_string(),
+                args: vec![],
+                tty: None,
+                wait: false,
+                input: None,
+                cwd: None,
             },
         ));
         assert_that!(steps.get(1).unwrap().details).is_equal_to(&PatuiStepDetails::Assertion(
             PatuiStepAssertion {
-                assertion: PatuiStepAssertionType::Equal,
-                negate: false,
-                lhs: "foo".to_string(),
-                rhs: "bar".to_string(),
+                expr: "foo == bar".try_into().unwrap(),
             },
         ));
 

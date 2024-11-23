@@ -18,7 +18,7 @@ use crate::types::{
 
 // IDs
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestId(i64);
 
 impl Display for PatuiTestId {
@@ -39,7 +39,7 @@ impl From<PatuiTestId> for i64 {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestStepId(usize);
 
 impl Display for PatuiTestStepId {
@@ -66,12 +66,6 @@ impl PartialEq<usize> for PatuiTestStepId {
     }
 }
 
-impl PartialOrd<usize> for PatuiTestStepId {
-    fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(other)
-    }
-}
-
 impl AddAssign<usize> for PatuiTestStepId {
     fn add_assign(&mut self, rhs: usize) {
         self.0 += rhs;
@@ -84,7 +78,7 @@ impl SubAssign<usize> for PatuiTestStepId {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiInstanceId(i64);
 
 impl Display for PatuiInstanceId {
@@ -105,7 +99,7 @@ impl From<PatuiInstanceId> for i64 {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunId(i64);
 
 impl Display for PatuiRunId {
@@ -126,7 +120,7 @@ impl From<PatuiRunId> for i64 {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiId {
     Test(PatuiTestId),
     Step(PatuiTestStepId),
@@ -143,7 +137,7 @@ impl Display for PatuiId {
 
 // Test templates
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PatuiTestDb {
     pub(crate) id: PatuiTestId,
     pub(crate) name: String,
@@ -207,8 +201,8 @@ impl PatuiTestDb {
         Ok(serde_yaml::to_string(&yaml_test)?)
     }
 
-    pub(crate) fn into_edited_test(self, status: String) -> PatuiTestEditStatus {
-        PatuiTestEditStatus {
+    pub(crate) fn into_test_status(self, status: String) -> PatuiTestStatus {
+        PatuiTestStatus {
             id: self.id,
             name: Some(self.name),
             description: Some(self.description),
@@ -235,7 +229,7 @@ impl Serialize for PatuiTestDb {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct PatuiTestHashable<'a> {
     pub(crate) id: PatuiTestId,
     pub(crate) name: &'a str,
@@ -254,15 +248,15 @@ impl<'a> From<&'a PatuiTestDb> for PatuiTestHashable<'a> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiTestMinDisplay {
     pub(crate) id: PatuiTestId,
     pub(crate) name: String,
     pub(crate) description: String,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiTestEditStatus {
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiTestStatus {
     pub(crate) id: PatuiTestId,
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
@@ -271,7 +265,7 @@ pub(crate) struct PatuiTestEditStatus {
 
 // Test runs
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiInstance {
     pub(crate) id: PatuiInstanceId,
     pub(crate) test_id: PatuiTestId,
@@ -283,7 +277,7 @@ pub(crate) struct PatuiInstance {
     pub(crate) steps: Vec<PatuiStep>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRun {
     pub(crate) id: PatuiRunId,
     pub(crate) instance: PatuiInstance,
@@ -293,7 +287,7 @@ pub(crate) struct PatuiRun {
     pub(crate) step_run_details: Vec<PatuiRunStep>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunDisplay {
     pub(crate) id: PatuiRunId,
     pub(crate) instance: PatuiInstance,

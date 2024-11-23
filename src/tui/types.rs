@@ -5,14 +5,14 @@ use eyre::Result;
 
 use super::{error::Error, popups::PopupComponent};
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub(crate) enum Mode {
     #[default]
     TestList,
     TestListWithDetails,
 }
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub(crate) enum StatusChange {
     #[default]
     Reset,
@@ -27,30 +27,30 @@ pub(crate) enum PaneType {
     TestDetail,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DbRead {
     Test,
     TestDetail(PatuiTestId),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DbCreate {
     Test(PatuiTestDetails),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DbUpdate {
     Test(PatuiTest),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum UpdateData {
     Tests(Vec<PatuiTestDb>),
     TestDetail(PatuiTest),
     BreadcrumbTitles(Vec<String>),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PopupMode {
     CreateTest,
     UpdateTest(PatuiTestId),
@@ -123,14 +123,14 @@ pub(crate) trait Component: std::fmt::Debug {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum EditorMode {
     CreateTest,
     UpdateTest(PatuiTestId),
     UpdateTestStep(PatuiTestId, PatuiTestStepId),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Action {
     Tick,
     Render,

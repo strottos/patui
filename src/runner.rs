@@ -2,13 +2,12 @@ mod steps;
 
 use std::sync::Arc;
 
-use crate::db::{Database, PatuiRun};
+use crate::db::PatuiRun;
 
 use eyre::Result;
 
 pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
-    pub(crate) db: Arc<Database>,
 }
 
 impl TestRunner {
@@ -28,8 +27,8 @@ mod tests {
     use crate::{
         db::PatuiInstance,
         types::{
-            PatuiStep, PatuiStepDetails, PatuiStepProcess, PatuiStepTransformStream,
-            PatuiStepTransformStreamFlavour,
+            PatuiRunStatus, PatuiStep, PatuiStepDataTransfer, PatuiStepDetails, PatuiStepProcess,
+            PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
         },
     };
 
@@ -49,11 +48,12 @@ mod tests {
                     name: "test".to_string(),
                     description: "test".to_string(),
                     creation_date: now.clone(),
-                    last_updated: now,
+                    last_updated: now.clone(),
                     steps: vec![
                         PatuiStep {
                             name: "FooProcess".to_string(),
-                            depends_on: todo!(),
+                            when: None,
+                            depends_on: vec![],
                             details: PatuiStepDetails::Process(PatuiStepProcess {
                                 command: "foo".into(),
                                 args: vec![],
@@ -65,20 +65,20 @@ mod tests {
                         },
                         PatuiStep {
                             name: "FooTransform".to_string(),
+                            when: None,
                             depends_on: vec![],
                             details: PatuiStepDetails::TransformStream(PatuiStepTransformStream {
                                 flavour: PatuiStepTransformStreamFlavour::Json,
-                                input: todo!(),
+                                input: PatuiStepDataTransfer::None,
                             }),
                         },
                     ],
                 },
-                start_time: todo!(),
-                end_time: todo!(),
-                status: todo!(),
-                step_run_details: todo!(),
+                start_time: now,
+                end_time: None,
+                status: PatuiRunStatus::Pending,
+                step_run_details: vec![],
             },
-            db: todo!(),
         };
     }
 

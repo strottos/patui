@@ -9,15 +9,25 @@ use crate::{
     types::{PatuiRunDisplay, PatuiTestDetails},
 };
 
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq)]
 #[clap(rename_all = "lower")]
 pub(crate) enum Templates {
     Default,
+    SimpleProcess,
+    StreamingProcess,
+    SimpleSocket,
+    StreamingSocket,
+    ComplexProcessAndSocket,
 }
 
 fn get_template(template: Templates) -> Result<PatuiTestDetails> {
     match template {
         Templates::Default => Ok(PatuiTestDetails::default()),
+        Templates::SimpleProcess => Ok(PatuiTestDetails::simple_process()),
+        Templates::StreamingProcess => Ok(PatuiTestDetails::streaming_process()),
+        Templates::SimpleSocket => Ok(PatuiTestDetails::simple_socket()),
+        Templates::StreamingSocket => Ok(PatuiTestDetails::streaming_socket()),
+        Templates::ComplexProcessAndSocket => Ok(PatuiTestDetails::complex_process_and_socket()),
     }
 }
 
@@ -107,7 +117,7 @@ impl NewTest {
             let test_name = test.name.clone();
             match db.new_test(test).await {
                 Ok(test) => {
-                    edited_tests.push(test.into_edited_test("ok".to_string()));
+                    edited_tests.push(test.into_test_status("ok".to_string()));
                 }
                 Err(e) => eprintln!("err for test {}: {}", test_name, e),
             }
@@ -133,10 +143,7 @@ impl NewRun {
         let instance = db.get_or_new_instance(test).await?;
         let run = db.new_run(instance).await?;
 
-        let runner = TestRunner {
-            db: db.clone(),
-            run,
-        };
+        let runner = TestRunner { run };
 
         let run = runner.run_test().await?;
 

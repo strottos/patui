@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::PatuiStepDataTransfer;
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepTransformStreamFlavour {
     Utf8,
     #[default]
@@ -14,7 +14,13 @@ pub(crate) enum PatuiStepTransformStreamFlavour {
     Toml,
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStepTransformStreamEditable {
+    pub(crate) input: Option<PatuiStepDataTransfer>,
+    pub(crate) flavour: PatuiStepTransformStreamFlavour,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepTransformStream {
     pub(crate) input: PatuiStepDataTransfer,
     pub(crate) flavour: PatuiStepTransformStreamFlavour,

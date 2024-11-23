@@ -23,16 +23,11 @@ mod tests {
     use assertor::*;
     use tracing_test::traced_test;
 
-    use crate::types::PatuiStepAssertionType;
-
     #[traced_test]
     #[tokio::test]
     async fn assert_that_is_ok() {
         let assertion = PatuiStepAssertion {
-            assertion: PatuiStepAssertionType::Equal,
-            negate: false,
-            lhs: "foo".to_string(),
-            rhs: "foo".to_string(),
+            expr: "foo".try_into().unwrap(),
         };
 
         let mut runner = PatuiStepRunnerAssertion::new(&assertion);

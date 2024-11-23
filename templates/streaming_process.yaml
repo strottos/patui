@@ -1,0 +1,40 @@
+name: streaming_process
+steps:
+  - name: "run_json_splitter"
+    details: !Process
+      command: "./test_progs/json_splitter/target/debug/json_splitter"
+
+  - name: "read_json_splitter"
+    when: self.len() <= 3
+    details: !Read
+      in: "run_json_splitter.stdout"
+
+  - name: "write_json_splitter"
+    when: read_json_splitter.len() == 3
+    details: !Write
+      data: "{\"foo\":\"banana\"}\n"
+      out: "run_json_splitter.stdin"
+
+  - name: read_json_splitter
+    details: !Read
+      in: "run_json_splitter.stdout"
+
+  - name: assertion
+    details: !Assertion
+      expr: "read_json_splitter.len() == 4"
+
+  - name: assertion
+    details: !Assertion
+      expr: "read_json_splitter[0] == {\"foo\": \"bar\"}"
+
+  - name: assertion
+    details: !Assertion
+      expr: "read_json_splitter[1] == {\"bar\": \"baz\"}"
+
+  - name: assertion
+    details: !Assertion
+      expr: "read_json_splitter[2] == {\"baz\": \"123\"}"
+
+  - name: assertion
+    details: !Assertion
+      expr: "read_json_splitter[3] == {\"foo\":\"banana\"}\n"
