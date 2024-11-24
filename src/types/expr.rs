@@ -26,12 +26,11 @@ pub(crate) struct Lit {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum RefKind {
-    Step((P<PatuiStep>, String)),
+    StepData((String, String)),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Ref {
-    pub(crate) ident: String,
     pub(crate) kind: RefKind,
 }
 
@@ -62,10 +61,10 @@ pub(crate) enum BinOp {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum ExprKind {
-    /// Raw
-    Raw(Bytes),
     /// Literal
     Lit(Lit),
+    /// Raw
+    Raw(Bytes),
     /// Reference
     Ref(Ref),
     /// expr2 if expr1 else expr3
@@ -80,14 +79,9 @@ pub(crate) enum ExprKind {
     Call(P<PatuiExpr>, Vec<P<PatuiExpr>>),
 }
 
-impl Default for ExprKind {
-    fn default() -> Self {
-        ExprKind::Raw(Bytes::default())
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PatuiExpr {
+    raw: String,
     kind: ExprKind,
 }
 
@@ -96,6 +90,7 @@ impl TryFrom<&str> for PatuiExpr {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(PatuiExpr {
+            raw: value.to_string(),
             kind: ExprKind::Lit(Lit {
                 kind: LitKind::Str(value.to_string()),
             }),
@@ -108,10 +103,34 @@ impl TryFrom<String> for PatuiExpr {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(PatuiExpr {
+            raw: value.clone(),
             kind: ExprKind::Lit(Lit {
                 kind: LitKind::Str(value),
             }),
         })
+    }
+}
+
+impl From<PatuiExpr> for String {
+    fn from(value: PatuiExpr) -> Self {
+        value.raw
+    }
+}
+
+impl From<&PatuiExpr> for String {
+    fn from(value: &PatuiExpr) -> Self {
+        value.raw.clone()
+    }
+}
+
+impl<'a> From<&'a PatuiExpr> for &'a str {
+    fn from(value: &'a PatuiExpr) -> Self {
+        match &value.kind {
+            ExprKind::Lit(Lit {
+                kind: LitKind::Str(s),
+            }) => s,
+            _ => todo!(),
+        }
     }
 }
 
@@ -122,44 +141,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn simple_types() {
-        for (from, expected) in &[
+    fn lit_types() {
+        for (expr_string, expected) in &[
             (
-                "String(hello)",
-                PatuiExpr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Str("hello".to_string()),
-                    }),
-                },
+                "string(hello)",
+                ExprKind::Lit(Lit {
+                    kind: LitKind::Str("hello".to_string()),
+                }),
             ),
             (
                 "\"hello\"",
-                PatuiExpr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Str("hello".to_string()),
-                    }),
-                },
+                ExprKind::Lit(Lit {
+                    kind: LitKind::Str("hello".to_string()),
+                }),
             ),
             (
                 "123",
-                PatuiExpr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Integer(123),
-                    }),
-                },
+                ExprKind::Lit(Lit {
+                    kind: LitKind::Integer(123),
+                }),
             ),
             (
                 "123.45",
-                PatuiExpr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Float(123.45),
-                    }),
-                },
+                ExprKind::Lit(Lit {
+                    kind: LitKind::Float(123.45),
+                }),
             ),
         ] {
-            let res = PatuiExpr::try_from(*from);
+            let res = PatuiExpr::try_from(*expr_string);
             assert_that!(res).is_ok();
-            assert_that!(res.unwrap()).is_equal_to(expected);
+            assert_that!(res.unwrap().kind).is_equal_to(expected);
+        }
+    }
+
+    #[test]
+    fn raw_bytes() {
+        for (expr_string, expected) in &[
+            ("bytes(\"hello\")", ExprKind::Raw(Bytes::from("hello"))),
+            ("bytes(61,63,68,6c)", ExprKind::Raw(Bytes::from("achl"))),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap().kind).is_equal_to(expected);
+        }
+    }
+
+    #[test]
+    fn refs() {
+        for (expr_string, expected) in &[
+            (
+                "ref(stepdata, \"step1\", \"out\")",
+                ExprKind::Ref(Ref {
+                    kind: RefKind::StepData(("step1".to_string(), "out".to_string())),
+                }),
+            ),
+            (
+                "stepdata(\"step1\", \"out\")",
+                ExprKind::Ref(Ref {
+                    kind: RefKind::StepData(("step1".to_string(), "out".to_string())),
+                }),
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap().kind).is_equal_to(expected);
         }
     }
 }

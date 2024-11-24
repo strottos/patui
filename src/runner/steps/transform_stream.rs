@@ -34,10 +34,6 @@ impl PatuiStepRunnerTransformStream {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
-    fn setup(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     fn run(&mut self) -> Result<bool> {
         let input_rx = self.input.1.subscribe();
         let output_tx = self.output.0.clone();
@@ -123,7 +119,7 @@ mod tests {
         assert_that!(output).is_ok();
         let mut output = output.unwrap();
 
-        assert_that!(step_runner_transform_stream.setup()).is_ok();
+        assert_that!(step_runner_transform_stream.init()).is_ok();
         assert_that!(step_runner_transform_stream.run()).is_ok();
 
         let input = PatuiStepData::new(PatuiStepDataFlavour::Bytes(Bytes::from(
@@ -156,7 +152,7 @@ mod tests {
         assert_that!(output).is_ok();
         let mut output = output.unwrap();
 
-        assert_that!(step_runner_transform_stream.setup()).is_ok();
+        assert_that!(step_runner_transform_stream.init()).is_ok();
         assert_that!(step_runner_transform_stream.run()).is_ok();
 
         let input = PatuiStepData::new(PatuiStepDataFlavour::String(

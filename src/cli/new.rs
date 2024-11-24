@@ -143,7 +143,7 @@ impl NewRun {
         let instance = db.get_or_new_instance(test).await?;
         let run = db.new_run(instance).await?;
 
-        let runner = TestRunner { run };
+        let runner = TestRunner::new(run);
 
         let run = runner.run_test().await?;
 

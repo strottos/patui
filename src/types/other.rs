@@ -6,30 +6,30 @@ use super::expr::PatuiExpr;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepReadEditable {
-    pub(crate) r#in: PatuiExpr,
+    pub(crate) r#in: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepRead {
     pub(crate) r#in: PatuiExpr,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepWriteEditable {
-    pub(crate) out: PatuiExpr,
+    pub(crate) out: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepWrite {
     pub(crate) out: PatuiExpr,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepAssertionEditable {
-    pub(crate) expr: PatuiExpr,
+    pub(crate) expr: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepAssertion {
     pub(crate) expr: PatuiExpr,
 }

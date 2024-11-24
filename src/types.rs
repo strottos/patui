@@ -17,7 +17,7 @@ use rusqlite::{
     ToSql,
 };
 use serde::{Deserialize, Serialize};
-use strum::{EnumDiscriminants, EnumIter, IntoStaticStr, VariantArray, VariantNames};
+use strum::{EnumDiscriminants, IntoStaticStr, VariantArray, VariantNames};
 
 use crate::{
     db::{PatuiInstance, PatuiRun, PatuiTestDb, PatuiTestId},
@@ -144,8 +144,8 @@ impl PatuiTestDetails {
             creation_date: now,
             steps: yaml_test
                 .steps
-                .map(|steps| steps.iter().map(|s| s.into()).collect())
-                .unwrap_or_else(Vec::new),
+                .map(|steps| steps.iter().map(|s| s.try_into()).collect())
+                .unwrap_or_else(|| Ok(Vec::new()))?,
         };
 
         Ok(test)
@@ -178,8 +178,8 @@ impl PatuiTestDetails {
     }
 
     pub(crate) fn simple_process() -> PatuiTestDetails {
-        // NB: If any of these unwraps don't work the templates need updating, tests should catch
-        // this.
+        // NB: If any of these unwraps don't work the templates need updating,
+        // tests should catch this.
         Self::from_yaml_str(include_str!("../templates/simple_process.yaml")).unwrap()
     }
 
@@ -237,17 +237,17 @@ impl From<PatuiStep> for PatuiStepEditable {
                 }
                 PatuiStepDetails::Assertion(assertion) => {
                     PatuiStepDetailsEditable::Assertion(PatuiStepAssertionEditable {
-                        expr: assertion.expr.clone(),
+                        expr: assertion.expr.into(),
                     })
                 }
                 PatuiStepDetails::Read(patui_step_read) => {
                     PatuiStepDetailsEditable::Read(PatuiStepReadEditable {
-                        r#in: patui_step_read.r#in.clone(),
+                        r#in: patui_step_read.r#in.into(),
                     })
                 }
                 PatuiStepDetails::Write(patui_step_write) => {
                     PatuiStepDetailsEditable::Write(PatuiStepWriteEditable {
-                        out: patui_step_write.out.clone(),
+                        out: patui_step_write.out.into(),
                     })
                 }
             },
@@ -280,17 +280,17 @@ impl From<&PatuiStep> for PatuiStepEditable {
                 }
                 PatuiStepDetails::Assertion(assertion) => {
                     PatuiStepDetailsEditable::Assertion(PatuiStepAssertionEditable {
-                        expr: assertion.expr.clone(),
+                        expr: (&assertion.expr).into(),
                     })
                 }
                 PatuiStepDetails::Read(patui_step_read) => {
                     PatuiStepDetailsEditable::Read(PatuiStepReadEditable {
-                        r#in: patui_step_read.r#in.clone(),
+                        r#in: (&patui_step_read.r#in).into(),
                     })
                 }
                 PatuiStepDetails::Write(patui_step_write) => {
                     PatuiStepDetailsEditable::Write(PatuiStepWriteEditable {
-                        out: patui_step_write.out.clone(),
+                        out: (&patui_step_write.out).into(),
                     })
                 }
             },
@@ -308,16 +308,18 @@ pub(crate) struct PatuiStep {
     pub(crate) details: PatuiStepDetails,
 }
 
-impl From<&PatuiStepEditable> for PatuiStep {
-    fn from(value: &PatuiStepEditable) -> Self {
-        PatuiStep {
+impl TryFrom<&PatuiStepEditable> for PatuiStep {
+    type Error = eyre::Error;
+
+    fn try_from(value: &PatuiStepEditable) -> Result<Self, Self::Error> {
+        Ok(PatuiStep {
             name: value.name.clone(),
             when: value.when.clone().unwrap_or(None),
             depends_on: value
                 .depends_on
                 .as_ref()
-                .map(|x| x.iter().map(|x| x.into()).collect())
-                .unwrap_or_else(Vec::new),
+                .map(|x| x.iter().map(|x| x.try_into()).collect())
+                .unwrap_or_else(|| Ok(Vec::new()))?,
             details: match &value.details {
                 PatuiStepDetailsEditable::Process(process) => {
                     PatuiStepDetails::Process(PatuiStepProcess {
@@ -337,21 +339,21 @@ impl From<&PatuiStepEditable> for PatuiStep {
                 }
                 PatuiStepDetailsEditable::Assertion(assertion) => {
                     PatuiStepDetails::Assertion(PatuiStepAssertion {
-                        expr: assertion.expr.clone(),
+                        expr: (&assertion.expr[..]).try_into()?,
                     })
                 }
                 PatuiStepDetailsEditable::Read(patui_step_read_editable) => {
                     PatuiStepDetails::Read(PatuiStepRead {
-                        r#in: patui_step_read_editable.r#in.clone(),
+                        r#in: (&patui_step_read_editable.r#in[..]).try_into()?,
                     })
                 }
                 PatuiStepDetailsEditable::Write(patui_step_write_editable) => {
                     PatuiStepDetails::Write(PatuiStepWrite {
-                        out: patui_step_write_editable.out.clone(),
+                        out: (&patui_step_write_editable.out[..]).try_into()?,
                     })
                 }
             },
-        }
+        })
     }
 }
 
@@ -365,15 +367,7 @@ pub(crate) enum PatuiStepDetailsEditable {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Deserialize,
-    Serialize,
-    EnumIter,
-    EnumDiscriminants,
-    IntoStaticStr,
-    VariantNames,
+    Debug, Clone, PartialEq, Deserialize, Serialize, EnumDiscriminants, IntoStaticStr, VariantNames,
 )]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum PatuiStepDetails {

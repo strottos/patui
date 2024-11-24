@@ -165,10 +165,6 @@ impl PatuiStepRunnerProcess {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
-    fn setup(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         if self.step.tty.is_some() {
             match sub {
@@ -302,7 +298,7 @@ mod tests {
 
         let mut stdout_rx = step_runner_process.subscribe("stdout").unwrap();
 
-        assert_that!(step_runner_process.setup()).is_ok();
+        assert_that!(step_runner_process.init()).is_ok();
         assert_that!(step_runner_process.run()).is_ok();
 
         let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
