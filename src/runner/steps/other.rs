@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::types::PatuiStepAssertion;
+use crate::types::{PatuiStepAssertion, PatuiStepRead, PatuiStepWrite};
 
 use super::PatuiStepRunnerTrait;
 
@@ -15,6 +15,30 @@ impl PatuiStepRunnerAssertion {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {}
+
+pub(crate) struct PatuiStepRunnerRead {
+    step: PatuiStepRead,
+}
+
+impl PatuiStepRunnerRead {
+    pub(crate) fn new(step: &PatuiStepRead) -> Self {
+        Self { step: step.clone() }
+    }
+}
+
+impl PatuiStepRunnerTrait for PatuiStepRunnerRead {}
+
+pub(crate) struct PatuiStepRunnerWrite {
+    step: PatuiStepWrite,
+}
+
+impl PatuiStepRunnerWrite {
+    pub(crate) fn new(step: &PatuiStepWrite) -> Self {
+        Self { step: step.clone() }
+    }
+}
+
+impl PatuiStepRunnerTrait for PatuiStepRunnerWrite {}
 
 #[cfg(test)]
 mod tests {

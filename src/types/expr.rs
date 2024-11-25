@@ -67,6 +67,8 @@ pub(crate) enum ExprKind {
     Raw(Bytes),
     /// Reference
     Ref(Ref),
+    /// File
+    File(String),
     /// expr2 if expr1 else expr3
     If(P<PatuiExpr>, P<PatuiExpr>, P<PatuiExpr>),
     /// List

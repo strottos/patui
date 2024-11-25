@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tokio_util::bytes::Bytes;
 
-use super::PatuiTimestamp;
+use super::{expr::PatuiExpr, PatuiTimestamp};
 
 fn step_process_editable_wait_default() -> Option<bool> {
     Some(true)
@@ -20,7 +20,7 @@ pub(crate) struct PatuiStepProcessEditable {
     pub(crate) tty: Option<Option<(u16, u16)>>,
     #[serde(default = "step_process_editable_wait_default")]
     pub(crate) wait: Option<bool>,
-    pub(crate) input: Option<Option<String>>,
+    pub(crate) r#in: Option<Option<String>>,
     pub(crate) cwd: Option<Option<String>>,
 }
 
@@ -31,7 +31,7 @@ pub(crate) struct PatuiStepProcess {
     pub(crate) tty: Option<(u16, u16)>,
     #[serde(default = "step_process_wait_default")]
     pub(crate) wait: bool,
-    pub(crate) input: Option<String>,
+    pub(crate) r#in: Option<PatuiExpr>,
     pub(crate) cwd: Option<String>,
 }
 

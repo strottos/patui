@@ -24,6 +24,7 @@ use crate::{
     utils::{get_current_time_string, get_current_timestamp},
 };
 
+pub(crate) use expr::PatuiExpr;
 pub(crate) use other::{
     PatuiStepAssertion, PatuiStepAssertionEditable, PatuiStepRead, PatuiStepReadEditable,
     PatuiStepWrite, PatuiStepWriteEditable,
@@ -124,7 +125,7 @@ impl Default for PatuiTestDetails {
                     args: vec!["ls".to_string(), "/".to_string()],
                     tty: Some((24, 80)),
                     wait: true,
-                    input: None,
+                    r#in: None,
                     cwd: None,
                 }),
             }],
@@ -225,13 +226,13 @@ impl From<PatuiStep> for PatuiStepEditable {
                         args: Some(process.args),
                         tty: Some(process.tty),
                         wait: Some(process.wait),
-                        input: process.input.map(|x| Some(x)),
-                        cwd: process.cwd.map(|x| Some(x)),
+                        r#in: process.r#in.map(|x| Some(x.into())),
+                        cwd: process.cwd.map(Some),
                     })
                 }
                 PatuiStepDetails::TransformStream(stream) => {
                     PatuiStepDetailsEditable::TransformStream(PatuiStepTransformStreamEditable {
-                        input: Some(stream.input.into()),
+                        r#in: stream.r#in.into(),
                         flavour: stream.flavour,
                     })
                 }
@@ -268,13 +269,13 @@ impl From<&PatuiStep> for PatuiStepEditable {
                         args: Some(process.args.clone()),
                         tty: Some(process.tty),
                         wait: Some(process.wait),
-                        input: process.input.clone().map(|x| Some(x)),
+                        r#in: process.r#in.clone().map(|x| Some(x.into())),
                         cwd: process.cwd.clone().map(|x| Some(x)),
                     })
                 }
                 PatuiStepDetails::TransformStream(stream) => {
                     PatuiStepDetailsEditable::TransformStream(PatuiStepTransformStreamEditable {
-                        input: Some(stream.input.clone().into()),
+                        r#in: stream.r#in.clone().into(),
                         flavour: stream.flavour.clone(),
                     })
                 }
@@ -327,13 +328,18 @@ impl TryFrom<&PatuiStepEditable> for PatuiStep {
                         args: process.args.clone().unwrap_or_else(Vec::new),
                         tty: process.tty.unwrap_or(None),
                         wait: process.wait.unwrap_or(true),
-                        input: process.input.clone().unwrap_or(None),
+                        r#in: process
+                            .r#in
+                            .clone()
+                            .unwrap_or(None)
+                            .map(|x| x.try_into())
+                            .map_or(Ok(None), |x| x.map(Some))?,
                         cwd: process.cwd.clone().map(|x| x.unwrap_or_else(String::new)),
                     })
                 }
                 PatuiStepDetailsEditable::TransformStream(stream) => {
                     PatuiStepDetails::TransformStream(PatuiStepTransformStream {
-                        input: stream.input.clone().unwrap_or_default(),
+                        r#in: (&stream.r#in[..]).try_into()?,
                         flavour: stream.flavour.clone(),
                     })
                 }
@@ -657,7 +663,7 @@ mod tests {
                 depends_on: []
                 details: !Process
                   command: /bin/cat
-                  input: Hello, world!
+                  in: Hello, world!
               - name: bar
                 depends_on: []
                 details: !Assertion
@@ -676,7 +682,7 @@ mod tests {
                 args: vec![],
                 tty: None,
                 wait: true,
-                input: Some("Hello, world!".to_string()),
+                r#in: Some("Hello, world!".try_into().unwrap()),
                 cwd: None,
             },
         ));

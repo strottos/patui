@@ -7,11 +7,12 @@ steps:
       args:
         - coreutils
         - cat
-      input: file("./tests/data/test.txt")
+      in: file("./tests/data/test.txt")
 
   - name: coreutils_cat_lines
     details: !TransformStream
       flavour: Utf8Lines
+      in: steps.run_coreutils_cat.stdout
 
   - name: check_output
     details: !Assertion

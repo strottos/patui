@@ -1,6 +1,11 @@
-mod assertions;
+mod other;
 mod process;
 mod transform_stream;
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use bytes::Bytes;
 use eyre::{eyre, Result};
@@ -10,13 +15,16 @@ use tokio::sync::broadcast;
 use crate::types::{PatuiStep, PatuiStepData, PatuiStepDetails};
 
 use self::{
-    assertions::PatuiStepRunnerAssertion, process::PatuiStepRunnerProcess,
+    other::{PatuiStepRunnerAssertion, PatuiStepRunnerRead, PatuiStepRunnerWrite},
+    process::PatuiStepRunnerProcess,
     transform_stream::PatuiStepRunnerTransformStream,
 };
 
 pub(crate) enum PatuiStepRunnerFlavour {
     Process(PatuiStepRunnerProcess),
     TransformStream(PatuiStepRunnerTransformStream),
+    Read(PatuiStepRunnerRead),
+    Write(PatuiStepRunnerWrite),
     Assertion(PatuiStepRunnerAssertion),
 }
 
@@ -43,17 +51,22 @@ impl PatuiStepRunner {
         Self { flavour }
     }
 
-    pub(crate) fn init(&mut self) -> Result<()> {
+    pub(crate) fn init(
+        &mut self,
+        step_runners: HashMap<String, Arc<Mutex<PatuiStepRunner>>>,
+    ) -> Result<()> {
         match &mut self.flavour {
-            PatuiStepRunnerFlavour::Process(runner) => runner.init(),
-            PatuiStepRunnerFlavour::TransformStream(runner) => runner.init(),
-            PatuiStepRunnerFlavour::Assertion(runner) => runner.init(),
+            PatuiStepRunnerFlavour::Process(runner) => runner.init(step_runners),
+            PatuiStepRunnerFlavour::TransformStream(runner) => runner.init(step_runners),
+            PatuiStepRunnerFlavour::Read(runner) => runner.init(step_runners),
+            PatuiStepRunnerFlavour::Write(runner) => runner.init(step_runners),
+            PatuiStepRunnerFlavour::Assertion(runner) => runner.init(step_runners),
         }
     }
 }
 
 pub(crate) trait PatuiStepRunnerTrait {
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self, step_runners: HashMap<String, Arc<Mutex<PatuiStepRunner>>>) -> Result<()> {
         Ok(())
     }
 

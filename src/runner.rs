@@ -1,6 +1,9 @@
 mod steps;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use crate::db::PatuiRun;
 
@@ -11,7 +14,7 @@ use self::steps::PatuiStepRunner;
 pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
 
-    pub(crate) steps: Vec<Arc<Mutex<PatuiStepRunner>>>,
+    pub(crate) steps: HashMap<String, Arc<Mutex<PatuiStepRunner>>>,
 }
 
 impl TestRunner {
@@ -20,7 +23,12 @@ impl TestRunner {
             .instance
             .steps
             .iter()
-            .map(|step| Arc::new(Mutex::new(PatuiStepRunner::new(&step))))
+            .map(|step| {
+                (
+                    step.name.clone(),
+                    Arc::new(Mutex::new(PatuiStepRunner::new(&step))),
+                )
+            })
             .collect();
 
         Self { run, steps }
@@ -33,9 +41,22 @@ impl TestRunner {
     }
 
     fn init_test(&mut self) -> Result<()> {
-        self.steps
-            .iter_mut()
-            .try_for_each(|step| step.lock().unwrap().init())?;
+        let steps = self.steps.clone();
+
+        for (name, step) in self.steps.iter() {
+            let mut step = step.lock().unwrap();
+
+            // Make sure we have the other steps to ensure we don't try to relock this already
+            // locked mutex for this step. The `Self` step must be treated differently.
+            let other_steps = self
+                .steps
+                .iter()
+                .filter(|(k, _)| *k != name)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+
+            step.init(other_steps)?;
+        }
 
         Ok(())
     }
@@ -48,8 +69,9 @@ mod tests {
     use crate::{
         db::PatuiInstance,
         types::{
-            PatuiRunStatus, PatuiStep, PatuiStepDataTransfer, PatuiStepDetails, PatuiStepProcess,
-            PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
+            PatuiExpr, PatuiRunStatus, PatuiStep, PatuiStepAssertion, PatuiStepDataTransfer,
+            PatuiStepDetails, PatuiStepRead, PatuiStepTransformStream,
+            PatuiStepTransformStreamFlavour,
         },
     };
 
@@ -71,16 +93,11 @@ mod tests {
                 last_updated: now.clone(),
                 steps: vec![
                     PatuiStep {
-                        name: "FooProcess".to_string(),
+                        name: "FooFile".to_string(),
                         when: None,
                         depends_on: vec![],
-                        details: PatuiStepDetails::Process(PatuiStepProcess {
-                            command: "foo".into(),
-                            args: vec![],
-                            tty: None,
-                            wait: false,
-                            input: None,
-                            cwd: None,
+                        details: PatuiStepDetails::Read(PatuiStepRead {
+                            r#in: "file(tests/data/test.json)".try_into().unwrap(),
                         }),
                     },
                     PatuiStep {
@@ -89,7 +106,23 @@ mod tests {
                         depends_on: vec![],
                         details: PatuiStepDetails::TransformStream(PatuiStepTransformStream {
                             flavour: PatuiStepTransformStreamFlavour::Json,
-                            input: PatuiStepDataTransfer::None,
+                            r#in: "steps.FooFile.out".try_into().unwrap(),
+                        }),
+                    },
+                    PatuiStep {
+                        name: "FooAssertion".to_string(),
+                        when: None,
+                        depends_on: vec![],
+                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                            expr: "steps.FooTransform.out.baz[2] == 3".try_into().unwrap(),
+                        }),
+                    },
+                    PatuiStep {
+                        name: "FooAssertion".to_string(),
+                        when: None,
+                        depends_on: vec![],
+                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                            expr: "steps.FooTransform.out.bar[2] == \"c\"".try_into().unwrap(),
                         }),
                     },
                 ],

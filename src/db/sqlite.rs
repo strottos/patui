@@ -444,7 +444,7 @@ mod tests {
                         args: vec![],
                         tty: None,
                         wait: false,
-                        input: None,
+                        r#in: None,
                         cwd: None,
                     }),
                 },
@@ -487,7 +487,7 @@ mod tests {
                 args: vec![],
                 tty: None,
                 wait: false,
-                input: None,
+                r#in: None,
                 cwd: None,
             },
         ));
