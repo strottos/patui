@@ -14,22 +14,18 @@ use self::steps::PatuiStepRunner;
 pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
 
-    pub(crate) steps: HashMap<String, Arc<Mutex<PatuiStepRunner>>>,
+    pub(crate) steps: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
 }
 
 impl TestRunner {
     pub fn new(run: PatuiRun) -> Self {
-        let steps = run
-            .instance
-            .steps
-            .iter()
-            .map(|step| {
-                (
-                    step.name.clone(),
-                    Arc::new(Mutex::new(PatuiStepRunner::new(&step))),
-                )
-            })
-            .collect();
+        let mut steps = HashMap::new();
+
+        for step in &run.instance.steps {
+            let name = step.name.clone();
+            let entry = steps.entry(name).or_insert_with(Vec::new);
+            entry.push(Arc::new(Mutex::new(PatuiStepRunner::new(&step))));
+        }
 
         Self { run, steps }
     }
@@ -37,25 +33,27 @@ impl TestRunner {
     pub(crate) async fn run_test(mut self) -> Result<PatuiRun> {
         self.init_test()?;
 
-        todo!();
+        Ok(self.run)
     }
 
     fn init_test(&mut self) -> Result<()> {
         let steps = self.steps.clone();
 
-        for (name, step) in self.steps.iter() {
-            let mut step = step.lock().unwrap();
+        for (name, step_collection) in self.steps.iter() {
+            for step in step_collection {
+                let mut step = step.lock().unwrap();
 
-            // Make sure we have the other steps to ensure we don't try to relock this already
-            // locked mutex for this step. The `Self` step must be treated differently.
-            let other_steps = self
-                .steps
-                .iter()
-                .filter(|(k, _)| *k != name)
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+                let other_steps = self
+                    .steps
+                    .iter()
+                    .filter(|(k, _)| *k != name)
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
 
-            step.init(other_steps)?;
+                // Make sure we have the other steps to ensure we don't try to relock this already
+                // locked mutex for this step. The `Self` step must be treated differently.
+                step.init(other_steps)?;
+            }
         }
 
         Ok(())
@@ -65,6 +63,7 @@ impl TestRunner {
 #[cfg(test)]
 mod tests {
     use assertor::*;
+    use tracing_test::traced_test;
 
     use crate::{
         db::PatuiInstance,
@@ -77,8 +76,9 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn plan_basic() {
+    #[traced_test]
+    #[tokio::test]
+    async fn run_basic() {
         let now = crate::utils::get_current_time_string();
 
         let mut test_runner = TestRunner::new(PatuiRun {
@@ -97,7 +97,7 @@ mod tests {
                         when: None,
                         depends_on: vec![],
                         details: PatuiStepDetails::Read(PatuiStepRead {
-                            r#in: "file(tests/data/test.json)".try_into().unwrap(),
+                            r#in: "file(\"tests/data/test.json\")".try_into().unwrap(),
                         }),
                     },
                     PatuiStep {
@@ -114,7 +114,15 @@ mod tests {
                         when: None,
                         depends_on: vec![],
                         details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                            expr: "steps.FooTransform.out.baz[2] == 3".try_into().unwrap(),
+                            expr: "steps.FooTransform.out.len() == 1".try_into().unwrap(),
+                        }),
+                    },
+                    PatuiStep {
+                        name: "FooAssertion".to_string(),
+                        when: None,
+                        depends_on: vec![],
+                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                            expr: "steps.FooTransform.out[0].baz[2] == 3".try_into().unwrap(),
                         }),
                     },
                     PatuiStep {
@@ -133,9 +141,10 @@ mod tests {
             step_run_details: vec![],
         });
 
-        assert_that!(test_runner.init_test()).is_ok();
-    }
+        let test_run = test_runner.run_test().await;
+        assert_that!(test_run).is_ok();
+        let test_run = test_run.unwrap();
 
-    #[test]
-    fn run_basic_plan() {}
+        assert_that!(&test_run.status).is_equal_to(&PatuiRunStatus::Passed);
+    }
 }

@@ -519,7 +519,7 @@ pub(crate) enum PatuiRunError {}
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiRunStatus {
     Pending,
-    Ok,
+    Passed,
     Error(PatuiRunError),
 }
 
@@ -527,7 +527,7 @@ impl ToSql for PatuiRunStatus {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::Owned(Value::Text(match self {
             PatuiRunStatus::Pending => "pending".to_string(),
-            PatuiRunStatus::Ok => "ok".to_string(),
+            PatuiRunStatus::Passed => "passed".to_string(),
             PatuiRunStatus::Error(_) => "error".to_string(),
         })))
     }

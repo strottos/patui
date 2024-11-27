@@ -8,12 +8,14 @@ use crate::types::{PatuiStepData, PatuiStepDataFlavour, PatuiStepProcess};
 
 use super::PatuiStepRunnerTrait;
 
+#[derive(Debug)]
 enum PatuiProcess {
     None,
     Std(tokio::process::Child),
     Pty(Box<dyn portable_pty::Child>),
 }
 
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunnerProcess {
     step: PatuiStepProcess,
 

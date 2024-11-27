@@ -20,6 +20,7 @@ use self::{
     transform_stream::PatuiStepRunnerTransformStream,
 };
 
+#[derive(Debug)]
 pub(crate) enum PatuiStepRunnerFlavour {
     Process(PatuiStepRunnerProcess),
     TransformStream(PatuiStepRunnerTransformStream),
@@ -28,6 +29,7 @@ pub(crate) enum PatuiStepRunnerFlavour {
     Assertion(PatuiStepRunnerAssertion),
 }
 
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunner {
     flavour: PatuiStepRunnerFlavour,
 }
@@ -41,8 +43,12 @@ impl PatuiStepRunner {
             PatuiStepDetails::TransformStream(details) => PatuiStepRunnerFlavour::TransformStream(
                 PatuiStepRunnerTransformStream::new(details),
             ),
-            PatuiStepDetails::Read(patui_step_read) => todo!(),
-            PatuiStepDetails::Write(patui_step_write) => todo!(),
+            PatuiStepDetails::Read(patui_step_read) => {
+                PatuiStepRunnerFlavour::Read(PatuiStepRunnerRead::new(patui_step_read))
+            }
+            PatuiStepDetails::Write(patui_step_write) => {
+                PatuiStepRunnerFlavour::Write(PatuiStepRunnerWrite::new(patui_step_write))
+            }
             PatuiStepDetails::Assertion(patui_step_assertion) => PatuiStepRunnerFlavour::Assertion(
                 PatuiStepRunnerAssertion::new(patui_step_assertion),
             ),
@@ -53,8 +59,11 @@ impl PatuiStepRunner {
 
     pub(crate) fn init(
         &mut self,
-        step_runners: HashMap<String, Arc<Mutex<PatuiStepRunner>>>,
+        step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
+        tracing::trace!("Initializing step runner: {:#?}", self);
+        tracing::trace!("Step runners: {:#?}", step_runners);
+
         match &mut self.flavour {
             PatuiStepRunnerFlavour::Process(runner) => runner.init(step_runners),
             PatuiStepRunnerFlavour::TransformStream(runner) => runner.init(step_runners),
@@ -66,7 +75,10 @@ impl PatuiStepRunner {
 }
 
 pub(crate) trait PatuiStepRunnerTrait {
-    fn init(&mut self, step_runners: HashMap<String, Arc<Mutex<PatuiStepRunner>>>) -> Result<()> {
+    fn init(
+        &mut self,
+        step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -89,14 +101,4 @@ pub(crate) trait PatuiStepRunnerTrait {
     fn check(&mut self, action: &str) -> Result<PatuiStepData> {
         Err(eyre!("Checking not supported"))
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use assertor::*;
-
-    use super::*;
-
-    #[test]
-    fn step_process() {}
 }

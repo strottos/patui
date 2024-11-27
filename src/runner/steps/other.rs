@@ -4,6 +4,7 @@ use crate::types::{PatuiStepAssertion, PatuiStepRead, PatuiStepWrite};
 
 use super::PatuiStepRunnerTrait;
 
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunnerAssertion {
     step: PatuiStepAssertion,
 }
@@ -16,6 +17,7 @@ impl PatuiStepRunnerAssertion {
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {}
 
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunnerRead {
     step: PatuiStepRead,
 }
@@ -28,6 +30,7 @@ impl PatuiStepRunnerRead {
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerRead {}
 
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunnerWrite {
     step: PatuiStepWrite,
 }

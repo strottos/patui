@@ -7,6 +7,7 @@ use crate::types::{
 
 use super::PatuiStepRunnerTrait;
 
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunnerTransformStream {
     step: PatuiStepTransformStream,
 
