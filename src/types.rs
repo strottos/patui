@@ -663,7 +663,7 @@ mod tests {
                 depends_on: []
                 details: !Process
                   command: /bin/cat
-                  in: Hello, world!
+                  in: "\"Hello, world!\""
               - name: bar
                 depends_on: []
                 details: !Assertion
@@ -682,7 +682,7 @@ mod tests {
                 args: vec![],
                 tty: None,
                 wait: true,
-                r#in: Some("Hello, world!".try_into().unwrap()),
+                r#in: Some("\"Hello, world!\"".try_into().unwrap()),
                 cwd: None,
             },
         ));
