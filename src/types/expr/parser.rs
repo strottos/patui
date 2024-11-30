@@ -1,187 +1,293 @@
 use eyre::Result;
+use logos::{Lexer, Logos};
 
-use super::PatuiExpr;
+#[derive(Logos, Clone, Debug, PartialEq)]
+#[logos(skip r"[ \t\r\n\f]+")]
+pub(crate) enum Token {
+    #[token("false", |_| false, ignore(case))]
+    #[token("true", |_| true, ignore(case))]
+    Bool(bool),
 
-#[derive(Debug, PartialEq)]
-enum Token {
+    #[regex(r"-?[1-9][0-9]*|0[xX][0-9a-fA-F]+|0[bB][01]+", priority = 5, callback = |lex| lex.slice().to_lowercase())]
+    Integer(String),
+
+    #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", priority = 4, callback = |lex| lex.slice().to_string())]
+    Decimal(String),
+
+    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| lex.slice()[1..lex.slice().len() - 1].to_string())]
+    String(String),
+
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
-    Number(String),
-    LSquareBracket,
-    RSquareBracket,
-    Dot,
-    DotDot,
-}
 
-pub(crate) struct Parser<'a> {
-    raw: &'a str,
-    pos: usize,
-}
+    #[regex(r"[0-9]+[a-zA-Z_]+", priority = 10, callback = |_| None)]
+    BadIdentifier,
 
-impl<'a> Parser<'a> {
-    pub(crate) fn new(raw: &'a str) -> Parser {
-        Parser { raw, pos: 0 }
-    }
+    #[token("if")]
+    If,
 
-    pub(crate) fn parse(&mut self) -> Result<PatuiExpr> {
-        while let Some(token) = self.parse_token() {
-            self.handle_token(token);
-        }
+    #[token("else")]
+    Else,
 
-        todo!();
-    }
+    #[token("[")]
+    LeftSquareBrace,
 
-    fn parse_token(&mut self) -> Option<Token> {
-        self.skip_whitespace();
+    #[token("]")]
+    RightSquareBrace,
 
-        let Some(c) = self.peek_char() else {
-            return None;
-        };
+    #[token("{")]
+    LeftCurlyBrace,
 
-        if c.is_alphabetic() {
-            self.parse_ident()
-        } else if c.is_digit(10) {
-            self.parse_number()
-        } else if c == '.' {
-            let Some(nc) = self.peek_next_char() else {
-                self.pos += 1;
-                return Some(Token::Dot);
-            };
-            if nc != '.' {
-                self.pos += 1;
-                Some(Token::Dot)
-            } else {
-                self.pos += 2;
-                Some(Token::DotDot)
-            }
-        } else {
-            None
-        }
-    }
+    #[token("}")]
+    RightCurlyBrace,
 
-    fn peek_char(&self) -> Option<char> {
-        self.raw.chars().nth(self.pos)
-    }
+    #[token("(")]
+    LeftBracket,
 
-    fn peek_next_char(&self) -> Option<char> {
-        self.raw.chars().nth(self.pos + 1)
-    }
+    #[token(")")]
+    RightBracket,
 
-    fn skip_whitespace(&mut self) {
-        while let Some(c) = self.peek_char() {
-            if !c.is_whitespace() {
-                break;
-            }
+    #[token(".")]
+    Period,
 
-            self.pos += 1;
-        }
-    }
+    #[token(",")]
+    Comma,
 
-    fn parse_number(&mut self) -> Option<Token> {
-        let start = self.pos;
+    #[token(":")]
+    Colon,
 
-        while let Some(c) = self.peek_char() {
-            if start == self.pos && !c.is_digit(10) {
-                return None;
-            }
+    #[token(";")]
+    Semicolon,
 
-            if !c.is_digit(10) && c != '.' {
-                break;
-            }
+    #[token("+")]
+    Add,
 
-            self.pos += 1;
-        }
+    #[token("-")]
+    Minus,
 
-        Some(Token::Number(self.raw[start..self.pos].to_string()))
-    }
+    #[token("*")]
+    Star,
 
-    fn parse_ident(&mut self) -> Option<Token> {
-        let start = self.pos;
+    #[token("/")]
+    Slash,
 
-        while let Some(c) = self.peek_char() {
-            if start == self.pos && !c.is_alphabetic() && c != '_' {
-                return None;
-            }
+    #[token("%")]
+    Percent,
 
-            if !c.is_alphabetic() && !c.is_digit(10) && c != '_' {
-                break;
-            }
+    #[token("&&")]
+    And,
 
-            self.pos += 1;
-        }
+    #[token("||")]
+    Or,
 
-        Some(Token::Ident(self.raw[start..self.pos].to_string()))
-    }
+    #[token("!")]
+    Not,
 
-    fn handle_token(&self, token: Token) {
-        todo!()
-    }
+    #[token("==")]
+    Equal,
+
+    #[token("!=")]
+    NotEqual,
+
+    #[token("<")]
+    LessThan,
+
+    #[token("<=")]
+    LessThanEqual,
+
+    #[token(">")]
+    GreaterThan,
+
+    #[token(">=")]
+    GreaterThanEqual,
 }
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
+
     use assertor::*;
 
     use super::*;
 
-    #[test]
-    fn parse_number() {
-        let mut parser = Parser::new("123");
-
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Number("123".to_string()));
-
-        let mut parser = Parser::new("123.45");
-
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Number("123.45".to_string()));
+    fn single_successful_lex(input: &str, parsed: Token, span: Range<usize>, slice: &str) {
+        let mut lex = Token::lexer(input);
+        let tok = lex.next();
+        assert_that!(tok).is_some();
+        let tok = tok.unwrap();
+        assert_that!(tok).is_ok();
+        let tok = tok.unwrap();
+        assert_that!(tok).is_equal_to(parsed);
+        assert_that!(lex.span()).is_equal_to(span);
+        assert_that!(lex.slice()).is_equal_to(slice);
     }
 
     #[test]
-    fn parse_ident() {
-        let mut parser = Parser::new("foo");
-
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Ident("foo".to_string()));
+    fn lex_number() {
+        single_successful_lex("123", Token::Integer("123".to_string()), 0..3, "123");
+        single_successful_lex(
+            "123.45",
+            Token::Decimal("123.45".to_string()),
+            0..6,
+            "123.45",
+        );
+        single_successful_lex(
+            "123e45",
+            Token::Decimal("123e45".to_string()),
+            0..6,
+            "123e45",
+        );
+        single_successful_lex(
+            "0b00110001",
+            Token::Integer("0b00110001".to_string()),
+            0..10,
+            "0b00110001",
+        );
+        single_successful_lex(
+            "0x123abC",
+            Token::Integer("0x123abc".to_string()),
+            0..8,
+            "0x123abC",
+        );
     }
 
     #[test]
-    fn parse_mixed() {
-        let mut parser = Parser::new("bar123.foo");
-
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Ident("bar123".to_string()));
-
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Dot);
-
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Ident("foo".to_string()));
+    fn lex_number_errors() {
+        let mut lex = Token::lexer("123az");
+        let tok = lex.next();
+        assert_that!(tok).is_some();
+        let tok = tok.unwrap();
+        assert_that!(tok).is_err();
     }
 
     #[test]
-    fn parse_mixed_list() {
-        let mut parser = Parser::new("[foo123, bar123.foo, 123]");
+    fn lex_bool() {
+        single_successful_lex("true", Token::Bool(true), 0..4, "true");
+        single_successful_lex("FaLse", Token::Bool(false), 0..5, "FaLse");
+    }
 
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Ident("[".to_string()));
+    #[test]
+    fn lex_string() {
+        single_successful_lex(
+            r#""foo bar boo""#,
+            Token::String("foo bar boo".to_string()),
+            0..13,
+            r#""foo bar boo""#,
+        );
+        single_successful_lex(
+            "\"foo\nbar\nboo\"",
+            Token::String("foo\nbar\nboo".to_string()),
+            0..13,
+            "\"foo\nbar\nboo\"",
+        );
+        single_successful_lex(
+            r#""foo\"bar\"boo""#,
+            Token::String("foo\\\"bar\\\"boo".to_string()),
+            0..15,
+            r#""foo\"bar\"boo""#,
+        );
+    }
 
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Ident("foo123".to_string()));
+    #[test]
+    fn lex_string_errors() {
+        let mut lex = Token::lexer("\"foo bar boo");
+        let tok = lex.next();
+        assert_that!(tok).is_some();
+        let tok = tok.unwrap();
+        assert_that!(tok).is_err();
+    }
 
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Ident("bar123".to_string()));
+    #[test]
+    fn lex_ident() {
+        single_successful_lex("foo", Token::Ident("foo".to_string()), 0..3, "foo");
+        single_successful_lex(
+            "foo_123_ABC_bar",
+            Token::Ident("foo_123_ABC_bar".to_string()),
+            0..15,
+            "foo_123_ABC_bar",
+        );
+        single_successful_lex(
+            "__foo__123__ABC__bar__",
+            Token::Ident("__foo__123__ABC__bar__".to_string()),
+            0..22,
+            "__foo__123__ABC__bar__",
+        );
+    }
 
-        let ret = parser.parse_token();
-        assert_that!(ret).is_some();
-        assert_that!(ret.unwrap()).is_equal_to(Token::Number("123".to_string()));
+    #[test]
+    fn control_tokens() {
+        single_successful_lex("[", Token::LeftSquareBrace, 0..1, "[");
+        single_successful_lex("]", Token::RightSquareBrace, 0..1, "]");
+        single_successful_lex("{", Token::LeftCurlyBrace, 0..1, "{");
+        single_successful_lex("}", Token::RightCurlyBrace, 0..1, "}");
+        single_successful_lex("(", Token::LeftBracket, 0..1, "(");
+        single_successful_lex(")", Token::RightBracket, 0..1, ")");
+        single_successful_lex(".", Token::Period, 0..1, ".");
+        single_successful_lex(",", Token::Comma, 0..1, ",");
+        single_successful_lex(":", Token::Colon, 0..1, ":");
+        single_successful_lex(";", Token::Semicolon, 0..1, ";");
+    }
+
+    #[test]
+    fn maths_tokens() {
+        single_successful_lex("+", Token::Add, 0..1, "+");
+        single_successful_lex("-", Token::Minus, 0..1, "-");
+        single_successful_lex("*", Token::Star, 0..1, "*");
+        single_successful_lex("/", Token::Slash, 0..1, "/");
+        single_successful_lex("%", Token::Percent, 0..1, "%");
+    }
+
+    #[test]
+    fn logical_tokens() {
+        single_successful_lex("&&", Token::And, 0..2, "&&");
+        single_successful_lex("||", Token::Or, 0..2, "||");
+        single_successful_lex("!", Token::Not, 0..1, "!");
+    }
+
+    #[test]
+    fn comparison_tokens() {
+        single_successful_lex("==", Token::Equal, 0..2, "==");
+        single_successful_lex("!=", Token::NotEqual, 0..2, "!=");
+        single_successful_lex("<", Token::LessThan, 0..1, "<");
+        single_successful_lex("<=", Token::LessThanEqual, 0..2, "<=");
+        single_successful_lex(">", Token::GreaterThan, 0..1, ">");
+        single_successful_lex(">=", Token::GreaterThanEqual, 0..2, ">=");
+    }
+
+    #[test]
+    fn lex_complex() {
+        let mut lex =
+            Token::lexer("foo123[1].bar if bar else baz && baz == true || (true && false)");
+        for (expected_parsed, expected_span, expected_slice) in vec![
+            (Token::Ident("foo123".to_string()), 0..6, "foo123"),
+            (Token::LeftSquareBrace, 6..7, "["),
+            (Token::Integer("1".to_string()), 7..8, "1"),
+            (Token::RightSquareBrace, 8..9, "]"),
+            (Token::Period, 9..10, "."),
+            (Token::Ident("bar".to_string()), 10..13, "bar"),
+            (Token::If, 14..16, "if"),
+            (Token::Ident("bar".to_string()), 17..20, "bar"),
+            (Token::Else, 21..25, "else"),
+            (Token::Ident("baz".to_string()), 26..29, "baz"),
+            (Token::And, 30..32, "&&"),
+            (Token::Ident("baz".to_string()), 33..36, "baz"),
+            (Token::Equal, 37..39, "=="),
+            (Token::Bool(true), 40..44, "true"),
+            (Token::Or, 45..47, "||"),
+            (Token::LeftBracket, 48..49, "("),
+            (Token::Bool(true), 49..53, "true"),
+            (Token::And, 54..56, "&&"),
+            (Token::Bool(false), 57..62, "false"),
+            (Token::RightBracket, 62..63, ")"),
+        ] {
+            let tok = lex.next();
+            assert_that!(tok).is_some();
+            let tok = tok.unwrap();
+            assert_that!(tok).is_ok();
+            let tok = tok.unwrap();
+            assert_that!(tok).is_equal_to(expected_parsed);
+            assert_that!(lex.span()).is_equal_to(expected_span);
+            assert_that!(lex.slice()).is_equal_to(expected_slice);
+        }
     }
 }
