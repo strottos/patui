@@ -81,8 +81,8 @@ pub(crate) enum ExprKind {
     Field(P<PatuiExpr>, Ident),
     /// Call
     Call(P<PatuiExpr>, Vec<P<PatuiExpr>>),
-    /// TODO: Do we want this? Reference
-    // Ref(Ref),
+    /// Index operation (e.g., `foo[2]`).
+    Index(P<PatuiExpr>, P<PatuiExpr>),
     /// If: expr2 if expr1 else expr3
     If(P<PatuiExpr>, P<PatuiExpr>, P<PatuiExpr>),
     /// List: [expr1, expr2, ...]
@@ -169,983 +169,1296 @@ mod tests {
         for (expr_string, expected) in &[
             (
                 "123",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Integer("123".to_string()),
-                }),
+                PatuiExpr {
+                    raw: "123".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Integer("123".to_string()),
+                    }),
+                },
             ),
             (
                 "123.45",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Decimal("123.45".to_string()),
-                }),
+                PatuiExpr {
+                    raw: "123.45".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Decimal("123.45".to_string()),
+                    }),
+                },
             ),
             (
                 "true",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bool(true),
-                }),
+                PatuiExpr {
+                    raw: "true".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bool(true),
+                    }),
+                },
             ),
             (
                 "false",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bool(false),
-                }),
+                PatuiExpr {
+                    raw: "false".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bool(false),
+                    }),
+                },
             ),
             (
                 "\"hello\"",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Str("hello".to_string()),
-                }),
+                PatuiExpr {
+                    raw: "\"hello\"".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Str("hello".to_string()),
+                    }),
+                },
             ),
             (
                 "b\"hello\"",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bytes(Bytes::from("hello")),
-                }),
+                PatuiExpr {
+                    raw: "b\"hello\"".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from("hello")),
+                    }),
+                },
             ),
             (
                 "b[]",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bytes(Bytes::from("")),
-                }),
+                PatuiExpr {
+                    raw: "b[]".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from("")),
+                    }),
+                },
             ),
             (
                 "b[104]",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bytes(Bytes::from("h")),
-                }),
+                PatuiExpr {
+                    raw: "b[104]".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from("h")),
+                    }),
+                },
             ),
             // (
             //     "b[0x6c]",
-            //     ExprKind::Lit(Lit {
+            //     PatuiExpr {
+            //         raw: "b[0x6c]".to_string(),
+            //         kind: ExprKind::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("l")),
             //     }),
+            //     },
             // ),
             // (
             //     "b[0x6C]",
-            //     ExprKind::Lit(Lit {
+            //     PatuiExpr {
+            //     raw: "b[0x6C]".to_string(),
+            //      kind: ExprKind::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("l")),
             //     }),
+            //     },
             // ),
             (
                 "b['o']",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bytes(Bytes::from("o")),
-                }),
+                PatuiExpr {
+                    raw: "b['o']".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from("o")),
+                    }),
+                },
             ),
             (
                 "b[\"O\"]",
-                ExprKind::Lit(Lit {
-                    kind: LitKind::Bytes(Bytes::from("O")),
-                }),
+                PatuiExpr {
+                    raw: "b[\"O\"]".to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from("O")),
+                    }),
+                },
+            ),
+            (
+                r#"b["h", "e", 108, 108, 'o']"#,
+                PatuiExpr {
+                    raw: r#"b["h", "e", 108, 108, 'o']"#.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from("hello")),
+                    }),
+                },
             ),
             // (
             //     "b[104, 0x65, 0x6c, 0x6C, 'o']",
-            //     ExprKind::Lit(Lit {
+            //     PatuiExpr {
+            //     raw: "b[104, 0x65, 0x6c, 0x6C, 'o']".to_string(),
+            //      kind: ExprKind::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("hello")),
             //     }),
+            //     },
             // ),
             // (
             //     "b[104, 0x65, 0x6c, 0x6C, 'o',]",
-            //     ExprKind::Lit(Lit {
+            //     PatuiExpr {
+            //     raw: //     "b[104, 0x65, 0x6c, 0x6C, 'o',]".to_string(),
+            //      kind: //     ExprKind::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("hello")),
             //     }),
+            //     },
             // ),
             // (
             //     "b[      104    , 0x65      , 0x6c  , 0x6C   , 'o'  , ]",
-            //     ExprKind::Lit(Lit {
+            //     PatuiExpr {
+            //     raw: //     "b[      104    , 0x65      , 0x6c  , 0x6C   , 'o'  ,
+            //     ]".to_string(),
+            //      kind: //     ExprKind::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("hello")),
             //     }),
+            //     },
             // ),
         ] {
             let res = PatuiExpr::try_from(*expr_string);
             assert_that!(res).is_ok();
-            assert_that!(res.unwrap().kind).is_equal_to(expected);
+            assert_that!(res.unwrap()).is_equal_to(expected);
         }
     }
 
-    // #[traced_test]
-    // #[test]
-    // fn extended_lits() {
-    //     for (expr_string, expected) in &[
-    //         (
-    //             "[123, 456, 789]",
-    //             ExprKind::List(vec![
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "123".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("123".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "456".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("456".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "789".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("789".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ]),
-    //         ),
-    //         (
-    //             "{\"a\": 1, \"b\": [1,2,3]}",
-    //             ExprKind::Map(vec![
-    //                 P {
-    //                     ptr: Box::new((
-    //                         PatuiExpr {
-    //                             raw: "\"a\"".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Str("a".to_string()),
-    //                             }),
-    //                         },
-    //                         PatuiExpr {
-    //                             raw: "1".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Integer("1".to_string()),
-    //                             }),
-    //                         },
-    //                     )),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new((
-    //                         PatuiExpr {
-    //                             raw: "\"b\"".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Str("b".to_string()),
-    //                             }),
-    //                         },
-    //                         PatuiExpr {
-    //                             raw: "[1,2,3]".to_string(),
-    //                             kind: ExprKind::List(vec![
-    //                                 P {
-    //                                     ptr: Box::new(PatuiExpr {
-    //                                         raw: "1".to_string(),
-    //                                         kind: ExprKind::Lit(Lit {
-    //                                             kind: LitKind::Integer("1".to_string()),
-    //                                         }),
-    //                                     }),
-    //                                 },
-    //                                 P {
-    //                                     ptr: Box::new(PatuiExpr {
-    //                                         raw: "2".to_string(),
-    //                                         kind: ExprKind::Lit(Lit {
-    //                                             kind: LitKind::Integer("2".to_string()),
-    //                                         }),
-    //                                     }),
-    //                                 },
-    //                                 P {
-    //                                     ptr: Box::new(PatuiExpr {
-    //                                         raw: "3".to_string(),
-    //                                         kind: ExprKind::Lit(Lit {
-    //                                             kind: LitKind::Integer("3".to_string()),
-    //                                         }),
-    //                                     }),
-    //                                 },
-    //                             ]),
-    //                         },
-    //                     )),
-    //                 },
-    //             ]),
-    //         ),
-    //         (
-    //             "{1, 2, \"foo\", [1,2]}",
-    //             ExprKind::Set(vec![
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "\"foo\"".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Str("foo".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "[1,2]".to_string(),
-    //                         kind: ExprKind::List(vec![
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "1".to_string(),
-    //                                     kind: ExprKind::Lit(Lit {
-    //                                         kind: LitKind::Integer("1".to_string()),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "2".to_string(),
-    //                                     kind: ExprKind::Lit(Lit {
-    //                                         kind: LitKind::Integer("2".to_string()),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                         ]),
-    //                     }),
-    //                 },
-    //             ]),
-    //         ),
-    //     ] {
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_ok();
-    //         assert_that!(res.unwrap().kind).is_equal_to(expected);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn extended_lits() {
+        for (expr_string, expected) in &[
+            (
+                "[123, 456, 789]",
+                PatuiExpr {
+                    raw: "[123, 456, 789]".to_string(),
+                    kind: ExprKind::List(vec![
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "123".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("123".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "456".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("456".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "789".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("789".to_string()),
+                                }),
+                            }),
+                        },
+                    ]),
+                },
+            ),
+            (
+                "{\"a\": 1, \"b\": [1,2,3]}",
+                PatuiExpr {
+                    raw: "{\"a\": 1, \"b\": [1,2,3]}".to_string(),
+                    kind: ExprKind::Map(vec![
+                        P {
+                            ptr: Box::new((
+                                PatuiExpr {
+                                    raw: "\"a\"".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Str("a".to_string()),
+                                    }),
+                                },
+                                PatuiExpr {
+                                    raw: "1".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Integer("1".to_string()),
+                                    }),
+                                },
+                            )),
+                        },
+                        P {
+                            ptr: Box::new((
+                                PatuiExpr {
+                                    raw: "\"b\"".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Str("b".to_string()),
+                                    }),
+                                },
+                                PatuiExpr {
+                                    raw: "[1,2,3]".to_string(),
+                                    kind: ExprKind::List(vec![
+                                        P {
+                                            ptr: Box::new(PatuiExpr {
+                                                raw: "1".to_string(),
+                                                kind: ExprKind::Lit(Lit {
+                                                    kind: LitKind::Integer("1".to_string()),
+                                                }),
+                                            }),
+                                        },
+                                        P {
+                                            ptr: Box::new(PatuiExpr {
+                                                raw: "2".to_string(),
+                                                kind: ExprKind::Lit(Lit {
+                                                    kind: LitKind::Integer("2".to_string()),
+                                                }),
+                                            }),
+                                        },
+                                        P {
+                                            ptr: Box::new(PatuiExpr {
+                                                raw: "3".to_string(),
+                                                kind: ExprKind::Lit(Lit {
+                                                    kind: LitKind::Integer("3".to_string()),
+                                                }),
+                                            }),
+                                        },
+                                    ]),
+                                },
+                            )),
+                        },
+                    ]),
+                },
+            ),
+            (
+                "{1, 2, \"foo\", [1,2], 2}",
+                PatuiExpr {
+                    raw: "{1, 2, \"foo\", [1,2], 2}".to_string(),
+                    kind: ExprKind::Set(vec![
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "\"foo\"".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Str("foo".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "[1,2]".to_string(),
+                                kind: ExprKind::List(vec![
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "1".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Integer("1".to_string()),
+                                            }),
+                                        }),
+                                    },
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "2".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Integer("2".to_string()),
+                                            }),
+                                        }),
+                                    },
+                                ]),
+                            }),
+                        },
+                    ]),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
 
-    // #[traced_test]
-    // #[test]
-    // fn bad_lits() {
-    //     // TODO: Proper error reporting, errors trivially pass currently
-    //     for (expr_string, expected_err) in &[
-    //         ("\"test", ""),
-    //         ("b\"test", ""),
-    //         ("b[104, 0x65, 0x6c, 0x6C, 'o'", ""),
-    //     ] {
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_err();
-    //         assert_that!(res.unwrap_err().to_string()).contains(*expected_err);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn bad_lits() {
+        // TODO: Proper error reporting, errors trivially pass currently
+        for (expr_string, expected_err) in &[
+            ("\"test", ""),
+            ("b\"test", ""),
+            // ("b[104, 0x65, 0x6c, 0x6C, 'o'", ""),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_err();
+            assert_that!(res.unwrap_err().to_string()).contains(*expected_err);
+        }
+    }
 
-    // #[traced_test]
-    // #[test]
-    // fn idents() {
-    //     for (expr_string, expected) in &[
-    //         (
-    //             "foo",
-    //             ExprKind::Ident(Ident {
-    //                 value: "foo".to_string(),
-    //             }),
-    //         ),
-    //         (
-    //             "foo.bar",
-    //             ExprKind::Field(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo".to_string(),
-    //                         kind: ExprKind::Ident(Ident {
-    //                             value: "foo".to_string(),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 Ident {
-    //                     value: "bar".to_string(),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "foo.bar.baz.boo",
-    //             ExprKind::Field(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo.bar.baz".to_string(),
-    //                         kind: ExprKind::Field(
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "foo.bar".to_string(),
-    //                                     kind: ExprKind::Field(
-    //                                         P {
-    //                                             ptr: Box::new(PatuiExpr {
-    //                                                 raw: "foo".to_string(),
-    //                                                 kind: ExprKind::Ident(Ident {
-    //                                                     value: "foo".to_string(),
-    //                                                 }),
-    //                                             }),
-    //                                         },
-    //                                         Ident {
-    //                                             value: "bar".to_string(),
-    //                                         },
-    //                                     ),
-    //                                 }),
-    //                             },
-    //                             Ident {
-    //                                 value: "baz".to_string(),
-    //                             },
-    //                         ),
-    //                     }),
-    //                 },
-    //                 Ident {
-    //                     value: "boo".to_string(),
-    //                 },
-    //             ),
-    //         ),
-    //     ] {
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_ok();
-    //         assert_that!(res.unwrap().kind).is_equal_to(expected);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn idents() {
+        for (expr_string, expected) in &[
+            (
+                "foo",
+                PatuiExpr {
+                    raw: "foo".to_string(),
+                    kind: ExprKind::Ident(Ident {
+                        value: "foo".to_string(),
+                    }),
+                },
+            ),
+            (
+                "foo.bar",
+                PatuiExpr {
+                    raw: "foo.bar".to_string(),
+                    kind: ExprKind::Field(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "foo".to_string(),
+                                }),
+                            }),
+                        },
+                        Ident {
+                            value: "bar".to_string(),
+                        },
+                    ),
+                },
+            ),
+            (
+                "foo.bar.baz.boo",
+                PatuiExpr {
+                    raw: "foo.bar.baz.boo".to_string(),
+                    kind: ExprKind::Field(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo.bar.baz".to_string(),
+                                kind: ExprKind::Field(
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "foo.bar".to_string(),
+                                            kind: ExprKind::Field(
+                                                P {
+                                                    ptr: Box::new(PatuiExpr {
+                                                        raw: "foo".to_string(),
+                                                        kind: ExprKind::Ident(Ident {
+                                                            value: "foo".to_string(),
+                                                        }),
+                                                    }),
+                                                },
+                                                Ident {
+                                                    value: "bar".to_string(),
+                                                },
+                                            ),
+                                        }),
+                                    },
+                                    Ident {
+                                        value: "baz".to_string(),
+                                    },
+                                ),
+                            }),
+                        },
+                        Ident {
+                            value: "boo".to_string(),
+                        },
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
 
-    // #[traced_test]
-    // #[test]
-    // fn maths() {
-    //     for (expr_string, expected) in &[
-    //         (
-    //             "-1",
-    //             ExprKind::UnOp(
-    //                 UnOp::Neg,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "!true",
-    //             ExprKind::UnOp(
-    //                 UnOp::Not,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "true".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(true),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 + 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Add,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 - 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Sub,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 * 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Mul,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 / 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Div,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 % 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Rem,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //     ] {
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_ok();
-    //         assert_that!(res.unwrap().kind).is_equal_to(expected);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn indexing() {
+        for (expr_string, expected) in &[
+            (
+                "foo[0]",
+                PatuiExpr {
+                    raw: "foo[0]".to_string(),
+                    kind: ExprKind::Index(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "foo".to_string(),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "0".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("0".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "foo.bar[bar.foo]",
+                PatuiExpr {
+                    raw: "foo.bar[bar.foo]".to_string(),
+                    kind: ExprKind::Index(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo.bar".to_string(),
+                                kind: ExprKind::Field(
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "foo".to_string(),
+                                            kind: ExprKind::Ident(Ident {
+                                                value: "foo".to_string(),
+                                            }),
+                                        }),
+                                    },
+                                    Ident {
+                                        value: "bar".to_string(),
+                                    },
+                                ),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "bar.foo".to_string(),
+                                kind: ExprKind::Field(
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "bar".to_string(),
+                                            kind: ExprKind::Ident(Ident {
+                                                value: "bar".to_string(),
+                                            }),
+                                        }),
+                                    },
+                                    Ident {
+                                        value: "foo".to_string(),
+                                    },
+                                ),
+                            }),
+                        },
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
 
-    // #[traced_test]
-    // #[test]
-    // fn comparison() {
-    //     for (expr_string, expected) in &[
-    //         (
-    //             "1 == 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Eq,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 != 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Ne,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 < 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Lt,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 <= 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Le,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 > 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Gt,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "1 >= 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Ge,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("1".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "2".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Integer("2".to_string()),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //     ] {
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_ok();
-    //         assert_that!(res.unwrap().kind).is_equal_to(expected);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn maths() {
+        for (expr_string, expected) in &[
+            (
+                "-x",
+                PatuiExpr {
+                    raw: "-x".to_string(),
+                    kind: ExprKind::UnOp(
+                        UnOp::Neg,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "x".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "x".to_string(),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "!true",
+                PatuiExpr {
+                    raw: "!true".to_string(),
+                    kind: ExprKind::UnOp(
+                        UnOp::Not,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 + 2",
+                PatuiExpr {
+                    raw: "1 + 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Add,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 - 2",
+                PatuiExpr {
+                    raw: "1 - 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Sub,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 * 2",
+                PatuiExpr {
+                    raw: "1 * 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Mul,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 / 2",
+                PatuiExpr {
+                    raw: "1 / 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Div,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 % 2",
+                PatuiExpr {
+                    raw: "1 % 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Rem,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
 
-    // #[traced_test]
-    // #[test]
-    // fn boolean_logic() {
-    //     for (expr_string, expected) in &[
-    //         (
-    //             "true && false",
-    //             ExprKind::BinOp(
-    //                 BinOp::And,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "true".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(true),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "false".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(false),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "true || false",
-    //             ExprKind::BinOp(
-    //                 BinOp::Or,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "true".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(true),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "false".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(false),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "true AND false OR 1 == 2",
-    //             ExprKind::BinOp(
-    //                 BinOp::Or,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "true AND false".to_string(),
-    //                         kind: ExprKind::BinOp(
-    //                             BinOp::And,
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "true".to_string(),
-    //                                     kind: ExprKind::Lit(Lit {
-    //                                         kind: LitKind::Bool(true),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "false".to_string(),
-    //                                     kind: ExprKind::Lit(Lit {
-    //                                         kind: LitKind::Bool(false),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                         ),
-    //                     }),
-    //                 },
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "1 == 2".to_string(),
-    //                         kind: ExprKind::BinOp(
-    //                             BinOp::Eq,
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "1".to_string(),
-    //                                     kind: ExprKind::Lit(Lit {
-    //                                         kind: LitKind::Integer("1".to_string()),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "2".to_string(),
-    //                                     kind: ExprKind::Lit(Lit {
-    //                                         kind: LitKind::Integer("2".to_string()),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                         ),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "!true",
-    //             ExprKind::UnOp(
-    //                 UnOp::Not,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "true".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(true),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //         (
-    //             "not true",
-    //             ExprKind::UnOp(
-    //                 UnOp::Not,
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "true".to_string(),
-    //                         kind: ExprKind::Lit(Lit {
-    //                             kind: LitKind::Bool(true),
-    //                         }),
-    //                     }),
-    //                 },
-    //             ),
-    //         ),
-    //     ] {
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_ok();
-    //         assert_that!(res.unwrap().kind).is_equal_to(expected);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn comparison() {
+        for (expr_string, expected) in &[
+            (
+                "1 == 2",
+                PatuiExpr {
+                    raw: "1 == 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Eq,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 != 2",
+                PatuiExpr {
+                    raw: "1 != 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Ne,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 < 2",
+                PatuiExpr {
+                    raw: "1 < 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Lt,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 <= 2",
+                PatuiExpr {
+                    raw: "1 <= 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Le,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 > 2",
+                PatuiExpr {
+                    raw: "1 > 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Gt,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "1 >= 2",
+                PatuiExpr {
+                    raw: "1 >= 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Ge,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "2".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Integer("2".to_string()),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
 
-    // #[traced_test]
-    // #[test]
-    // fn functions() {
-    //     for (expr_string, expected) in &[
-    //         (
-    //             "foo()",
-    //             ExprKind::Call(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo".to_string(),
-    //                         kind: ExprKind::Ident(Ident {
-    //                             value: "foo".to_string(),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 vec![],
-    //             ),
-    //         ),
-    //         (
-    //             "foo(\"a\", 1)",
-    //             ExprKind::Call(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo".to_string(),
-    //                         kind: ExprKind::Ident(Ident {
-    //                             value: "foo".to_string(),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 vec![
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "\"a\"".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Str("a".to_string()),
-    //                             }),
-    //                         }),
-    //                     },
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "1".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Integer("1".to_string()),
-    //                             }),
-    //                         }),
-    //                     },
-    //                 ],
-    //             ),
-    //         ),
-    //         (
-    //             "foo(bar(), baz())",
-    //             ExprKind::Call(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo".to_string(),
-    //                         kind: ExprKind::Ident(Ident {
-    //                             value: "foo".to_string(),
-    //                         }),
-    //                     }),
-    //                 },
-    //                 vec![
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "bar()".to_string(),
-    //                             kind: ExprKind::Call(
-    //                                 P {
-    //                                     ptr: Box::new(PatuiExpr {
-    //                                         raw: "bar".to_string(),
-    //                                         kind: ExprKind::Ident(Ident {
-    //                                             value: "bar".to_string(),
-    //                                         }),
-    //                                     }),
-    //                                 },
-    //                                 vec![],
-    //                             ),
-    //                         }),
-    //                     },
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "baz()".to_string(),
-    //                             kind: ExprKind::Call(
-    //                                 P {
-    //                                     ptr: Box::new(PatuiExpr {
-    //                                         raw: "baz".to_string(),
-    //                                         kind: ExprKind::Ident(Ident {
-    //                                             value: "baz".to_string(),
-    //                                         }),
-    //                                     }),
-    //                                 },
-    //                                 vec![],
-    //                             ),
-    //                         }),
-    //                     },
-    //                 ],
-    //             ),
-    //         ),
-    //         (
-    //             "foo.bar()",
-    //             ExprKind::Call(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo.bar".to_string(),
-    //                         kind: ExprKind::Field(
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "foo".to_string(),
-    //                                     kind: ExprKind::Ident(Ident {
-    //                                         value: "foo".to_string(),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                             Ident {
-    //                                 value: "bar".to_string(),
-    //                             },
-    //                         ),
-    //                     }),
-    //                 },
-    //                 vec![],
-    //             ),
-    //         ),
-    //         (
-    //             "foo.bar(1  ,   2   ,  bar.baz( 3, 4, 5)  )",
-    //             ExprKind::Call(
-    //                 P {
-    //                     ptr: Box::new(PatuiExpr {
-    //                         raw: "foo.bar".to_string(),
-    //                         kind: ExprKind::Field(
-    //                             P {
-    //                                 ptr: Box::new(PatuiExpr {
-    //                                     raw: "foo".to_string(),
-    //                                     kind: ExprKind::Ident(Ident {
-    //                                         value: "foo".to_string(),
-    //                                     }),
-    //                                 }),
-    //                             },
-    //                             Ident {
-    //                                 value: "bar".to_string(),
-    //                             },
-    //                         ),
-    //                     }),
-    //                 },
-    //                 vec![
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "1".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Integer("1".to_string()),
-    //                             }),
-    //                         }),
-    //                     },
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "2".to_string(),
-    //                             kind: ExprKind::Lit(Lit {
-    //                                 kind: LitKind::Integer("2".to_string()),
-    //                             }),
-    //                         }),
-    //                     },
-    //                     P {
-    //                         ptr: Box::new(PatuiExpr {
-    //                             raw: "bar.baz( 3, 4, 5)".to_string(),
-    //                             kind: ExprKind::Call(
-    //                                 P {
-    //                                     ptr: Box::new(PatuiExpr {
-    //                                         raw: "bar.baz".to_string(),
-    //                                         kind: ExprKind::Field(
-    //                                             P {
-    //                                                 ptr: Box::new(PatuiExpr {
-    //                                                     raw: "bar".to_string(),
-    //                                                     kind: ExprKind::Ident(Ident {
-    //                                                         value: "bar".to_string(),
-    //                                                     }),
-    //                                                 }),
-    //                                             },
-    //                                             Ident {
-    //                                                 value: "baz".to_string(),
-    //                                             },
-    //                                         ),
-    //                                     }),
-    //                                 },
-    //                                 vec![
-    //                                     P {
-    //                                         ptr: Box::new(PatuiExpr {
-    //                                             raw: "3".to_string(),
-    //                                             kind: ExprKind::Lit(Lit {
-    //                                                 kind: LitKind::Integer("3".to_string()),
-    //                                             }),
-    //                                         }),
-    //                                     },
-    //                                     P {
-    //                                         ptr: Box::new(PatuiExpr {
-    //                                             raw: "4".to_string(),
-    //                                             kind: ExprKind::Lit(Lit {
-    //                                                 kind: LitKind::Integer("4".to_string()),
-    //                                             }),
-    //                                         }),
-    //                                     },
-    //                                     P {
-    //                                         ptr: Box::new(PatuiExpr {
-    //                                             raw: "5".to_string(),
-    //                                             kind: ExprKind::Lit(Lit {
-    //                                                 kind: LitKind::Integer("5".to_string()),
-    //                                             }),
-    //                                         }),
-    //                                     },
-    //                                 ],
-    //                             ),
-    //                         }),
-    //                     },
-    //                 ],
-    //             ),
-    //         ),
-    //     ] {
-    //         tracing::trace!("Testing: {}", expr_string);
-    //         let res = PatuiExpr::try_from(*expr_string);
-    //         assert_that!(res).is_ok();
-    //         assert_that!(res.unwrap().kind).is_equal_to(expected);
-    //     }
-    // }
+    #[traced_test]
+    #[test]
+    fn boolean_logic() {
+        for (expr_string, expected) in &[
+            (
+                "true && false",
+                PatuiExpr {
+                    raw: "true && false".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::And,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "false".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(false),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "true || false",
+                PatuiExpr {
+                    raw: "true || false".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Or,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "false".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(false),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "true AND false OR 1 == 2",
+                PatuiExpr {
+                    raw: "true AND false OR 1 == 2".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Or,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true AND false".to_string(),
+                                kind: ExprKind::BinOp(
+                                    BinOp::And,
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "true".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Bool(true),
+                                            }),
+                                        }),
+                                    },
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "false".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Bool(false),
+                                            }),
+                                        }),
+                                    },
+                                ),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "1 == 2".to_string(),
+                                kind: ExprKind::BinOp(
+                                    BinOp::Eq,
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "1".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Integer("1".to_string()),
+                                            }),
+                                        }),
+                                    },
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "2".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Integer("2".to_string()),
+                                            }),
+                                        }),
+                                    },
+                                ),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "!true",
+                PatuiExpr {
+                    raw: "!true".to_string(),
+                    kind: ExprKind::UnOp(
+                        UnOp::Not,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "not true",
+                PatuiExpr {
+                    raw: "not true".to_string(),
+                    kind: ExprKind::UnOp(
+                        UnOp::Not,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn functions() {
+        for (expr_string, expected) in &[
+            (
+                "foo()",
+                PatuiExpr {
+                    raw: "foo()".to_string(),
+                    kind: ExprKind::Call(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "foo".to_string(),
+                                }),
+                            }),
+                        },
+                        vec![],
+                    ),
+                },
+            ),
+            (
+                "foo(\"a\", 1)",
+                PatuiExpr {
+                    raw: "foo(\"a\", 1)".to_string(),
+                    kind: ExprKind::Call(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "foo".to_string(),
+                                }),
+                            }),
+                        },
+                        vec![
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "\"a\"".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Str("a".to_string()),
+                                    }),
+                                }),
+                            },
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "1".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Integer("1".to_string()),
+                                    }),
+                                }),
+                            },
+                        ],
+                    ),
+                },
+            ),
+            (
+                "foo(bar(), baz())",
+                PatuiExpr {
+                    raw: "foo(bar(), baz())".to_string(),
+                    kind: ExprKind::Call(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "foo".to_string(),
+                                }),
+                            }),
+                        },
+                        vec![
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "bar()".to_string(),
+                                    kind: ExprKind::Call(
+                                        P {
+                                            ptr: Box::new(PatuiExpr {
+                                                raw: "bar".to_string(),
+                                                kind: ExprKind::Ident(Ident {
+                                                    value: "bar".to_string(),
+                                                }),
+                                            }),
+                                        },
+                                        vec![],
+                                    ),
+                                }),
+                            },
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "baz()".to_string(),
+                                    kind: ExprKind::Call(
+                                        P {
+                                            ptr: Box::new(PatuiExpr {
+                                                raw: "baz".to_string(),
+                                                kind: ExprKind::Ident(Ident {
+                                                    value: "baz".to_string(),
+                                                }),
+                                            }),
+                                        },
+                                        vec![],
+                                    ),
+                                }),
+                            },
+                        ],
+                    ),
+                },
+            ),
+            (
+                "foo.bar()",
+                PatuiExpr {
+                    raw: "foo.bar()".to_string(),
+                    kind: ExprKind::Call(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo.bar".to_string(),
+                                kind: ExprKind::Field(
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "foo".to_string(),
+                                            kind: ExprKind::Ident(Ident {
+                                                value: "foo".to_string(),
+                                            }),
+                                        }),
+                                    },
+                                    Ident {
+                                        value: "bar".to_string(),
+                                    },
+                                ),
+                            }),
+                        },
+                        vec![],
+                    ),
+                },
+            ),
+            (
+                "foo.bar(1  ,   2   ,  bar.baz( 3, 4, 5)  )",
+                PatuiExpr {
+                    raw: "foo.bar(1  ,   2   ,  bar.baz( 3, 4, 5)  )".to_string(),
+                    kind: ExprKind::Call(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "foo.bar".to_string(),
+                                kind: ExprKind::Field(
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "foo".to_string(),
+                                            kind: ExprKind::Ident(Ident {
+                                                value: "foo".to_string(),
+                                            }),
+                                        }),
+                                    },
+                                    Ident {
+                                        value: "bar".to_string(),
+                                    },
+                                ),
+                            }),
+                        },
+                        vec![
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "1".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Integer("1".to_string()),
+                                    }),
+                                }),
+                            },
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "2".to_string(),
+                                    kind: ExprKind::Lit(Lit {
+                                        kind: LitKind::Integer("2".to_string()),
+                                    }),
+                                }),
+                            },
+                            P {
+                                ptr: Box::new(PatuiExpr {
+                                    raw: "bar.baz( 3, 4, 5)".to_string(),
+                                    kind: ExprKind::Call(
+                                        P {
+                                            ptr: Box::new(PatuiExpr {
+                                                raw: "bar.baz".to_string(),
+                                                kind: ExprKind::Field(
+                                                    P {
+                                                        ptr: Box::new(PatuiExpr {
+                                                            raw: "bar".to_string(),
+                                                            kind: ExprKind::Ident(Ident {
+                                                                value: "bar".to_string(),
+                                                            }),
+                                                        }),
+                                                    },
+                                                    Ident {
+                                                        value: "baz".to_string(),
+                                                    },
+                                                ),
+                                            }),
+                                        },
+                                        vec![
+                                            P {
+                                                ptr: Box::new(PatuiExpr {
+                                                    raw: "3".to_string(),
+                                                    kind: ExprKind::Lit(Lit {
+                                                        kind: LitKind::Integer("3".to_string()),
+                                                    }),
+                                                }),
+                                            },
+                                            P {
+                                                ptr: Box::new(PatuiExpr {
+                                                    raw: "4".to_string(),
+                                                    kind: ExprKind::Lit(Lit {
+                                                        kind: LitKind::Integer("4".to_string()),
+                                                    }),
+                                                }),
+                                            },
+                                            P {
+                                                ptr: Box::new(PatuiExpr {
+                                                    raw: "5".to_string(),
+                                                    kind: ExprKind::Lit(Lit {
+                                                        kind: LitKind::Integer("5".to_string()),
+                                                    }),
+                                                }),
+                                            },
+                                        ],
+                                    ),
+                                }),
+                            },
+                        ],
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn brackets() {
+        for (expr_string, expected) in &[
+            (
+                "(true && false) || true",
+                PatuiExpr {
+                    raw: "(true && false) || true".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::Or,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "(true && false)".to_string(),
+                                kind: ExprKind::BinOp(
+                                    BinOp::And,
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "true".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Bool(true),
+                                            }),
+                                        }),
+                                    },
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "false".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Bool(false),
+                                            }),
+                                        }),
+                                    },
+                                ),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "true && (false || true)",
+                PatuiExpr {
+                    raw: "true && (false || true)".to_string(),
+                    kind: ExprKind::BinOp(
+                        BinOp::And,
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "(false || true)".to_string(),
+                                kind: ExprKind::BinOp(
+                                    BinOp::Or,
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "false".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Bool(false),
+                                            }),
+                                        }),
+                                    },
+                                    P {
+                                        ptr: Box::new(PatuiExpr {
+                                            raw: "true".to_string(),
+                                            kind: ExprKind::Lit(Lit {
+                                                kind: LitKind::Bool(true),
+                                            }),
+                                        }),
+                                    },
+                                ),
+                            }),
+                        },
+                    ),
+                },
+            ),
+        ] {
+            let res = PatuiExpr::try_from(*expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
 }
