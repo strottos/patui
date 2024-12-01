@@ -1,5 +1,8 @@
-use eyre::Result;
+use bytes::{Bytes, BytesMut};
+use eyre::{eyre, Result};
 use logos::{Lexer, Logos};
+
+use super::ast::*;
 
 #[derive(Logos, Clone, Debug, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
@@ -15,9 +18,10 @@ pub(crate) enum Token {
     Decimal(String),
 
     #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| lex.slice()[1..lex.slice().len() - 1].to_string())]
+    #[regex(r#"'([^'\\]|\\['\\bnfrt]|u[a-fA-F0-9]{4})*'"#, |lex| lex.slice()[1..lex.slice().len() - 1].to_string())]
     String(String),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", priority = 1, callback = |lex| lex.slice().to_string())]
     Ident(String),
 
     #[regex(r"[0-9]+[a-zA-Z_]+", priority = 10, callback = |_| None)]
@@ -28,6 +32,9 @@ pub(crate) enum Token {
 
     #[token("else")]
     Else,
+
+    #[token("b", priority = 10)]
+    BytesPrefix,
 
     #[token("[")]
     LeftSquareBrace,
@@ -100,6 +107,124 @@ pub(crate) enum Token {
 
     #[token(">=")]
     GreaterThanEqual,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ParserState {
+    Standard,
+    BytesPrefix,
+}
+
+pub(crate) fn parse(input: &str) -> Result<PatuiExpr> {
+    let raw = input.to_string();
+
+    let mut lexer = Token::lexer(input);
+
+    parse_expr(input, &mut lexer)
+}
+
+pub(crate) fn parse_expr(input: &str, lexer: &mut Lexer<Token>) -> Result<PatuiExpr> {
+    let mut expr: Option<PatuiExpr> = None;
+
+    while let Some(token) = lexer.next() {
+        match token {
+            Ok(Token::Integer(int)) => {
+                expr = Some(PatuiExpr {
+                    raw: input.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Integer(int),
+                    }),
+                });
+            }
+            Ok(Token::Decimal(dec)) => {
+                expr = Some(PatuiExpr {
+                    raw: input.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Decimal(dec),
+                    }),
+                });
+            }
+            Ok(Token::Bool(b)) => {
+                expr = Some(PatuiExpr {
+                    raw: input.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bool(b),
+                    }),
+                });
+            }
+            Ok(Token::String(s)) => {
+                expr = Some(PatuiExpr {
+                    raw: input.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Str(s),
+                    }),
+                });
+            }
+            Ok(Token::BytesPrefix) => {
+                expr = Some(parse_bytes(input, lexer)?);
+            }
+            Ok(tok) => panic!("Unexpectedly reached token: {:?}", tok),
+            Err(e) => return Err(eyre!("Error parsing token: {:?}", e)),
+        }
+    }
+
+    expr.ok_or_else(|| eyre!("No expression found"))
+}
+
+fn parse_bytes(input: &str, lexer: &mut Lexer<Token>) -> Result<PatuiExpr> {
+    while let Some(token) = lexer.next() {
+        match token {
+            Ok(Token::String(s)) => {
+                return Ok(PatuiExpr {
+                    raw: input.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(Bytes::from(s)),
+                    }),
+                });
+            }
+            Ok(Token::LeftSquareBrace) => {
+                let bytes = parse_bytes_list(input, lexer)?;
+                return Ok(PatuiExpr {
+                    raw: input.to_string(),
+                    kind: ExprKind::Lit(Lit {
+                        kind: LitKind::Bytes(bytes),
+                    }),
+                });
+            }
+            Ok(tok) => panic!("Unexpectedly reached token: {:?}", tok),
+            Err(e) => return Err(eyre!("Error parsing token: {:?}", e)),
+        }
+    }
+
+    Err(eyre!("Error, ran out of tokens while parsing bytes",))
+}
+
+fn parse_bytes_list(input: &str, lexer: &mut Lexer<Token>) -> Result<Bytes> {
+    let mut bytes = Vec::new();
+
+    while let Some(token) = lexer.next() {
+        match token {
+            Ok(Token::Integer(int)) => {
+                let byte = int.parse::<u8>()?;
+                bytes.push(byte);
+            }
+            Ok(Token::String(s)) => {
+                if s.len() != 1 {
+                    return Err(eyre!(
+                        "Error, string in bytes list must be a single character"
+                    ));
+                }
+                let byte = s.chars().next().unwrap() as u8;
+                bytes.push(byte);
+            }
+            Ok(Token::Comma) => {}
+            Ok(Token::RightSquareBrace) => return Ok(Bytes::from(bytes)),
+            Ok(tok) => panic!("Unexpectedly reached token: {:?}", tok),
+            Err(e) => return Err(eyre!("Error parsing token: {:?}", e)),
+        }
+    }
+
+    Err(eyre!("Error, ran out of tokens while parsing bytes list",))
 }
 
 #[cfg(test)]
