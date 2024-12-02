@@ -129,6 +129,44 @@ pub(crate) fn parse_expr(
                 };
                 state = ParserState::Parsed(expr);
             }
+            Token::Not => {
+                let expr = parse_expr(input, lexer, vec![])?;
+                let end = lexer.span().end;
+                let expr = PatuiExpr {
+                    raw: input[start..end].to_string(),
+                    kind: ExprKind::UnOp(
+                        UnOp::Not,
+                        P {
+                            ptr: Box::new(expr),
+                        },
+                    ),
+                };
+                state = ParserState::Parsed(expr);
+            }
+            Token::Equal => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::Equal)?;
+            }
+            Token::NotEqual => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::NotEqual)?;
+            }
+            Token::LessThan => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::LessThan)?;
+            }
+            Token::LessThanEqual => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::LessThanEqual)?;
+            }
+            Token::GreaterThan => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::GreaterThan)?;
+            }
+            Token::GreaterThanEqual => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::GreaterThanEqual)?;
+            }
+            Token::And => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::And)?;
+            }
+            Token::Or => {
+                state = parse_bin_op(input, lexer, state, outer_start, BinOp::Or)?;
+            }
             tok => panic!("Unexpectedly reached token: {:?}", tok),
         }
 
@@ -348,6 +386,26 @@ fn parse_set_or_map(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiE
             kind: ExprKind::Map(map_elements),
         })
     }
+}
+
+fn parse_bin_op(
+    input: &str,
+    lexer: &mut LexerPeekable<'_>,
+    state: ParserState,
+    start: usize,
+    op: BinOp,
+) -> Result<ParserState> {
+    let lhs = state.take_expr()?;
+    let rhs = parse_expr(input, lexer, vec![])?;
+
+    let end = lexer.span().end;
+
+    let expr = PatuiExpr {
+        raw: input[start..end].to_string(),
+        kind: ExprKind::BinOp(op, P { ptr: Box::new(lhs) }, P { ptr: Box::new(rhs) }),
+    };
+
+    Ok(ParserState::Parsed(expr))
 }
 
 #[cfg(test)]

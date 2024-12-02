@@ -80,12 +80,15 @@ pub(crate) enum Token {
     Percent,
 
     #[token("&&")]
+    #[token("AND", ignore(case))]
     And,
 
     #[token("||")]
+    #[token("OR", ignore(case))]
     Or,
 
     #[token("!")]
+    #[token("NOT", ignore(case))]
     Not,
 
     #[token("==")]

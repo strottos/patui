@@ -61,12 +61,12 @@ pub(crate) enum BinOp {
     Rem,
     And,
     Or,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanEqual,
+    GreaterThan,
+    GreaterThanEqual,
     Contains,
     NotContains,
 }
@@ -831,7 +831,7 @@ mod tests {
                 PatuiExpr {
                     raw: "1 == 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Eq,
+                        BinOp::Equal,
                         P {
                             ptr: Box::new(PatuiExpr {
                                 raw: "1".to_string(),
@@ -856,7 +856,7 @@ mod tests {
                 PatuiExpr {
                     raw: "1 != 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Ne,
+                        BinOp::NotEqual,
                         P {
                             ptr: Box::new(PatuiExpr {
                                 raw: "1".to_string(),
@@ -881,7 +881,7 @@ mod tests {
                 PatuiExpr {
                     raw: "1 < 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Lt,
+                        BinOp::LessThan,
                         P {
                             ptr: Box::new(PatuiExpr {
                                 raw: "1".to_string(),
@@ -906,7 +906,7 @@ mod tests {
                 PatuiExpr {
                     raw: "1 <= 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Le,
+                        BinOp::LessThanEqual,
                         P {
                             ptr: Box::new(PatuiExpr {
                                 raw: "1".to_string(),
@@ -931,7 +931,7 @@ mod tests {
                 PatuiExpr {
                     raw: "1 > 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Gt,
+                        BinOp::GreaterThan,
                         P {
                             ptr: Box::new(PatuiExpr {
                                 raw: "1".to_string(),
@@ -956,7 +956,7 @@ mod tests {
                 PatuiExpr {
                     raw: "1 >= 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Ge,
+                        BinOp::GreaterThanEqual,
                         P {
                             ptr: Box::new(PatuiExpr {
                                 raw: "1".to_string(),
@@ -1042,20 +1042,20 @@ mod tests {
                 PatuiExpr {
                     raw: "true AND false OR 1 == 2".to_string(),
                     kind: ExprKind::BinOp(
-                        BinOp::Or,
+                        BinOp::And,
                         P {
                             ptr: Box::new(PatuiExpr {
-                                raw: "true AND false".to_string(),
+                                raw: "true".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Bool(true),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "false OR 1 == 2".to_string(),
                                 kind: ExprKind::BinOp(
-                                    BinOp::And,
-                                    P {
-                                        ptr: Box::new(PatuiExpr {
-                                            raw: "true".to_string(),
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Bool(true),
-                                            }),
-                                        }),
-                                    },
+                                    BinOp::Or,
                                     P {
                                         ptr: Box::new(PatuiExpr {
                                             raw: "false".to_string(),
@@ -1064,28 +1064,28 @@ mod tests {
                                             }),
                                         }),
                                     },
-                                ),
-                            }),
-                        },
-                        P {
-                            ptr: Box::new(PatuiExpr {
-                                raw: "1 == 2".to_string(),
-                                kind: ExprKind::BinOp(
-                                    BinOp::Eq,
                                     P {
                                         ptr: Box::new(PatuiExpr {
-                                            raw: "1".to_string(),
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Integer("1".to_string()),
-                                            }),
-                                        }),
-                                    },
-                                    P {
-                                        ptr: Box::new(PatuiExpr {
-                                            raw: "2".to_string(),
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Integer("2".to_string()),
-                                            }),
+                                            raw: "1 == 2".to_string(),
+                                            kind: ExprKind::BinOp(
+                                                BinOp::Equal,
+                                                P {
+                                                    ptr: Box::new(PatuiExpr {
+                                                        raw: "1".to_string(),
+                                                        kind: ExprKind::Lit(Lit {
+                                                            kind: LitKind::Integer("1".to_string()),
+                                                        }),
+                                                    }),
+                                                },
+                                                P {
+                                                    ptr: Box::new(PatuiExpr {
+                                                        raw: "2".to_string(),
+                                                        kind: ExprKind::Lit(Lit {
+                                                            kind: LitKind::Integer("2".to_string()),
+                                                        }),
+                                                    }),
+                                                },
+                                            ),
                                         }),
                                     },
                                 ),
