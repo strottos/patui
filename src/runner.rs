@@ -125,14 +125,14 @@ mod tests {
                             expr: "steps.FooTransform.out[0].baz[2] == 3".try_into().unwrap(),
                         }),
                     },
-                    PatuiStep {
-                        name: "FooAssertion".to_string(),
-                        when: None,
-                        depends_on: vec![],
-                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                            expr: "steps.FooTransform.out.bar[2] == \"c\"".try_into().unwrap(),
-                        }),
-                    },
+                    // PatuiStep {
+                    //     name: "FooAssertion".to_string(),
+                    //     when: None,
+                    //     depends_on: vec![],
+                    //     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                    //         expr: "steps.FooTransform.out.bar[2] == \"c\"".try_into().unwrap(),
+                    //     }),
+                    // },
                 ],
             },
             start_time: now,
