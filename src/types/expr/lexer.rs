@@ -110,46 +110,6 @@ pub(crate) enum Token {
     GreaterThanEqual,
 }
 
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Token::Bool(b) => write!(f, "Bool({})", b),
-            Token::Integer(_) => todo!(),
-            Token::Decimal(_) => todo!(),
-            Token::String(_) => todo!(),
-            Token::Ident(_) => todo!(),
-            Token::BadIdentifier => todo!(),
-            Token::If => todo!(),
-            Token::Else => todo!(),
-            Token::BytesPrefix => todo!(),
-            Token::LeftSquareBrace => todo!(),
-            Token::RightSquareBrace => todo!(),
-            Token::LeftCurlyBrace => todo!(),
-            Token::RightCurlyBrace => todo!(),
-            Token::LeftBracket => todo!(),
-            Token::RightBracket => todo!(),
-            Token::Period => todo!(),
-            Token::Comma => todo!(),
-            Token::Colon => todo!(),
-            Token::Semicolon => todo!(),
-            Token::Add => todo!(),
-            Token::Minus => todo!(),
-            Token::Star => todo!(),
-            Token::Slash => todo!(),
-            Token::Percent => todo!(),
-            Token::And => todo!(),
-            Token::Or => todo!(),
-            Token::Not => todo!(),
-            Token::Equal => todo!(),
-            Token::NotEqual => todo!(),
-            Token::LessThan => todo!(),
-            Token::LessThanEqual => todo!(),
-            Token::GreaterThan => todo!(),
-            Token::GreaterThanEqual => todo!(),
-        }
-    }
-}
-
 // Wrapper around Logos Lexer, needs to be peekable and inspectable at the
 // same time, i.e. we need to be able to peek at the next token without eating
 // the Lexer with a `peekable`, so we clone and get both.
@@ -180,6 +140,7 @@ impl<'a> LexerPeekable<'a> {
         if peek_next.is_none() && next.is_some() {
             panic!("Next but not peekable in LexerPeekable");
         }
+        tracing::trace!("Found next token: {:?}", next);
         next
     }
 
