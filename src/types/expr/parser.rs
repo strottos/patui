@@ -46,7 +46,8 @@ pub(crate) fn parse_expr(
         let start = lexer.span().start;
         let end = lexer.span().end;
 
-        tracing::trace!("Peek token 2: {:?}", lexer.peek());
+        tracing::trace!("Token: {:?}", token);
+        tracing::trace!("Peek token: {:?}", lexer.peek());
 
         match token {
             Token::Integer(int) => {
@@ -229,14 +230,24 @@ pub(crate) fn parse_expr(
                 )?);
             }
             Token::Star => {
-                expr = Some(parse_bin_op(
-                    input,
-                    lexer,
-                    expr,
-                    expr_start.unwrap(),
-                    BinOp::Multiply,
-                    parse_until.clone(),
-                )?);
+                if expr.is_some() {
+                    expr = Some(parse_bin_op(
+                        input,
+                        lexer,
+                        expr,
+                        expr_start.unwrap(),
+                        BinOp::Multiply,
+                        parse_until.clone(),
+                    )?);
+                } else {
+                    // * can be an index, e.g. `foo[*]`, we use a special `Token` lit type for this
+                    expr = Some(PatuiExpr {
+                        raw: input[start..end].to_string(),
+                        kind: ExprKind::Lit(Lit {
+                            kind: LitKind::Token("*".to_string()),
+                        }),
+                    });
+                }
             }
             Token::Slash => {
                 expr = Some(parse_bin_op(

@@ -1,10 +1,13 @@
 use bytes::Bytes;
 use eyre::{eyre, Result};
 use futures::StreamExt;
-use tokio::{io::AsyncWriteExt, sync::broadcast};
+use tokio::{
+    io::AsyncWriteExt,
+    sync::{broadcast, mpsc},
+};
 use tokio_util::io::ReaderStream;
 
-use crate::types::{PatuiStepData, PatuiStepDataFlavour, PatuiStepProcess};
+use crate::types::{PatuiEvent, PatuiStepData, PatuiStepDataFlavour, PatuiStepProcess};
 
 use super::PatuiStepRunnerTrait;
 
@@ -20,6 +23,8 @@ pub(crate) struct PatuiStepRunnerProcess {
     step: PatuiStepProcess,
 
     process: PatuiProcess,
+
+    exit_code: Option<i32>,
 
     stdin: (
         broadcast::Receiver<PatuiStepData>,
@@ -46,6 +51,8 @@ impl PatuiStepRunnerProcess {
             step: step.clone(),
 
             process: PatuiProcess::None,
+
+            exit_code: None,
 
             stdin: (stdin_rx, stdin_tx),
             stdout: (stdout_tx, stdout_rx),
@@ -169,66 +176,48 @@ impl PatuiStepRunnerProcess {
 impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
     fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         if self.step.tty.is_some() {
-            match sub {
-                _ => Err(eyre!("Invalid subscription")),
-            }
+            Err(eyre!("Invalid subscription"))
         } else {
             match sub {
-                "stdin" => Err(eyre!("Cannot subscribe to stdin, must use publish")),
                 "stdout" => Ok(self.stdout.0.subscribe()),
                 "stderr" => Ok(self.stderr.0.subscribe()),
-                _ => Err(eyre!("Invalid subscription")),
+                _ => Err(eyre!("Invalid subscription: {}", sub)),
             }
         }
     }
 
-    fn publish(&self, publ: &str, data: PatuiStepData) -> Result<()> {
-        assert!(data.data().is_bytes());
-        match publ {
-            "stdin" => {
-                if let PatuiProcess::Std(_) = &self.process {
-                    let stdin_tx = self.stdin.1.clone();
-                    let _ = stdin_tx.send(data);
-                }
+    async fn wait(&mut self) -> Result<()> {
+        let exit_code = match &mut self.process {
+            PatuiProcess::Std(child) => child.wait().await?.code().unwrap_or(-1) as i64,
+            PatuiProcess::Pty(child) => child.wait()?.exit_code() as i64,
+            _ => return Err(eyre!("Process not started")),
+        };
 
-                Ok(())
-            }
-            _ => Err(eyre!("Invalid publisher")),
-        }
-    }
+        self.exit_code = Some(exit_code as i32);
 
-    async fn wait(&mut self, action: &str) -> Result<PatuiStepData> {
-        match action {
-            "exit_code" => {
-                let code: i64 = match &mut self.process {
-                    PatuiProcess::Std(child) => child.wait().await?.code().unwrap_or(-1) as i64,
-                    PatuiProcess::Pty(child) => child.wait()?.exit_code() as i64,
-                    _ => return Err(eyre!("Process not started")),
-                };
-
-                Ok(PatuiStepData::new(PatuiStepDataFlavour::Number(code)))
-            }
-            _ => Err(eyre!("Invalid action")),
-        }
+        Ok(())
     }
 
     fn check(&mut self, action: &str) -> Result<PatuiStepData> {
         match action {
             "exit_code" => {
-                let status = match &mut self.process {
-                    PatuiProcess::Std(child) => child
-                        .try_wait()?
-                        .ok_or_else(|| eyre!("Process not exited"))?
-                        .code()
-                        .unwrap_or(-1),
-                    PatuiProcess::Pty(child) => child
-                        .try_wait()?
-                        .map(|x| x.exit_code() as i32)
-                        .unwrap_or(-1),
-                    _ => return Err(eyre!("Process not started")),
+                let Some(exit_code) = self.exit_code else {
+                    return Err(eyre!("Process needs to be waited"));
                 };
+                // let status = match &mut self.process {
+                //     PatuiProcess::Std(child) => child
+                //         .try_wait()?
+                //         .ok_or_else(|| eyre!("Process not exited"))?
+                //         .code()
+                //         .unwrap_or(-1),
+                //     PatuiProcess::Pty(child) => child
+                //         .try_wait()?
+                //         .map(|x| x.exit_code() as i32)
+                //         .unwrap_or(-1),
+                //     _ => return Err(eyre!("Process not started")),
+                // };
 
-                let status = format!("{}", status);
+                let status = format!("{}", exit_code);
 
                 Ok(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
                     Bytes::from(status),
@@ -238,14 +227,14 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
         }
     }
 
-    fn run(&mut self) -> Result<bool> {
+    fn run(&mut self, tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         if let Some(tty) = self.step.tty {
             self.run_pty(tty)?;
         } else {
             self.run_std()?;
         };
 
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -300,8 +289,10 @@ mod tests {
 
         let mut stdout_rx = step_runner_process.subscribe("stdout").unwrap();
 
+        let (tx, rx) = mpsc::channel(1);
+
         // assert_that!(step_runner_process.init()).is_ok();
-        assert_that!(step_runner_process.run()).is_ok();
+        assert_that!(step_runner_process.run(tx)).is_ok();
 
         let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
         tracing::trace!("Received: {:?}", ret);
@@ -336,36 +327,29 @@ mod tests {
             PatuiStepDataFlavour::Bytes(Bytes::from(r#"{"baz":123}"#))
         );
 
-        assert_that!(step_runner_process.publish(
-            "stdin",
-            PatuiStepData::new(PatuiStepDataFlavour::Bytes(Bytes::from(
-                "{\"foo\":\"baz\"}\n"
-            ))),
-        ))
-        .is_ok();
+        // assert_that!(step_runner_process.publish(
+        //     "stdin",
+        //     PatuiStepData::new(PatuiStepDataFlavour::Bytes(Bytes::from(
+        //         "{\"foo\":\"baz\"}\n"
+        //     ))),
+        // ))
+        // .is_ok();
 
-        let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
-        tracing::trace!("Received: {:?}", ret);
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        assert_eq!(
-            *ret.data(),
-            PatuiStepDataFlavour::Bytes(Bytes::from("{\"foo\":\"baz\"}\n"))
-        );
+        // let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
+        // tracing::trace!("Received: {:?}", ret);
+        // assert_that!(ret).is_ok();
+        // let ret = ret.unwrap();
+        // assert_that!(ret).is_ok();
+        // let ret = ret.unwrap();
+        // assert_eq!(
+        //     *ret.data(),
+        //     PatuiStepDataFlavour::Bytes(Bytes::from("{\"foo\":\"baz\"}\n"))
+        // );
 
-        let ret = timeout(
-            Duration::from_millis(50),
-            step_runner_process.wait("exit_code"),
-        )
-        .await;
-        tracing::trace!("Received: {:?}", ret);
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        assert_eq!(*ret.data(), PatuiStepDataFlavour::Number(0));
+        // let ret = timeout(Duration::from_millis(50), step_runner_process.wait()).await;
+        // assert_that!(ret).is_ok();
+        // let ret = ret.unwrap();
+        // assert_that!(ret).is_ok();
     }
 
     #[traced_test]

@@ -2,7 +2,7 @@ use either::Either;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, VariantArray};
 
-use super::expr::PatuiExpr;
+use crate::types::expr::PatuiExpr;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepReadEditable {
@@ -31,5 +31,15 @@ pub(crate) struct PatuiStepAssertionEditable {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepAssertion {
+    pub(crate) expr: PatuiExpr,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStepSenderEditable {
+    pub(crate) expr: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiStepSender {
     pub(crate) expr: PatuiExpr,
 }

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::expr::PatuiExpr;
+use crate::types::expr::PatuiExpr;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepTransformStreamFlavour {

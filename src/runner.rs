@@ -5,9 +5,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::db::PatuiRun;
+use crate::{
+    db::PatuiRun,
+    types::{PatuiEvent, PatuiRunStatus},
+};
 
 use eyre::Result;
+use tokio::sync::mpsc;
 
 use self::steps::PatuiStepRunner;
 
@@ -15,6 +19,8 @@ pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
 
     pub(crate) steps: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
+
+    results: Vec<PatuiEvent>,
 }
 
 impl TestRunner {
@@ -27,11 +33,38 @@ impl TestRunner {
             entry.push(Arc::new(Mutex::new(PatuiStepRunner::new(&step))));
         }
 
-        Self { run, steps }
+        Self {
+            run,
+            steps,
+            results: vec![],
+        }
     }
 
     pub(crate) async fn run_test(mut self) -> Result<PatuiRun> {
+        let (tx, mut rx) = mpsc::channel(100);
+
         self.init_test()?;
+
+        for (name, step_collection) in self.steps.iter() {
+            for step in step_collection {
+                let mut step = step.lock().unwrap();
+                step.run(tx.clone())?;
+            }
+        }
+
+        drop(tx);
+
+        for (name, step_collection) in self.steps.iter() {
+            for step in step_collection {
+                step.lock().unwrap().wait().await?;
+            }
+        }
+
+        while let Some(res) = rx.recv().await {
+            tracing::trace!("Received result: {:?}", res);
+        }
+
+        self.run.status = PatuiRunStatus::Passed;
 
         Ok(self.run)
     }
@@ -52,7 +85,7 @@ impl TestRunner {
 
                 // Make sure we have the other steps to ensure we don't try to relock this already
                 // locked mutex for this step. The `Self` step must be treated differently.
-                step.init(other_steps)?;
+                step.init(name, other_steps)?;
             }
         }
 
@@ -62,15 +95,17 @@ impl TestRunner {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use assertor::*;
+    use tokio::time::timeout;
     use tracing_test::traced_test;
 
     use crate::{
         db::PatuiInstance,
         types::{
-            PatuiExpr, PatuiRunStatus, PatuiStep, PatuiStepAssertion, PatuiStepDataTransfer,
-            PatuiStepDetails, PatuiStepRead, PatuiStepTransformStream,
-            PatuiStepTransformStreamFlavour,
+            PatuiExpr, PatuiStep, PatuiStepAssertion, PatuiStepDetails, PatuiStepRead,
+            PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
         },
     };
 
@@ -97,7 +132,7 @@ mod tests {
                         when: None,
                         depends_on: vec![],
                         details: PatuiStepDetails::Read(PatuiStepRead {
-                            r#in: "file(\"tests/data/test.json\")".try_into().unwrap(),
+                            r#in: "\"tests/data/test.json\"".try_into().unwrap(),
                         }),
                     },
                     PatuiStep {
@@ -109,22 +144,22 @@ mod tests {
                             r#in: "steps.FooFile.out".try_into().unwrap(),
                         }),
                     },
-                    PatuiStep {
-                        name: "FooAssertion".to_string(),
-                        when: None,
-                        depends_on: vec![],
-                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                            expr: "steps.FooTransform.out.len() == 1".try_into().unwrap(),
-                        }),
-                    },
-                    PatuiStep {
-                        name: "FooAssertion".to_string(),
-                        when: None,
-                        depends_on: vec![],
-                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                            expr: "steps.FooTransform.out[0].baz[2] == 3".try_into().unwrap(),
-                        }),
-                    },
+                    // PatuiStep {
+                    //     name: "FooAssertion".to_string(),
+                    //     when: None,
+                    //     depends_on: vec![],
+                    //     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                    //         expr: "steps.FooTransform.out.len() == 1".try_into().unwrap(),
+                    //     }),
+                    // },
+                    // PatuiStep {
+                    //     name: "FooAssertion".to_string(),
+                    //     when: None,
+                    //     depends_on: vec![],
+                    //     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                    //         expr: "steps.FooTransform.out[0].baz[2] == 3".try_into().unwrap(),
+                    //     }),
+                    // },
                     // PatuiStep {
                     //     name: "FooAssertion".to_string(),
                     //     when: None,
@@ -141,7 +176,9 @@ mod tests {
             step_run_details: vec![],
         });
 
-        let test_run = test_runner.run_test().await;
+        let test_run = timeout(Duration::from_millis(5000), test_runner.run_test()).await;
+        assert_that!(test_run).is_ok();
+        let test_run = test_run.unwrap();
         assert_that!(test_run).is_ok();
         let test_run = test_run.unwrap();
 

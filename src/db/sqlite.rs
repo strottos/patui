@@ -357,7 +357,7 @@ mod tests {
     use rusqlite::Connection;
     use tempfile::tempdir;
 
-    use crate::types::{PatuiStepAssertion, PatuiStepDetails, PatuiStepProcess, PatuiTestDetails};
+    use crate::types::{PatuiStepAssertion, PatuiStepDetails, PatuiStepRead, PatuiTestDetails};
 
     use super::*;
 
@@ -439,13 +439,8 @@ mod tests {
                     name: "test step 1".to_string(),
                     when: None,
                     depends_on: vec![],
-                    details: PatuiStepDetails::Process(PatuiStepProcess {
-                        command: "bash".to_string(),
-                        args: vec![],
-                        tty: None,
-                        wait: false,
-                        r#in: None,
-                        cwd: None,
+                    details: PatuiStepDetails::Read(PatuiStepRead {
+                        r#in: "\"dir/file.txt\"".try_into().unwrap(),
                     }),
                 },
                 PatuiStep {
@@ -481,14 +476,9 @@ mod tests {
         let steps: Vec<PatuiStep> =
             serde_json::from_str(&row.get::<usize, String>(2).unwrap()).unwrap();
         assert_that!(steps).has_length(2);
-        assert_that!(steps.first().unwrap().details).is_equal_to(&PatuiStepDetails::Process(
-            PatuiStepProcess {
-                command: "bash".to_string(),
-                args: vec![],
-                tty: None,
-                wait: false,
-                r#in: None,
-                cwd: None,
+        assert_that!(steps.first().unwrap().details).is_equal_to(&PatuiStepDetails::Read(
+            PatuiStepRead {
+                r#in: "\"dir/file.txt\"".try_into().unwrap(),
             },
         ));
         assert_that!(steps.get(1).unwrap().details).is_equal_to(&PatuiStepDetails::Assertion(

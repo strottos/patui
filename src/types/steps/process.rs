@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tokio_util::bytes::Bytes;
 
-use super::{expr::PatuiExpr, PatuiTimestamp};
+use crate::types::{expr::PatuiExpr, PatuiEvent};
 
 fn step_process_editable_wait_default() -> Option<bool> {
     Some(true)
@@ -37,8 +37,8 @@ pub(crate) struct PatuiStepProcess {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiRunStepProcessResult {
-    pub(crate) stdin: Vec<PatuiTimestamp<Bytes>>,
-    pub(crate) stdout: Vec<PatuiTimestamp<Bytes>>,
-    pub(crate) stderr: Vec<PatuiTimestamp<Bytes>>,
+    pub(crate) stdin: Vec<PatuiEvent>,
+    pub(crate) stdout: Vec<PatuiEvent>,
+    pub(crate) stderr: Vec<PatuiEvent>,
     pub(crate) exit_code: i32,
 }

@@ -1,6 +1,6 @@
 //! Expression AST
 
-use std::fmt;
+use std::{fmt, hash::Hash, ops::Deref};
 
 use bytes::Bytes;
 use eyre::Result;
@@ -13,6 +13,14 @@ pub struct P<T: Sized> {
     pub(crate) ptr: Box<T>,
 }
 
+impl<T> Deref for P<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ptr
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum LitKind {
     Bool(bool),
@@ -23,6 +31,7 @@ pub(crate) enum LitKind {
     // Obviously `String` for Decimal for accuracy.
     Decimal(String),
     Str(String),
+    Token(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -97,7 +106,7 @@ pub(crate) enum ExprKind {
     BinOp(BinOp, P<PatuiExpr>, P<PatuiExpr>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PatuiExpr {
     pub(crate) raw: String,
     pub(crate) kind: ExprKind,
@@ -108,6 +117,30 @@ impl PatuiExpr {
     // suffices for our basic use cases right now.
     fn try_from_str(value: &str) -> Result<Self> {
         parser::parse(value)
+    }
+
+    pub(crate) fn kind(&self) -> &ExprKind {
+        &self.kind
+    }
+}
+
+impl PartialEq for PatuiExpr {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Eq for PatuiExpr {}
+
+impl Hash for PatuiExpr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.raw.hash(state);
+    }
+}
+
+impl PartialOrd for PatuiExpr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        todo!()
     }
 }
 
@@ -640,6 +673,30 @@ mod tests {
                                         value: "foo".to_string(),
                                     },
                                 ),
+                            }),
+                        },
+                    ),
+                },
+            ),
+            (
+                "bar[*]",
+                PatuiExpr {
+                    raw: "bar[*]".to_string(),
+                    kind: ExprKind::Index(
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "bar".to_string(),
+                                kind: ExprKind::Ident(Ident {
+                                    value: "bar".to_string(),
+                                }),
+                            }),
+                        },
+                        P {
+                            ptr: Box::new(PatuiExpr {
+                                raw: "*".to_string(),
+                                kind: ExprKind::Lit(Lit {
+                                    kind: LitKind::Token("*".to_string()),
+                                }),
                             }),
                         },
                     ),

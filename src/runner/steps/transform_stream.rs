@@ -1,93 +1,168 @@
-use eyre::{eyre, Result};
-use tokio::sync::broadcast;
-
-use crate::types::{
-    PatuiStepData, PatuiStepDataFlavour, PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
 };
 
-use super::PatuiStepRunnerTrait;
+use bytes::Bytes;
+use eyre::{eyre, Result};
+use tokio::{
+    sync::{broadcast, mpsc},
+    task::JoinHandle,
+};
+
+use crate::types::{
+    expr::ast::ExprKind, PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour,
+    PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
+};
+
+use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
 
 #[derive(Debug)]
 pub(crate) struct PatuiStepRunnerTransformStream {
+    step_name: String,
     step: PatuiStepTransformStream,
 
-    input: (
-        broadcast::Receiver<PatuiStepData>,
-        broadcast::Sender<PatuiStepData>,
-    ),
-    output: (
+    out: Option<(
         broadcast::Sender<PatuiStepData>,
         broadcast::Receiver<PatuiStepData>,
-    ),
+    )>,
+    receivers: Option<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>>,
+
+    tasks: Vec<JoinHandle<()>>,
 }
 
 impl PatuiStepRunnerTransformStream {
-    pub(crate) fn new(step: &PatuiStepTransformStream) -> Self {
-        let (input_tx, input_rx) = broadcast::channel(1);
-        let (output_tx, output_rx) = broadcast::channel(1);
-
+    pub(crate) fn new(step_name: String, step: &PatuiStepTransformStream) -> Self {
         Self {
             step: step.clone(),
-            input: (input_rx, input_tx),
-            output: (output_tx, output_rx),
+            step_name,
+            out: Some(broadcast::channel(1)),
+            receivers: None,
+            tasks: vec![],
         }
     }
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
-    fn run(&mut self) -> Result<bool> {
-        let input_rx = self.input.1.subscribe();
-        let output_tx = self.output.0.clone();
+    fn init(
+        &mut self,
+        current_step_name: &str,
+        step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
+    ) -> Result<()> {
+        let receivers = init_subscribe_steps(&self.step.r#in, current_step_name, step_runners)?;
+        self.receivers = Some(receivers);
 
-        tokio::spawn(async move {
-            let mut input_rx = input_rx;
+        Ok(())
+    }
 
-            while let Ok(chunk) = input_rx.recv().await {
-                tracing::trace!("Received data: {:?}", chunk);
-                // TODO: Streaming
-                let data = match chunk {
-                    PatuiStepData {
-                        data: PatuiStepDataFlavour::Bytes(data),
-                        ..
-                    } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-                        serde_json::from_slice(&data).unwrap(),
-                    )),
+    fn run(&mut self, tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
+        let step = self.step.clone();
+        let step_name = self.step_name.clone();
 
-                    PatuiStepData {
-                        data: PatuiStepDataFlavour::String(data),
-                        ..
-                    } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-                        serde_json::from_str(&data).unwrap(),
-                    )),
+        let mut out_sender = self.out.as_ref().unwrap().0.clone();
+        let receivers = self.receivers.take();
 
-                    _ => todo!(),
+        let task = tokio::spawn(async move {
+            if matches!(step.r#in.kind(), ExprKind::Field(_, _)) {
+                tracing::trace!("Reading from step: {:?}", step.r#in);
+                let Some(mut receivers) = receivers else {
+                    panic!("No receivers found");
                 };
-                if let Err(e) = output_tx.send(data) {
-                    panic!("Failed to send data");
+                let receiver = receivers.get_mut(&step.r#in).unwrap();
+
+                while let Ok(chunk) = receiver.recv().await {
+                    let data = match chunk {
+                        PatuiStepData {
+                            data: PatuiStepDataFlavour::Bytes(data),
+                            ..
+                        } => PatuiStepData::new(PatuiStepDataFlavour::Json(
+                            serde_json::from_slice(&data).unwrap(),
+                        )),
+
+                        PatuiStepData {
+                            data: PatuiStepDataFlavour::String(data),
+                            ..
+                        } => PatuiStepData::new(PatuiStepDataFlavour::Json(
+                            serde_json::from_str(&data).unwrap(),
+                        )),
+
+                        _ => todo!(),
+                    };
+
+                    out_sender.send(data.clone()).unwrap();
+
+                    tx.send(PatuiEvent::send_bytes(
+                        Bytes::from("Sent JSON"),
+                        step_name.clone(),
+                    ))
+                    .await
+                    .unwrap();
                 }
+            } else {
+                panic!(
+                    "Expression not supported for transforming streams: {}",
+                    step.r#in
+                );
             }
+            //     let mut input_rx = input_rx;
+
+            //     while let Ok(chunk) = input_rx.recv().await {
+            //         tracing::trace!("Received data: {:?}", chunk);
+            //         // TODO: Streaming
+            //         let data = match chunk {
+            //             PatuiStepData {
+            //                 data: PatuiStepDataFlavour::Bytes(data),
+            //                 ..
+            //             } => PatuiStepData::new(PatuiStepDataFlavour::Json(
+            //                 serde_json::from_slice(&data).unwrap(),
+            //             )),
+
+            //             PatuiStepData {
+            //                 data: PatuiStepDataFlavour::String(data),
+            //                 ..
+            //             } => PatuiStepData::new(PatuiStepDataFlavour::Json(
+            //                 serde_json::from_str(&data).unwrap(),
+            //             )),
+
+            //             _ => todo!(),
+            //         };
+            //         if let Err(e) = output_tx.send(data) {
+            //             panic!("Failed to send data");
+            //         }
+            //     }
         });
 
-        Ok(true)
+        self.tasks.push(task);
+
+        Ok(())
     }
 
     fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         match sub {
-            "output" => Ok(self.output.0.subscribe()),
+            "out" => Ok(self.out.as_ref().unwrap().0.subscribe()),
             _ => Err(eyre!("Invalid subscription")),
         }
     }
 
-    fn publish(&self, publ: &str, data: PatuiStepData) -> Result<()> {
-        match publ {
-            "input" => {
-                self.input
-                    .1
-                    .send(data)
-                    .map_err(|_| eyre!("Failed to send data"))?;
-            }
-            _ => return Err(eyre!("Invalid publication")),
+    async fn wait(&mut self) -> Result<()> {
+        tracing::trace!("Waiting");
+        for task in self.tasks.drain(..) {
+            task.await?;
         }
+
+        self.out = None;
+
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn test_set_receiver(
+        &mut self,
+        sub_ref: &str,
+        rx: broadcast::Receiver<PatuiStepData>,
+    ) -> Result<()> {
+        let receivers = HashMap::from(([(sub_ref.try_into().unwrap(), rx)]));
+        self.receivers = Some(receivers);
 
         Ok(())
     }
@@ -109,30 +184,37 @@ mod tests {
     #[traced_test]
     #[tokio::test]
     async fn step_transform_stream_simple_bytes_to_json() {
-        let mut step_runner_transform_stream =
-            PatuiStepRunnerTransformStream::new(&PatuiStepTransformStream {
+        let mut main_step = PatuiStepRunnerTransformStream::new(
+            "main".to_string(),
+            &PatuiStepTransformStream {
                 flavour: PatuiStepTransformStreamFlavour::Json,
-                r#in: "steps.foo.bar".try_into().unwrap(),
-            });
+                r#in: "steps.test_input.out".try_into().unwrap(),
+            },
+        );
 
-        let output = step_runner_transform_stream.subscribe("output");
+        let output_rx = main_step.subscribe("out");
 
-        assert_that!(output).is_ok();
-        let mut output = output.unwrap();
+        assert_that!(output_rx).is_ok();
+        let mut output_rx = output_rx.unwrap();
 
-        // assert_that!(step_runner_transform_stream.init()).is_ok();
-        assert_that!(step_runner_transform_stream.run()).is_ok();
+        let (input_tx, input_rx) = broadcast::channel(32);
 
-        let input = PatuiStepData::new(PatuiStepDataFlavour::Bytes(Bytes::from(
-            "{\"key\": \"value\"}".to_string(),
+        assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
+
+        input_tx.send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
+            Bytes::from(r#"{"key": "value"}"#),
         )));
-        assert_that!(step_runner_transform_stream.publish("input", input.clone())).is_ok();
 
-        let recv = timeout(Duration::from_millis(50), output.recv()).await;
+        let (res_tx, mut res_rx) = mpsc::channel(1);
+
+        assert_that!(main_step.run(res_tx.clone())).is_ok();
+
+        let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
+        tracing::trace!("recv: {:#?}", recv);
         assert_that!(recv.data().is_json()).is_true();
         assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
             {"key": "value"}
@@ -142,30 +224,37 @@ mod tests {
     #[traced_test]
     #[tokio::test]
     async fn step_transform_stream_simple_string_to_json() {
-        let mut step_runner_transform_stream =
-            PatuiStepRunnerTransformStream::new(&PatuiStepTransformStream {
+        let mut main_step = PatuiStepRunnerTransformStream::new(
+            "main".to_string(),
+            &PatuiStepTransformStream {
                 flavour: PatuiStepTransformStreamFlavour::Json,
-                r#in: "steps.foo.bar".try_into().unwrap(),
-            });
+                r#in: "steps.test_input.out".try_into().unwrap(),
+            },
+        );
 
-        let output = step_runner_transform_stream.subscribe("output");
+        let output_rx = main_step.subscribe("out");
 
-        assert_that!(output).is_ok();
-        let mut output = output.unwrap();
+        assert_that!(output_rx).is_ok();
+        let mut output_rx = output_rx.unwrap();
 
-        // assert_that!(step_runner_transform_stream.init()).is_ok();
-        assert_that!(step_runner_transform_stream.run()).is_ok();
+        let (input_tx, input_rx) = broadcast::channel(32);
 
-        let r#in = PatuiStepData::new(PatuiStepDataFlavour::String(
-            "{\"key\": \"value\"}".to_string(),
-        ));
-        assert_that!(step_runner_transform_stream.publish("input", r#in.clone())).is_ok();
+        assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
-        let recv = timeout(Duration::from_millis(50), output.recv()).await;
+        input_tx.send(PatuiStepData::new(PatuiStepDataFlavour::String(
+            r#"{"key": "value"}"#.to_string(),
+        )));
+
+        let (res_tx, mut res_rx) = mpsc::channel(1);
+
+        assert_that!(main_step.run(res_tx.clone())).is_ok();
+
+        let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
+        tracing::trace!("recv: {:#?}", recv);
         assert_that!(recv.data().is_json()).is_true();
         assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
             {"key": "value"}
