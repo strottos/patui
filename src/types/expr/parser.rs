@@ -565,7 +565,6 @@ fn parse_function_call(
     while let Some(peek_token) = lexer.peek() {
         if let Ok(Token::RightBracket) = peek_token {
             lexer.next();
-            tracing::trace!("ST - {:?}", lexer.peek());
             break;
         }
         let arg = parse_expr(input, lexer, vec![Token::Comma, Token::RightBracket])?;

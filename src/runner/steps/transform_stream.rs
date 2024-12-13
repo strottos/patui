@@ -104,32 +104,6 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
                     step.r#in
                 );
             }
-            //     let mut input_rx = input_rx;
-
-            //     while let Ok(chunk) = input_rx.recv().await {
-            //         tracing::trace!("Received data: {:?}", chunk);
-            //         // TODO: Streaming
-            //         let data = match chunk {
-            //             PatuiStepData {
-            //                 data: PatuiStepDataFlavour::Bytes(data),
-            //                 ..
-            //             } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-            //                 serde_json::from_slice(&data).unwrap(),
-            //             )),
-
-            //             PatuiStepData {
-            //                 data: PatuiStepDataFlavour::String(data),
-            //                 ..
-            //             } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-            //                 serde_json::from_str(&data).unwrap(),
-            //             )),
-
-            //             _ => todo!(),
-            //         };
-            //         if let Err(e) = output_tx.send(data) {
-            //             panic!("Failed to send data");
-            //         }
-            //     }
         });
 
         self.tasks.push(task);
@@ -214,7 +188,6 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        tracing::trace!("recv: {:#?}", recv);
         assert_that!(recv.data().is_json()).is_true();
         assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
             {"key": "value"}
@@ -241,9 +214,11 @@ mod tests {
 
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
-        input_tx.send(PatuiStepData::new(PatuiStepDataFlavour::String(
-            r#"{"key": "value"}"#.to_string(),
-        )));
+        input_tx
+            .send(PatuiStepData::new(PatuiStepDataFlavour::String(
+                r#"{"key": "value"}"#.to_string(),
+            )))
+            .unwrap();
 
         let (res_tx, mut res_rx) = mpsc::channel(1);
 
@@ -254,7 +229,6 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        tracing::trace!("recv: {:#?}", recv);
         assert_that!(recv.data().is_json()).is_true();
         assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
             {"key": "value"}

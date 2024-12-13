@@ -1,4 +1,3 @@
-use either::Either;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, VariantArray};
 

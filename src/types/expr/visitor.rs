@@ -135,19 +135,16 @@ mod tests {
 
         impl Visitor for StepVisitor {
             fn visit_lit(&mut self, lit: &Lit) -> Result<()> {
-                tracing::trace!("visit_lit: {:?}", lit);
                 self.lit_visits += 1;
                 Ok(())
             }
 
             fn visit_ident(&mut self, ident: &Ident) -> Result<()> {
-                tracing::trace!("visit_ident: {:?}", ident);
                 self.ident_visits += 1;
                 Ok(())
             }
 
             fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
-                tracing::trace!("visit_expr: {:?}", expr.raw);
                 self.expr_visits += 1;
                 Ok(())
             }

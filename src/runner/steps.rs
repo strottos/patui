@@ -73,8 +73,7 @@ impl PatuiStepRunner {
         current_step_name: &str,
         step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
-        tracing::trace!("Initializing step runner: {:#?}", self);
-        tracing::trace!("Step runners: {:#?}", step_runners);
+        tracing::trace!("Initializing step runner: {:?}", self);
 
         match &mut self.flavour {
             PatuiStepRunnerFlavour::TransformStream(runner) => {
@@ -157,7 +156,7 @@ fn init_subscribe_steps(
     let mut receivers = HashMap::new();
 
     for ident in get_all_idents(expr)?.iter() {
-        tracing::trace!("Ident: {:#?}", ident.kind());
+        tracing::trace!("Checking ident for subscribing: {:?}", ident.kind());
         let (ref_step, field) = match ident.kind() {
             ExprKind::Ident(_) => continue,
             ExprKind::Field(root_expr, field_ident) => match root_expr.kind() {
@@ -176,13 +175,13 @@ fn init_subscribe_steps(
             ExprKind::Index(_, _) => continue,
             ExprKind::Call(_, _) => continue,
             _ => {
-                return Err(eyre::eyre!("FOO"));
+                return Err(eyre::eyre!("Unrecognised ident kind: {}", ident));
             }
         };
 
         if let Some(step_runners) = other_step_runners.get(ref_step) {
             tracing::debug!("Subscription: {current_step_name} -> {ref_step}");
-            tracing::trace!("Step Runners: {:#?}", step_runners);
+            tracing::trace!("Step Runners: {:?}", step_runners);
 
             for step_runner in step_runners {
                 let mut step_runner = step_runner.lock().unwrap();

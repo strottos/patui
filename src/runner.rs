@@ -1,9 +1,6 @@
 mod steps;
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     db::PatuiRun,
@@ -11,6 +8,7 @@ use crate::{
 };
 
 use eyre::Result;
+use indexmap::IndexMap;
 use tokio::sync::mpsc;
 
 use self::steps::PatuiStepRunner;
@@ -18,14 +16,14 @@ use self::steps::PatuiStepRunner;
 pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
 
-    pub(crate) steps: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
+    pub(crate) steps: IndexMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
 
     results: Vec<PatuiEvent>,
 }
 
 impl TestRunner {
     pub fn new(run: PatuiRun) -> Self {
-        let mut steps = HashMap::new();
+        let mut steps = IndexMap::new();
 
         for step in &run.instance.steps {
             let name = step.name.clone();
@@ -54,15 +52,19 @@ impl TestRunner {
 
         drop(tx);
 
+        let receive_task = tokio::spawn(async move {
+            while let Some(res) = rx.recv().await {
+                tracing::trace!("Received result: {:?}", res);
+            }
+        });
+
         for (name, step_collection) in self.steps.iter() {
             for step in step_collection {
                 step.lock().unwrap().wait().await?;
             }
         }
 
-        while let Some(res) = rx.recv().await {
-            tracing::trace!("Received result: {:?}", res);
-        }
+        receive_task.await?;
 
         self.run.status = PatuiRunStatus::Passed;
 
