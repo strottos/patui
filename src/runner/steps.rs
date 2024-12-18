@@ -19,7 +19,10 @@ use self::{
     transform_stream::PatuiStepRunnerTransformStream, writer::PatuiStepRunnerWrite,
 };
 use crate::types::{
-    expr::{ast::ExprKind, get_all_idents},
+    expr::{
+        ast::{ExprKind, TermParts},
+        get_all_terms,
+    },
     PatuiEvent, PatuiExpr, PatuiStep, PatuiStepData, PatuiStepDetails,
 };
 
@@ -165,32 +168,29 @@ async fn init_subscribe_steps(
 ) -> Result<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>> {
     let mut receivers = HashMap::new();
 
-    for ident in get_all_idents(expr)?.iter() {
-        tracing::trace!("Checking ident for subscribing: {:?}", ident.kind());
-        let (ref_step, field) = match ident.kind() {
-            ExprKind::Ident(_) => continue,
-            ExprKind::Field(root_expr, field_ident) => match root_expr.kind() {
-                ExprKind::Field(root_expr, sub_expr) => match root_expr.kind() {
-                    ExprKind::Ident(root_ident) => {
-                        if root_ident.value == "steps".to_string() {
-                            (&sub_expr.value, &field_ident.value)
+    for term in get_all_terms(expr)?.iter() {
+        tracing::trace!("Checking term for subscribing: {:?}", term.kind());
+        let (ref_step_name, sub_name) = match term.kind() {
+            ExprKind::Term(term) => {
+                if term.value.first() == Some(&TermParts::Ident("steps".to_string())) {
+                    if let Some(TermParts::Ident(ref_step_name)) = term.value.get(1) {
+                        if let Some(TermParts::Ident(sub_name)) = term.value.get(2) {
+                            (ref_step_name, sub_name)
                         } else {
-                            continue;
+                            return Err(eyre!("Invalid term for subscribing: {:?}", term));
                         }
+                    } else {
+                        return Err(eyre!("Invalid term for subscribing: {:?}", term));
                     }
-                    _ => continue,
-                },
-                _ => continue,
-            },
-            ExprKind::Index(_, _) => continue,
-            ExprKind::Call(_, _) => continue,
-            _ => {
-                return Err(eyre::eyre!("Unrecognised ident kind: {}", ident));
+                } else {
+                    continue;
+                }
             }
+            _ => unreachable!(),
         };
 
-        if let Some(step_runners) = other_step_runners.get(ref_step) {
-            tracing::debug!("Subscription: {current_step_name} -> {ref_step}");
+        if let Some(step_runners) = other_step_runners.get(ref_step_name) {
+            tracing::debug!("Subscription: {current_step_name} -> {ref_step_name}");
             tracing::trace!("Step Runners: {:?}", step_runners);
 
             for step_runner in step_runners {
@@ -198,14 +198,16 @@ async fn init_subscribe_steps(
                 match step_runner.flavour_mut() {
                     PatuiStepRunnerFlavour::TransformStream(patui_step_runner_transform_stream) => {
                         receivers.insert(
-                            ident.clone(),
-                            patui_step_runner_transform_stream.subscribe(&field).await?,
+                            term.clone(),
+                            patui_step_runner_transform_stream
+                                .subscribe(&sub_name)
+                                .await?,
                         );
                     }
                     PatuiStepRunnerFlavour::Read(patui_step_runner_read) => {
                         receivers.insert(
-                            ident.clone(),
-                            patui_step_runner_read.subscribe(&field).await?,
+                            term.clone(),
+                            patui_step_runner_read.subscribe(&sub_name).await?,
                         );
                     }
                     PatuiStepRunnerFlavour::Write(_) => todo!(),
@@ -219,7 +221,10 @@ async fn init_subscribe_steps(
                 }
             }
         } else {
-            return Err(eyre!("No step found for referenced step: `{}`", ref_step));
+            return Err(eyre!(
+                "No step found for referenced step: `{}`",
+                ref_step_name
+            ));
         }
     }
 

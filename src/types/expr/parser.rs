@@ -8,9 +8,11 @@ use super::{
 };
 
 pub(crate) fn parse(input: &str) -> Result<PatuiExpr> {
+    tracing::trace!("Parsing input: '{}'", input);
+
     let mut lexer = LexerPeekable::new(Token::lexer(input));
 
-    let expr = parse_expr(input, &mut lexer, vec![]);
+    let expr = parse_expr(input, &mut lexer, vec![])?;
 
     if lexer.peek().is_some() {
         let span = lexer.span();
@@ -21,7 +23,7 @@ pub(crate) fn parse(input: &str) -> Result<PatuiExpr> {
         ));
     }
 
-    expr
+    Ok(expr)
 }
 
 pub(crate) fn parse_expr(
@@ -84,30 +86,14 @@ pub(crate) fn parse_expr(
             Token::Ident(id) => {
                 expr = Some(parse_ident(input, lexer, id)?);
             }
-            Token::Period => {
-                expr = Some(parse_field(input, lexer, expr, expr_start.unwrap())?);
-            }
             Token::LeftSquareBrace => {
-                expr = match expr.take() {
-                    None => Some(parse_list(input, lexer)?),
-                    Some(prev_expr) => {
-                        Some(parse_index(input, lexer, prev_expr, expr_start.unwrap())?)
-                    }
-                };
+                expr = Some(parse_list(input, lexer)?);
             }
             Token::LeftCurlyBrace => {
                 expr = Some(parse_set_or_map(input, lexer)?);
             }
             Token::LeftBracket => {
-                expr = match expr.take() {
-                    None => Some(parse_bracket_ordering(input, lexer)?),
-                    Some(ident) => Some(parse_function_call(
-                        input,
-                        lexer,
-                        ident,
-                        expr_start.unwrap(),
-                    )?),
-                }
+                expr = Some(parse_bracket_ordering(input, lexer)?);
             }
             Token::Minus => {
                 expr = match expr.take() {
@@ -242,7 +228,7 @@ pub(crate) fn parse_expr(
                     expr = Some(PatuiExpr {
                         raw: input[start..end].to_string(),
                         kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Token("*".to_string()),
+                            kind: LitKind::Str("*".to_string()),
                         }),
                     });
                 }
@@ -339,42 +325,79 @@ fn parse_bytes_list(lexer: &mut LexerPeekable<'_>) -> Result<Bytes> {
 }
 
 fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result<PatuiExpr> {
-    let outer_span = lexer.span();
+    tracing::trace!("Parsing ident from {}", id);
+    let start = lexer.span().start;
 
-    let expr = PatuiExpr {
-        raw: input[outer_span.start..outer_span.end].to_string(),
-        kind: ExprKind::Ident(Ident { value: id }),
-    };
+    let mut ident_parts = vec![TermParts::Ident(id)];
 
-    Ok(expr)
-}
+    loop {
+        if lexer.next_if_match(Token::LeftSquareBrace) {
+            let ident = match lexer.peek() {
+                Some(Ok(Token::Integer(_))) => {
+                    let Some(Ok(Token::Integer(int))) = lexer.next() else {
+                        unreachable!();
+                    };
+                    let int = int.parse::<usize>()?;
+                    ident_parts.push(TermParts::Index(int));
+                }
+                Some(Ok(Token::String(_))) => {
+                    let Some(Ok(Token::String(s))) = lexer.next() else {
+                        unreachable!();
+                    };
+                    ident_parts.push(TermParts::Ident(s));
+                }
+                Some(Ok(Token::Star)) => {
+                    debug_assert!(lexer.next() == Some(Ok(Token::Star)));
+                    ident_parts.push(TermParts::Wildcard);
+                }
+                Some(Ok(Token::Ident(_))) => {
+                    let expr = parse_expr(input, lexer, vec![Token::RightSquareBrace])?;
+                    ident_parts.push(TermParts::Expr(P {
+                        ptr: Box::new(expr),
+                    }));
+                }
+                Some(Ok(tok)) => return panic!("Unexpected token: {:?}", tok),
+                Some(Err(e)) => return Err(eyre!("Error parsing token: {:?}", e)),
+                None => return Err(eyre!("Ran out of tokens while parsing index")),
+            };
+            match lexer.next() {
+                Some(Ok(Token::RightSquareBrace)) => {}
+                Some(Ok(tok)) => return Err(eyre!("Unexpected token: {:?}", tok)),
+                Some(Err(e)) => return Err(eyre!("Error parsing token: {:?}", e)),
+                None => return Err(eyre!("Ran out of tokens while parsing index")),
+            }
+        } else if lexer.next_if_match(Token::Period) {
+            let field_ident = match lexer.next() {
+                Some(Ok(Token::Ident(id))) => id,
+                Some(Ok(tok)) => return Err(eyre!("Unexpected token: {:?}", tok)),
+                Some(Err(e)) => return Err(eyre!("Error parsing token: {:?}", e)),
+                None => return Err(eyre!("Ran out of tokens while parsing field")),
+            };
+            ident_parts.push(TermParts::Ident(field_ident));
+        } else if lexer.next_if_match(Token::LeftBracket) {
+            let mut args = Vec::new();
 
-fn parse_field(
-    input: &str,
-    lexer: &mut LexerPeekable<'_>,
-    mut expr: Option<PatuiExpr>,
-    start: usize,
-) -> Result<PatuiExpr> {
-    let expr = expr
-        .take()
-        .ok_or_else(|| eyre!("Expected expression before field access"))?;
-    let field_ident = match lexer.next() {
-        Some(Ok(Token::Ident(id))) => id,
-        Some(Ok(tok)) => return Err(eyre!("Unexpected token: {:?}", tok)),
-        Some(Err(e)) => return Err(eyre!("Error parsing token: {:?}", e)),
-        None => return Err(eyre!("Ran out of tokens while parsing field")),
-    };
+            while let Some(peek_token) = lexer.peek() {
+                if lexer.next_if_match(Token::RightBracket) {
+                    break;
+                }
+                let arg = parse_expr(input, lexer, vec![Token::Comma, Token::RightBracket])?;
+                args.push(P { ptr: Box::new(arg) });
+                lexer.next_if_match(Token::Comma);
+            }
 
+            ident_parts.push(TermParts::Call(args));
+        } else {
+            break;
+        }
+    }
+
+    let ident = Term { value: ident_parts };
     let end = lexer.span().end;
 
     Ok(PatuiExpr {
         raw: input[start..end].to_string(),
-        kind: ExprKind::Field(
-            P {
-                ptr: Box::new(expr),
-            },
-            Ident { value: field_ident },
-        ),
+        kind: ExprKind::Term(ident),
     })
 }
 
@@ -402,37 +425,9 @@ fn parse_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiExpr> {
 
     Ok(PatuiExpr {
         raw: input[start..end].to_string(),
-        kind: ExprKind::List(elements),
-    })
-}
-
-fn parse_index(
-    input: &str,
-    lexer: &mut LexerPeekable<'_>,
-    ident: PatuiExpr,
-    start: usize,
-) -> Result<PatuiExpr> {
-    tracing::trace!("Parsing index: {:?}", &input[start..]);
-
-    let expr = parse_expr(input, lexer, vec![Token::RightSquareBrace])?;
-
-    if !lexer.next_if_match(Token::RightSquareBrace) {
-        return Err(eyre!("Couldn't parse list from string"));
-    }
-
-    #[allow(unused)]
-    let end = lexer.span().end;
-
-    Ok(PatuiExpr {
-        raw: input[start..end].to_string(),
-        kind: ExprKind::Index(
-            P {
-                ptr: Box::new(ident),
-            },
-            P {
-                ptr: Box::new(expr),
-            },
-        ),
+        kind: ExprKind::Lit(Lit {
+            kind: LitKind::List(elements),
+        }),
     })
 }
 
@@ -485,17 +480,21 @@ fn parse_set_or_map(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiE
     } else if set_elements.len() != 0 {
         Ok(PatuiExpr {
             raw: input[start..end].to_string(),
-            kind: ExprKind::Set(
-                set_elements
-                    .into_iter()
-                    .map(|x| P { ptr: Box::new(x) })
-                    .collect::<Vec<_>>(),
-            ),
+            kind: ExprKind::Lit(Lit {
+                kind: LitKind::Set(
+                    set_elements
+                        .into_iter()
+                        .map(|x| P { ptr: Box::new(x) })
+                        .collect::<Vec<_>>(),
+                ),
+            }),
         })
     } else {
         Ok(PatuiExpr {
             raw: input[start..end].to_string(),
-            kind: ExprKind::Map(map_elements),
+            kind: ExprKind::Lit(Lit {
+                kind: LitKind::Map(map_elements),
+            }),
         })
     }
 }
@@ -551,37 +550,6 @@ fn parse_bracket_ordering(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<
         return Err(eyre!("Couldn't parse bracket ordering from string"));
     }
     Ok(expr)
-}
-
-fn parse_function_call(
-    input: &str,
-    lexer: &mut LexerPeekable<'_>,
-    ident: PatuiExpr,
-    start: usize,
-) -> Result<PatuiExpr> {
-    let mut args = Vec::new();
-
-    while let Some(peek_token) = lexer.peek() {
-        if let Ok(Token::RightBracket) = peek_token {
-            lexer.next();
-            break;
-        }
-        let arg = parse_expr(input, lexer, vec![Token::Comma, Token::RightBracket])?;
-        args.push(P { ptr: Box::new(arg) });
-        lexer.next_if_match(Token::Comma);
-    }
-
-    let end = lexer.span().end;
-
-    Ok(PatuiExpr {
-        raw: input[start..end].to_string(),
-        kind: ExprKind::Call(
-            P {
-                ptr: Box::new(ident),
-            },
-            args,
-        ),
-    })
 }
 
 #[cfg(test)]

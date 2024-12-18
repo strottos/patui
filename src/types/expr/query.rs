@@ -3,7 +3,7 @@ use super::visitor::Visitor;
 
 use eyre::Result;
 
-pub(crate) fn get_all_idents(expr: &PatuiExpr) -> Result<Vec<PatuiExpr>> {
+pub(crate) fn get_all_terms(expr: &PatuiExpr) -> Result<Vec<PatuiExpr>> {
     struct FullIdentsVisitor {
         idents: Vec<PatuiExpr>,
     }
@@ -13,10 +13,7 @@ pub(crate) fn get_all_idents(expr: &PatuiExpr) -> Result<Vec<PatuiExpr>> {
     impl Visitor for FullIdentsVisitor {
         fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
             match expr.kind() {
-                ExprKind::Ident(_)
-                | ExprKind::Field(_, _)
-                | ExprKind::Index(_, _)
-                | ExprKind::Call(_, _) => {
+                ExprKind::Term(_) => {
                     self.idents.push(expr.clone());
                 }
                 _ => {}
@@ -42,13 +39,13 @@ mod tests {
     #[test]
     fn basic_ident() {
         let expr = "foo".try_into().unwrap();
-        let idents = get_all_idents(&expr).unwrap();
+        let idents = get_all_terms(&expr).unwrap();
 
         assert_that!(idents).has_length(1);
         assert_that!(idents[0]).is_equal_to(PatuiExpr {
             raw: "foo".to_string(),
-            kind: ExprKind::Ident(Ident {
-                value: "foo".to_string(),
+            kind: ExprKind::Term(Term {
+                value: vec![TermParts::Ident("foo".to_string())],
             }),
         });
     }
@@ -57,102 +54,19 @@ mod tests {
     #[test]
     fn complex_ident() {
         let expr = "foo.bar[1].baz".try_into().unwrap();
-        let idents = get_all_idents(&expr).unwrap();
+        let idents = get_all_terms(&expr).unwrap();
 
-        assert_that!(idents).has_length(4);
+        assert_that!(idents).has_length(1);
         assert_that!(idents[0]).is_equal_to(PatuiExpr {
-            raw: "foo".to_string(),
-            kind: ExprKind::Ident(Ident {
-                value: "foo".to_string(),
-            }),
-        });
-        assert_that!(idents[1]).is_equal_to(PatuiExpr {
-            raw: "foo.bar".to_string(),
-            kind: ExprKind::Field(
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "foo".to_string(),
-                        kind: ExprKind::Ident(Ident {
-                            value: "foo".to_string(),
-                        }),
-                    }),
-                },
-                Ident {
-                    value: "bar".to_string(),
-                },
-            ),
-        });
-        assert_that!(idents[2]).is_equal_to(PatuiExpr {
-            raw: "foo.bar[1]".to_string(),
-            kind: ExprKind::Index(
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "foo.bar".to_string(),
-                        kind: ExprKind::Field(
-                            P {
-                                ptr: Box::new(PatuiExpr {
-                                    raw: "foo".to_string(),
-                                    kind: ExprKind::Ident(Ident {
-                                        value: "foo".to_string(),
-                                    }),
-                                }),
-                            },
-                            Ident {
-                                value: "bar".to_string(),
-                            },
-                        ),
-                    }),
-                },
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "1".to_string(),
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Integer("1".to_string()),
-                        }),
-                    }),
-                },
-            ),
-        });
-        assert_that!(idents[3]).is_equal_to(PatuiExpr {
             raw: "foo.bar[1].baz".to_string(),
-            kind: ExprKind::Field(
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "foo.bar[1]".to_string(),
-                        kind: ExprKind::Index(
-                            P {
-                                ptr: Box::new(PatuiExpr {
-                                    raw: "foo.bar".to_string(),
-                                    kind: ExprKind::Field(
-                                        P {
-                                            ptr: Box::new(PatuiExpr {
-                                                raw: "foo".to_string(),
-                                                kind: ExprKind::Ident(Ident {
-                                                    value: "foo".to_string(),
-                                                }),
-                                            }),
-                                        },
-                                        Ident {
-                                            value: "bar".to_string(),
-                                        },
-                                    ),
-                                }),
-                            },
-                            P {
-                                ptr: Box::new(PatuiExpr {
-                                    raw: "1".to_string(),
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
-                                    }),
-                                }),
-                            },
-                        ),
-                    }),
-                },
-                Ident {
-                    value: "baz".to_string(),
-                },
-            ),
+            kind: ExprKind::Term(Term {
+                value: vec![
+                    TermParts::Ident("foo".to_string()),
+                    TermParts::Ident("bar".to_string()),
+                    TermParts::Index(1),
+                    TermParts::Ident("baz".to_string()),
+                ],
+            }),
         });
     }
 
@@ -162,111 +76,37 @@ mod tests {
         let expr = "foo.bar[1].baz == 123 && foo[0] == baz().foo[0]"
             .try_into()
             .unwrap();
-        let idents = get_all_idents(&expr).unwrap();
+        let idents = get_all_terms(&expr).unwrap();
 
-        assert_that!(idents).has_length(10);
-        assert_that!(idents[3]).is_equal_to(PatuiExpr {
+        assert_that!(idents).has_length(3);
+        assert_that!(idents[0]).is_equal_to(PatuiExpr {
             raw: "foo.bar[1].baz".to_string(),
-            kind: ExprKind::Field(
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "foo.bar[1]".to_string(),
-                        kind: ExprKind::Index(
-                            P {
-                                ptr: Box::new(PatuiExpr {
-                                    raw: "foo.bar".to_string(),
-                                    kind: ExprKind::Field(
-                                        P {
-                                            ptr: Box::new(PatuiExpr {
-                                                raw: "foo".to_string(),
-                                                kind: ExprKind::Ident(Ident {
-                                                    value: "foo".to_string(),
-                                                }),
-                                            }),
-                                        },
-                                        Ident {
-                                            value: "bar".to_string(),
-                                        },
-                                    ),
-                                }),
-                            },
-                            P {
-                                ptr: Box::new(PatuiExpr {
-                                    raw: "1".to_string(),
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
-                                    }),
-                                }),
-                            },
-                        ),
-                    }),
-                },
-                Ident {
-                    value: "baz".to_string(),
-                },
-            ),
+            kind: ExprKind::Term(Term {
+                value: vec![
+                    TermParts::Ident("foo".to_string()),
+                    TermParts::Ident("bar".to_string()),
+                    TermParts::Index(1),
+                    TermParts::Ident("baz".to_string()),
+                ],
+            }),
         });
 
-        assert_that!(idents[5]).is_equal_to(PatuiExpr {
+        assert_that!(idents[1]).is_equal_to(PatuiExpr {
             raw: "foo[0]".to_string(),
-            kind: ExprKind::Index(
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "foo".to_string(),
-                        kind: ExprKind::Ident(Ident {
-                            value: "foo".to_string(),
-                        }),
-                    }),
-                },
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "0".to_string(),
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Integer("0".to_string()),
-                        }),
-                    }),
-                },
-            ),
+            kind: ExprKind::Term(Term {
+                value: vec![TermParts::Ident("foo".to_string()), TermParts::Index(0)],
+            }),
         });
 
-        assert_that!(idents[9]).is_equal_to(PatuiExpr {
+        assert_that!(idents[2]).is_equal_to(PatuiExpr {
             raw: "baz().foo[0]".to_string(),
-            kind: ExprKind::Index(
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "baz().foo".to_string(),
-                        kind: ExprKind::Field(
-                            P {
-                                ptr: Box::new(PatuiExpr {
-                                    raw: "baz()".to_string(),
-                                    kind: ExprKind::Call(
-                                        P {
-                                            ptr: Box::new(PatuiExpr {
-                                                raw: "baz".to_string(),
-                                                kind: ExprKind::Ident(Ident {
-                                                    value: "baz".to_string(),
-                                                }),
-                                            }),
-                                        },
-                                        Vec::new(),
-                                    ),
-                                }),
-                            },
-                            Ident {
-                                value: "foo".to_string(),
-                            },
-                        ),
-                    }),
-                },
-                P {
-                    ptr: Box::new(PatuiExpr {
-                        raw: "0".to_string(),
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Integer("0".to_string()),
-                        }),
-                    }),
-                },
-            ),
+            kind: ExprKind::Term(Term {
+                value: vec![
+                    TermParts::Ident("baz".to_string()),
+                    TermParts::Ident("foo".to_string()),
+                    TermParts::Index(0),
+                ],
+            }),
         });
     }
 }
