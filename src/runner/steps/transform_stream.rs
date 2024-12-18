@@ -75,16 +75,22 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
                         PatuiStepData {
                             data: PatuiStepDataFlavour::Bytes(data),
                             ..
-                        } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-                            serde_json::from_slice(&data).unwrap(),
-                        )),
+                        } => PatuiStepData::new(
+                            serde_json::from_slice::<serde_json::Value>(&data)
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        ),
 
                         PatuiStepData {
                             data: PatuiStepDataFlavour::String(data),
                             ..
-                        } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-                            serde_json::from_str(&data).unwrap(),
-                        )),
+                        } => PatuiStepData::new(
+                            serde_json::from_str::<serde_json::Value>(&data)
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        ),
 
                         _ => todo!(),
                     };
@@ -151,8 +157,6 @@ mod tests {
     use tokio::time::timeout;
     use tracing_test::traced_test;
 
-    use crate::types::PatuiStepDataTransfer;
-
     use super::*;
 
     #[traced_test]
@@ -188,10 +192,11 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(recv.data().is_json()).is_true();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
-            {"key": "value"}
-        )));
+        assert_that!(recv.data().is_object()).is_true();
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Map(vec![(
+            "key".into(),
+            PatuiStepDataFlavour::String("value".into()),
+        )]));
     }
 
     #[traced_test]
@@ -229,9 +234,10 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(recv.data().is_json()).is_true();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
-            {"key": "value"}
-        )));
+        assert_that!(recv.data().is_object()).is_true();
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Map(vec![(
+            "key".into(),
+            PatuiStepDataFlavour::String("value".into()),
+        )]));
     }
 }

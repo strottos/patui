@@ -103,6 +103,7 @@ mod tests {
             kind: ExprKind::Term(Term {
                 value: vec![
                     TermParts::Ident("baz".to_string()),
+                    TermParts::Call(vec![]),
                     TermParts::Ident("foo".to_string()),
                     TermParts::Index(0),
                 ],

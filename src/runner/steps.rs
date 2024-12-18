@@ -197,8 +197,11 @@ fn init_subscribe_steps(
                             .insert(term.clone(), patui_step_runner_read.subscribe(&sub_name)?);
                     }
                     PatuiStepRunnerFlavour::Write(patui_step_runner_write) => todo!(),
-                    PatuiStepRunnerFlavour::Assertion(_) => {
-                        todo!()
+                    PatuiStepRunnerFlavour::Assertion(patui_step_runner_assertion) => {
+                        receivers.insert(
+                            term.clone(),
+                            patui_step_runner_assertion.subscribe(&sub_name)?,
+                        );
                     }
                     PatuiStepRunnerFlavour::Sender(patui_step_runner_sender) => {}
                 }

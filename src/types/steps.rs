@@ -258,11 +258,14 @@ impl PatuiStepData {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepDataFlavour {
+    Null,
+    Bool(bool),
     Bytes(Bytes),
     String(String),
-    Number(i64),
-    Json(serde_json::Value),
-    Yaml(serde_yaml::Value),
+    Integer(i64), // TODO: Bigints?
+    Float(f64),
+    Array(Vec<PatuiStepDataFlavour>),
+    Map(Vec<(String, PatuiStepDataFlavour)>),
 }
 
 impl PatuiStepDataFlavour {
@@ -273,11 +276,15 @@ impl PatuiStepDataFlavour {
         }
     }
 
-    pub(crate) fn as_number(&self) -> Result<i64> {
+    pub(crate) fn as_integer(&self) -> Result<i64> {
         match self {
-            Self::Number(number) => Ok(*number),
+            Self::Integer(number) => Ok(*number),
             _ => Err(eyre!("not number")),
         }
+    }
+
+    pub(crate) fn is_null(&self) -> bool {
+        self == &Self::Null
     }
 
     pub(crate) fn is_bytes(&self) -> bool {
@@ -288,16 +295,83 @@ impl PatuiStepDataFlavour {
         matches!(self, Self::String(_))
     }
 
-    pub(crate) fn is_number(&self) -> bool {
-        matches!(self, Self::Number(_))
+    pub(crate) fn is_integer(&self) -> bool {
+        matches!(self, Self::Integer(_))
     }
 
-    pub(crate) fn is_json(&self) -> bool {
-        matches!(self, Self::Json(_))
+    pub(crate) fn is_float(&self) -> bool {
+        matches!(self, Self::Float(_))
     }
 
-    pub(crate) fn is_yaml(&self) -> bool {
-        matches!(self, Self::Yaml(_))
+    pub(crate) fn is_array(&self) -> bool {
+        matches!(self, Self::Array(_))
+    }
+
+    pub(crate) fn is_object(&self) -> bool {
+        matches!(self, Self::Map(_))
+    }
+}
+
+impl From<bool> for PatuiStepDataFlavour {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<Bytes> for PatuiStepDataFlavour {
+    fn from(value: Bytes) -> Self {
+        Self::Bytes(value)
+    }
+}
+
+impl From<String> for PatuiStepDataFlavour {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<i64> for PatuiStepDataFlavour {
+    fn from(value: i64) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl From<f64> for PatuiStepDataFlavour {
+    fn from(value: f64) -> Self {
+        Self::Float(value)
+    }
+}
+
+impl TryFrom<serde_json::Value> for PatuiStepDataFlavour {
+    type Error = eyre::Error;
+
+    fn try_from(value: serde_json::Value) -> Result<Self> {
+        let ret = match value {
+            serde_json::Value::Null => Self::Null,
+            serde_json::Value::Bool(b) => Self::Bool(b),
+            serde_json::Value::Number(number) => {
+                if let Some(number) = number.as_i64() {
+                    Self::Integer(number)
+                } else if let Some(number) = number.as_f64() {
+                    Self::Float(number)
+                } else {
+                    return Err(eyre!("Invalid number {}", number));
+                }
+            }
+            serde_json::Value::String(s) => Self::String(s),
+            serde_json::Value::Array(vec) => Self::Array(
+                vec.into_iter()
+                    .map(|x| x.try_into())
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            serde_json::Value::Object(map) => Self::Map(
+                map.into_iter()
+                    .map(|(k, v)| Ok((k, v.try_into()?)))
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+        };
+
+        Ok(ret)
     }
 }
 
