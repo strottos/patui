@@ -8,7 +8,7 @@ use tokio::{
 use super::PatuiStepRunnerTrait;
 use crate::types::{
     expr::ast::{ExprKind, Lit, LitKind},
-    PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
+    PatuiEvent, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
 };
 
 #[derive(Debug)]
@@ -110,7 +110,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                     LitKind::Map(_) => todo!(),
                     LitKind::Set(_) => todo!(),
                 };
-            } else if let ExprKind::Term(term) = step.expr.kind() {
+            } else if let ExprKind::Term(_term) = step.expr.kind() {
                 todo!();
             } else {
                 todo!();

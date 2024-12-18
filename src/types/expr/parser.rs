@@ -332,7 +332,7 @@ fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result
 
     loop {
         if lexer.next_if_match(Token::LeftSquareBrace) {
-            let ident = match lexer.peek() {
+            match lexer.peek() {
                 Some(Ok(Token::Integer(_))) => {
                     let Some(Ok(Token::Integer(int))) = lexer.next() else {
                         unreachable!();
@@ -356,10 +356,10 @@ fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result
                         ptr: Box::new(expr),
                     }));
                 }
-                Some(Ok(tok)) => return panic!("Unexpected token: {:?}", tok),
+                Some(Ok(tok)) => panic!("Unexpected token: {:?}", tok),
                 Some(Err(e)) => return Err(eyre!("Error parsing token: {:?}", e)),
                 None => return Err(eyre!("Ran out of tokens while parsing index")),
-            };
+            }
             match lexer.next() {
                 Some(Ok(Token::RightSquareBrace)) => {}
                 Some(Ok(tok)) => return Err(eyre!("Unexpected token: {:?}", tok)),
@@ -377,7 +377,7 @@ fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result
         } else if lexer.next_if_match(Token::LeftBracket) {
             let mut args = Vec::new();
 
-            while let Some(peek_token) = lexer.peek() {
+            while lexer.peek().is_some() {
                 if lexer.next_if_match(Token::RightBracket) {
                     break;
                 }

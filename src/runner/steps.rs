@@ -210,9 +210,12 @@ async fn init_subscribe_steps(
                             patui_step_runner_read.subscribe(&sub_name).await?,
                         );
                     }
-                    PatuiStepRunnerFlavour::Write(_) => todo!(),
-                    PatuiStepRunnerFlavour::Assertion(_) => {
-                        todo!()
+                    PatuiStepRunnerFlavour::Write(_patui_step_runner_write) => todo!(),
+                    PatuiStepRunnerFlavour::Assertion(patui_step_runner_assertion) => {
+                        receivers.insert(
+                            term.clone(),
+                            patui_step_runner_assertion.subscribe(&sub_name).await?,
+                        );
                     }
                     PatuiStepRunnerFlavour::Sender(_) => {}
                     PatuiStepRunnerFlavour::Plugin(_) => {

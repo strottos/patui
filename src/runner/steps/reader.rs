@@ -15,7 +15,7 @@ use tokio_util::io::ReaderStream;
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
 use crate::types::{
-    expr::ast::{ExprKind, Lit, LitKind},
+    expr::ast::{ExprKind, LitKind},
     PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
 };
 

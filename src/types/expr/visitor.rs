@@ -35,7 +35,7 @@ impl PatuiExpr {
                 p1.visit(visitor)?;
                 p2.visit(visitor)?;
             }
-            ExprKind::UnOp(un_op, p) => {
+            ExprKind::UnOp(_, p) => {
                 p.visit(visitor)?;
             }
             ExprKind::BinOp(_, p, p1) => {
@@ -106,7 +106,7 @@ mod tests {
                 Ok(())
             }
 
-            fn visit_term(&mut self, term: &Term) -> Result<()> {
+            fn visit_term(&mut self, _term: &Term) -> Result<()> {
                 self.term_visits += 1;
                 Ok(())
             }
