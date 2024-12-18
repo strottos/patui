@@ -6,7 +6,7 @@ use tokio::{sync::broadcast, task::JoinHandle};
 
 use super::PatuiStepRunnerTrait;
 use crate::types::{
-    expr::ast::{ExprKind, LitKind},
+    expr::ast::{ExprKind, Lit, LitKind},
     PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
 };
 
@@ -43,7 +43,10 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
 
         let task = tokio::spawn(async move {
             tracing::trace!("Running sender step with expr: {:?}", step.expr);
-            if let ExprKind::List(elems) = step.expr.kind() {
+            if let ExprKind::Lit(Lit {
+                kind: LitKind::List(elems),
+            }) = step.expr.kind()
+            {
                 for elem in elems {
                     if let ExprKind::Lit(lit) = elem.kind() {
                         let data = match &lit.kind {
@@ -63,7 +66,9 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                             LitKind::Integer(_) => todo!(),
                             LitKind::Decimal(_) => todo!(),
                             LitKind::Str(_) => todo!(),
-                            LitKind::Token(_) => todo!(),
+                            LitKind::List(_) => todo!(),
+                            LitKind::Map(_) => todo!(),
+                            LitKind::Set(_) => todo!(),
                         };
                     } else {
                         todo!();
@@ -102,9 +107,11 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                         .await
                         .unwrap();
                     }
-                    LitKind::Token(_) => todo!(),
+                    LitKind::List(_) => todo!(),
+                    LitKind::Map(_) => todo!(),
+                    LitKind::Set(_) => todo!(),
                 };
-            } else if let ExprKind::Ident(ident) = step.expr.kind() {
+            } else if let ExprKind::Term(term) = step.expr.kind() {
                 todo!();
             } else {
                 todo!();

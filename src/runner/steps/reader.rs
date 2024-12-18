@@ -16,10 +16,7 @@ use tokio_util::io::ReaderStream;
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
 use crate::types::{
-    expr::{
-        ast::{ExprKind, Lit, LitKind},
-        get_all_idents,
-    },
+    expr::ast::{ExprKind, Lit, LitKind},
     PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
 };
 
@@ -69,7 +66,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         let receivers = self.receivers.take();
 
         let task = tokio::spawn(async move {
-            if matches!(step.r#in.kind(), ExprKind::Field(_, _)) {
+            if matches!(step.r#in.kind(), ExprKind::Term(_)) {
                 tracing::trace!("Reading from step: {:?}", step.r#in);
                 let Some(mut receivers) = receivers else {
                     panic!("No receivers found");

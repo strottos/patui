@@ -9,7 +9,7 @@ pub trait Visitor {
         Ok(())
     }
 
-    fn visit_ident(&mut self, ident: &Ident) -> Result<()> {
+    fn visit_term(&mut self, term: &Term) -> Result<()> {
         Ok(())
     }
 
@@ -29,42 +29,11 @@ impl PatuiExpr {
     fn walk_expr(&self, visitor: &mut dyn Visitor) -> Result<()> {
         match &self.kind {
             ExprKind::Lit(lit) => visitor.visit_lit(lit)?,
-            ExprKind::Ident(ident) => visitor.visit_ident(ident)?,
-            ExprKind::Field(p, ident) => {
-                p.visit(visitor)?;
-                visitor.visit_ident(ident)?;
-            }
-            ExprKind::Call(p, vec) => {
-                p.visit(visitor)?;
-                for expr in vec {
-                    expr.visit(visitor)?;
-                }
-            }
-            ExprKind::Index(p, p1) => {
-                p.visit(visitor)?;
-                p1.visit(visitor)?;
-            }
+            ExprKind::Term(term) => visitor.visit_term(term)?,
             ExprKind::If(p, p1, p2) => {
                 p.visit(visitor)?;
                 p1.visit(visitor)?;
                 p2.visit(visitor)?;
-            }
-            ExprKind::List(vec) => {
-                for expr in vec {
-                    expr.visit(visitor)?;
-                }
-            }
-            ExprKind::Map(vec) => {
-                for elems in vec {
-                    let (k, v) = &**elems;
-                    k.visit(visitor)?;
-                    v.visit(visitor)?;
-                }
-            }
-            ExprKind::Set(vec) => {
-                for expr in vec {
-                    expr.visit(visitor)?;
-                }
             }
             ExprKind::UnOp(un_op, p) => {
                 p.visit(visitor)?;
@@ -129,7 +98,7 @@ mod tests {
 
         struct StepVisitor {
             lit_visits: i32,
-            ident_visits: i32,
+            term_visits: i32,
             expr_visits: i32,
         }
 
@@ -139,8 +108,8 @@ mod tests {
                 Ok(())
             }
 
-            fn visit_ident(&mut self, ident: &Ident) -> Result<()> {
-                self.ident_visits += 1;
+            fn visit_term(&mut self, term: &Term) -> Result<()> {
+                self.term_visits += 1;
                 Ok(())
             }
 
@@ -152,14 +121,14 @@ mod tests {
 
         let mut step_visitor = StepVisitor {
             lit_visits: 0,
-            ident_visits: 0,
+            term_visits: 0,
             expr_visits: 0,
         };
 
         expr.visit(&mut step_visitor).unwrap();
 
-        assert_eq!(step_visitor.lit_visits, 13);
-        assert_eq!(step_visitor.ident_visits, 4);
-        assert_eq!(step_visitor.expr_visits, 33);
+        assert_eq!(step_visitor.lit_visits, 9);
+        assert_eq!(step_visitor.term_visits, 2);
+        assert_eq!(step_visitor.expr_visits, 22);
     }
 }
