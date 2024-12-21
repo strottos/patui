@@ -1,29 +1,20 @@
 use crate::{
-    db::{PatuiTestDb, PatuiTestStepId},
+    db::PatuiTestDb,
     tui::{
-        app::{Action, DbRead, EditorMode, HelpItem, PaneType, StatusChange},
+        app::{Action, HelpItem, StatusChange},
         widgets::{Text, TextDisplay},
     },
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::Result;
-use ratatui::{
-    layout::Alignment,
-    prelude::{Frame, Rect},
-    style::{Color, Style},
-    widgets::{
-        Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        StatefulWidget, Widget, Wrap,
-    },
-};
+use ratatui::prelude::{Frame, Rect};
 
 use super::Pane;
 
 #[derive(Debug)]
 pub(crate) struct TestDetailsPane {
-    test: PatuiTestDb,
-
+    // test: PatuiTestDb,
     text_display: TextDisplay,
 }
 
@@ -61,7 +52,10 @@ impl TestDetailsPane {
 
         let text_display = TextDisplay::new_with_text(text, Some("Test Details".to_string()), true);
 
-        Self { test, text_display }
+        Self {
+            // test,
+            text_display,
+        }
     }
 }
 
@@ -115,14 +109,6 @@ impl Pane for TestDetailsPane {
             HelpItem::new("↑ | ↓", "Navigate", "Navigate"),
             HelpItem::new("<Enter>", "Select Test", "Select Test"),
         ]
-    }
-
-    fn pane_type(&self) -> PaneType {
-        PaneType::TestDetail
-    }
-
-    fn pane_title(&self) -> String {
-        format!("Test Details (id = {})", self.test.id)
     }
 
     fn set_focus(&mut self, is_focussed: bool) {

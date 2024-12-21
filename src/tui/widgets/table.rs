@@ -1,6 +1,5 @@
 use std::{cell::Cell, cmp};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Rect},
@@ -11,8 +10,6 @@ use ratatui::{
         ScrollbarState, StatefulWidget, Table as RatatuiTable, WidgetRef,
     },
 };
-
-use crate::tui::app::Action;
 
 use super::patui_widget::ScrollType;
 
@@ -127,11 +124,6 @@ impl SelectedData {
         self.calculate_first_row_from_selected_idx();
 
         self.selected_idx - old_selected_idx
-    }
-
-    pub(crate) fn set_first_row(&mut self, first_row: usize) {
-        debug_assert!(first_row < self.num_elements);
-        self.first_row = first_row;
     }
 
     pub(crate) fn add_first_row(&mut self, shift: isize) {
@@ -288,13 +280,6 @@ impl<'a> Table<'a> {
             ScrollType::HalfPageUp => self
                 .selected_data
                 .add_first_row(-((display_height / 2) as isize)),
-            ScrollType::Top => self.selected_data.set_first_row(0),
-            ScrollType::Bottom => self
-                .selected_data
-                .set_first_row(
-                    cmp::max(0, self.elements.len() as isize - display_height as isize) as usize,
-                ),
-            _ => unreachable!(),
         };
     }
 
@@ -658,7 +643,7 @@ mod tests {
     #[test]
     fn test_display_table_with_offsets() {
         let mut table = create_tests_table(40, None, false);
-        table.selected_data.set_first_row(10);
+        table.selected_data.first_row = 10;
         let rect = Rect::new(0, 0, 120, 20);
         let mut buffer = Buffer::empty(rect);
 
@@ -671,7 +656,7 @@ mod tests {
     #[test]
     fn test_display_table_with_selected_idx() {
         let mut table = create_tests_table(40, None, true);
-        table.selected_data.set_first_row(10);
+        table.selected_data.first_row = 10;
         table.selected_data.set_selected_idx(12);
         let rect = Rect::new(0, 0, 120, 20);
         let mut buffer = Buffer::empty(rect);

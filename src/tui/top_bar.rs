@@ -1,6 +1,5 @@
-use crate::tui::app::{Action, PaneType, UpdateData};
+use crate::tui::app::{Action, PaneType};
 
-use crossterm::event::{KeyCode, KeyModifiers};
 use eyre::Result;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -65,48 +64,48 @@ impl TopBar {
         f.render_widget(right, chunks[1]);
     }
 
-    pub(crate) fn input(
-        &mut self,
-        key: &crossterm::event::KeyEvent,
-        panes_len: usize,
-    ) -> Result<Vec<Action>> {
-        let mut ret = vec![];
+    // pub(crate) fn input(
+    //     &mut self,
+    //     key: &crossterm::event::KeyEvent,
+    //     panes_len: usize,
+    // ) -> Result<Vec<Action>> {
+    //     let ret = vec![];
 
-        let level: usize = match (key.code, key.modifiers) {
-            (KeyCode::Char('1'), KeyModifiers::CONTROL) => 1,
-            (KeyCode::Char('2'), KeyModifiers::CONTROL) => 2,
-            (KeyCode::Char('3'), KeyModifiers::CONTROL) => 3,
-            (KeyCode::Char('4'), KeyModifiers::CONTROL) => 4,
-            (KeyCode::Char('5'), KeyModifiers::CONTROL) => 5,
-            (KeyCode::Char('6'), KeyModifiers::CONTROL) => 6,
-            (KeyCode::Char('7'), KeyModifiers::CONTROL) => 7,
-            (KeyCode::Char('8'), KeyModifiers::CONTROL) => 8,
-            (KeyCode::Char('9'), KeyModifiers::CONTROL) => 9,
-            _ => return Ok(vec![]),
-        };
+    //     let level: usize = match (key.code, key.modifiers) {
+    //         (KeyCode::Char('1'), KeyModifiers::CONTROL) => 1,
+    //         (KeyCode::Char('2'), KeyModifiers::CONTROL) => 2,
+    //         (KeyCode::Char('3'), KeyModifiers::CONTROL) => 3,
+    //         (KeyCode::Char('4'), KeyModifiers::CONTROL) => 4,
+    //         (KeyCode::Char('5'), KeyModifiers::CONTROL) => 5,
+    //         (KeyCode::Char('6'), KeyModifiers::CONTROL) => 6,
+    //         (KeyCode::Char('7'), KeyModifiers::CONTROL) => 7,
+    //         (KeyCode::Char('8'), KeyModifiers::CONTROL) => 8,
+    //         (KeyCode::Char('9'), KeyModifiers::CONTROL) => 9,
+    //         _ => return Ok(vec![]),
+    //     };
 
-        if level >= panes_len || level == 0 {
-            return Ok(vec![]);
-        }
+    //     if level >= panes_len || level == 0 {
+    //         return Ok(vec![]);
+    //     }
 
-        // Should always be at least 0 because level == 0 handled above
-        self.selected_idx = level - 1;
+    //     // Should always be at least 0 because level == 0 handled above
+    //     self.selected_idx = level - 1;
 
-        // TODO
-        // ret.push(Action::PaneChange(level));
+    //     // TODO
+    //     // ret.push(Action::PaneChange(level));
 
-        Ok(ret)
-    }
+    //     Ok(ret)
+    // }
 
     pub(crate) fn update(&mut self, action: &Action) -> Result<Vec<Action>> {
         match action {
-            Action::PaneChange(level) => {
+            Action::PaneChange(_) => {
                 // TODO
                 //self.selected_idx = *level - 1;
             }
-            Action::UpdateData(UpdateData::BreadcrumbTitles(titles)) => {
-                self.panes_titles = titles.clone();
-            }
+            // Action::UpdateData(UpdateData::BreadcrumbTitles(titles)) => {
+            //     self.panes_titles = titles.clone();
+            // }
             _ => {}
         }
 

@@ -1,9 +1,7 @@
-use crate::db::{PatuiTestDb, PatuiTestId, PatuiTestStepId};
+use crate::db::{PatuiTestDb, PatuiTestId};
 use crate::types::{PatuiTest, PatuiTestDetails};
-use crossterm::event::KeyEvent;
-use eyre::Result;
 
-use super::{error::Error, popups::PopupComponent};
+use super::{error::PatuiError, popups::PopupComponent};
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub(crate) enum Mode {
@@ -47,7 +45,7 @@ pub(crate) enum DbUpdate {
 pub(crate) enum UpdateData {
     Tests(Vec<PatuiTestDb>),
     TestDetail(PatuiTest),
-    BreadcrumbTitles(Vec<String>),
+    // BreadcrumbTitles(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,28 +104,11 @@ impl HelpItem {
     }
 }
 
-pub(crate) trait Component: std::fmt::Debug {
-    /// Take input for the component and optionally send back an action to perform
-    fn input(&mut self, _key: &KeyEvent, _mode: &PaneType) -> Result<Vec<Action>> {
-        Ok(vec![])
-    }
-
-    /// Get the keys that the component is listening for
-    fn keys(&self, _mode: &PaneType) -> Vec<HelpItem> {
-        vec![]
-    }
-
-    /// Update the component based on an action and optionally send back actions to perform
-    fn update(&mut self, _action: &Action) -> Result<Vec<Action>> {
-        Ok(vec![])
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum EditorMode {
     CreateTest,
     UpdateTest(PatuiTestId),
-    UpdateTestStep(PatuiTestId, PatuiTestStepId),
+    // UpdateTestStep(PatuiTestId, PatuiTestStepId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,7 +119,7 @@ pub(crate) enum Action {
     Resize(u16, u16),
     Quit,
     ForceRedraw,
-    Error(Error),
+    Error(PatuiError),
     StatusChange(StatusChange),
     PaneChange(PaneType),
     PopupCreate(PopupMode),

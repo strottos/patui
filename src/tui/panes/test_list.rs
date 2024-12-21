@@ -1,9 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::Result;
 use ratatui::{
-    layout::{Alignment, Constraint, Rect},
+    layout::{Constraint, Rect},
     text::Text,
-    widgets::{Block, Borders, Padding},
     Frame,
 };
 
@@ -32,7 +31,7 @@ pub(crate) struct TestListPane<'a> {
 impl<'a> TestListPane<'a> {
     pub(crate) fn new() -> Self {
         // Dummy temporary table to be replaced with actual data
-        let mut table = Table::new_with_elements(
+        let table = Table::new_with_elements(
             vec![vec!["Loading tests...".into()]],
             vec![TableHeader::new("Name".into(), 0, Constraint::Min(12))],
             vec![TableHeader::new("Name".into(), 0, Constraint::Min(12))],
@@ -267,19 +266,19 @@ impl<'a> Pane for TestListPane<'a> {
         ]
     }
 
-    fn pane_type(&self) -> PaneType {
-        match self.get_selected_test_id() {
-            Some(id) => PaneType::TestDetail,
-            None => PaneType::TestList,
-        }
-    }
+    // fn pane_type(&self) -> PaneType {
+    //     match self.get_selected_test_id() {
+    //         Some(_) => PaneType::TestDetail,
+    //         None => PaneType::TestList,
+    //     }
+    // }
 
-    fn pane_title(&self) -> String {
-        match self.get_selected_test_id() {
-            Some(id) => format!("Tests (selected id = {})", id),
-            None => "Tests".to_string(),
-        }
-    }
+    // fn pane_title(&self) -> String {
+    //     match self.get_selected_test_id() {
+    //         Some(id) => format!("Tests (selected id = {})", id),
+    //         None => "Tests".to_string(),
+    //     }
+    // }
 
     fn set_focus(&mut self, focus: bool) {
         tracing::trace!("Setting focus to {}", focus);

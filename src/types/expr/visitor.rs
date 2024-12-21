@@ -5,15 +5,15 @@ use super::ast::*;
 use eyre::Result;
 
 pub trait Visitor {
-    fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
+    fn visit_expr(&mut self, _expr: &PatuiExpr) -> Result<()> {
         Ok(())
     }
 
-    fn visit_ident(&mut self, ident: &Ident) -> Result<()> {
+    fn visit_ident(&mut self, _ident: &Ident) -> Result<()> {
         Ok(())
     }
 
-    fn visit_lit(&mut self, lit: &Lit) -> Result<()> {
+    fn visit_lit(&mut self, _lit: &Lit) -> Result<()> {
         Ok(())
     }
 }
@@ -66,10 +66,10 @@ impl PatuiExpr {
                     expr.visit(visitor)?;
                 }
             }
-            ExprKind::UnOp(un_op, p) => {
+            ExprKind::UnOp(_, p) => {
                 p.visit(visitor)?;
             }
-            ExprKind::BinOp(bin_op, p, p1) => {
+            ExprKind::BinOp(_, p, p1) => {
                 p.visit(visitor)?;
                 p1.visit(visitor)?;
             }
@@ -98,7 +98,7 @@ mod tests {
 
         struct StepVisitor {
             visited: Option<Lit>,
-        };
+        }
 
         impl Visitor for StepVisitor {
             fn visit_lit(&mut self, lit: &Lit) -> Result<()> {
@@ -111,12 +111,10 @@ mod tests {
 
         expr.visit(&mut step_visitor).unwrap();
 
-        assert_eq!(
-            step_visitor.visited,
-            Some(Lit {
-                kind: LitKind::Integer("1".to_string()),
-            })
-        );
+        assert_that!(step_visitor.visited).is_some();
+        assert_that!(step_visitor.visited.unwrap()).is_equal_to(Lit {
+            kind: LitKind::Integer("1".to_string()),
+        });
     }
 
     #[traced_test]
@@ -134,17 +132,17 @@ mod tests {
         }
 
         impl Visitor for StepVisitor {
-            fn visit_lit(&mut self, lit: &Lit) -> Result<()> {
+            fn visit_lit(&mut self, _lit: &Lit) -> Result<()> {
                 self.lit_visits += 1;
                 Ok(())
             }
 
-            fn visit_ident(&mut self, ident: &Ident) -> Result<()> {
+            fn visit_ident(&mut self, _ident: &Ident) -> Result<()> {
                 self.ident_visits += 1;
                 Ok(())
             }
 
-            fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
+            fn visit_expr(&mut self, _expr: &PatuiExpr) -> Result<()> {
                 self.expr_visits += 1;
                 Ok(())
             }

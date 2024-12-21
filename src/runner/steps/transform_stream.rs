@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::types::{
     expr::ast::ExprKind, PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour,
-    PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
+    PatuiStepTransformStream,
 };
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
@@ -44,12 +44,13 @@ impl PatuiStepRunnerTransformStream {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
-    fn init(
+    async fn init(
         &mut self,
         current_step_name: &str,
         step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
-        let receivers = init_subscribe_steps(&self.step.r#in, current_step_name, step_runners)?;
+        let receivers =
+            init_subscribe_steps(&self.step.r#in, current_step_name, step_runners).await?;
         self.receivers = Some(receivers);
 
         Ok(())
@@ -59,7 +60,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         let step = self.step.clone();
         let step_name = self.step_name.clone();
 
-        let mut out_sender = self.out.as_ref().unwrap().0.clone();
+        let out_sender = self.out.as_ref().unwrap().0.clone();
         let receivers = self.receivers.take();
 
         let task = tokio::spawn(async move {
@@ -75,16 +76,22 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
                         PatuiStepData {
                             data: PatuiStepDataFlavour::Bytes(data),
                             ..
-                        } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-                            serde_json::from_slice(&data).unwrap(),
-                        )),
+                        } => PatuiStepData::new(
+                            serde_json::from_slice::<serde_json::Value>(&data)
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        ),
 
                         PatuiStepData {
                             data: PatuiStepDataFlavour::String(data),
                             ..
-                        } => PatuiStepData::new(PatuiStepDataFlavour::Json(
-                            serde_json::from_str(&data).unwrap(),
-                        )),
+                        } => PatuiStepData::new(
+                            serde_json::from_str::<serde_json::Value>(&data)
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        ),
 
                         _ => todo!(),
                     };
@@ -111,7 +118,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         Ok(())
     }
 
-    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
+    async fn subscribe(&mut self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         match sub {
             "out" => Ok(self.out.as_ref().unwrap().0.subscribe()),
             _ => Err(eyre!("Invalid subscription")),
@@ -135,7 +142,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         sub_ref: &str,
         rx: broadcast::Receiver<PatuiStepData>,
     ) -> Result<()> {
-        let receivers = HashMap::from(([(sub_ref.try_into().unwrap(), rx)]));
+        let receivers = HashMap::from([(sub_ref.try_into().unwrap(), rx)]);
         self.receivers = Some(receivers);
 
         Ok(())
@@ -144,14 +151,14 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, time::Duration};
+    use std::time::Duration;
 
     use assertor::*;
     use bytes::Bytes;
     use tokio::time::timeout;
     use tracing_test::traced_test;
 
-    use crate::types::PatuiStepDataTransfer;
+    use crate::types::PatuiStepTransformStreamFlavour;
 
     use super::*;
 
@@ -166,7 +173,7 @@ mod tests {
             },
         );
 
-        let output_rx = main_step.subscribe("out");
+        let output_rx = main_step.subscribe("out").await;
 
         assert_that!(output_rx).is_ok();
         let mut output_rx = output_rx.unwrap();
@@ -188,10 +195,11 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(recv.data().is_json()).is_true();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
-            {"key": "value"}
-        )));
+        assert_that!(recv.data().is_object()).is_true();
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Map(HashMap::from([(
+            "key".into(),
+            PatuiStepDataFlavour::String("value".into()),
+        )])));
     }
 
     #[traced_test]
@@ -205,7 +213,7 @@ mod tests {
             },
         );
 
-        let output_rx = main_step.subscribe("out");
+        let output_rx = main_step.subscribe("out").await;
 
         assert_that!(output_rx).is_ok();
         let mut output_rx = output_rx.unwrap();
@@ -220,7 +228,7 @@ mod tests {
             )))
             .unwrap();
 
-        let (res_tx, mut res_rx) = mpsc::channel(1);
+        let (res_tx, _res_rx) = mpsc::channel(1);
 
         assert_that!(main_step.run(res_tx.clone())).is_ok();
 
@@ -229,9 +237,10 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(recv.data().is_json()).is_true();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Json(serde_json::json!(
-            {"key": "value"}
-        )));
+        assert_that!(recv.data().is_object()).is_true();
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Map(HashMap::from([(
+            "key".into(),
+            PatuiStepDataFlavour::String("value".into()),
+        )])));
     }
 }

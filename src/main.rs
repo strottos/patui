@@ -1,3 +1,4 @@
+#![feature(inline_const_pat)]
 #![feature(iter_intersperse)]
 #![deny(missing_debug_implementations)]
 

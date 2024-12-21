@@ -1,22 +1,25 @@
 mod other;
 mod transform_stream;
 
-use std::io::Read;
+use std::collections::HashMap;
 
 use bytes::Bytes;
 use convert_case::{Case, Casing};
-use edit::edit;
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
-use strum::{EnumDiscriminants, IntoStaticStr, VariantArray, VariantNames};
+use strum::{EnumDiscriminants, IntoStaticStr, VariantNames};
 
 pub(crate) use other::{
-    PatuiStepAssertion, PatuiStepAssertionEditable, PatuiStepRead, PatuiStepReadEditable,
-    PatuiStepSender, PatuiStepSenderEditable, PatuiStepWrite, PatuiStepWriteEditable,
+    PatuiStepAssertion, PatuiStepAssertionEditable, PatuiStepPlugin, PatuiStepPluginEditable,
+    PatuiStepRead, PatuiStepReadEditable, PatuiStepSender, PatuiStepSenderEditable, PatuiStepWrite,
+    PatuiStepWriteEditable,
 };
-pub(crate) use transform_stream::{
-    PatuiStepTransformStream, PatuiStepTransformStreamEditable, PatuiStepTransformStreamFlavour,
-};
+pub(crate) use transform_stream::{PatuiStepTransformStream, PatuiStepTransformStreamEditable};
+
+#[cfg(test)]
+pub(crate) use transform_stream::PatuiStepTransformStreamFlavour;
+
+use super::PatuiExpr;
 
 /// PatuiStepEditable is to endable users ability to edit steps before they
 /// are saved to the database, similar to PatuiTestEditable.
@@ -61,6 +64,32 @@ impl From<PatuiStep> for PatuiStepEditable {
                         expr: patui_step_sender.expr.into(),
                     })
                 }
+                PatuiStepDetails::Plugin(patui_step_plugin) => {
+                    PatuiStepDetailsEditable::Plugin(PatuiStepPluginEditable {
+                        path: patui_step_plugin.path.clone(),
+                        config: Some(
+                            patui_step_plugin
+                                .config
+                                .into_iter()
+                                .map(|(k, v)| (k, v.into()))
+                                .collect(),
+                        ),
+                        r#in: Some(
+                            patui_step_plugin
+                                .r#in
+                                .into_iter()
+                                .map(|(k, v)| (k, v.into()))
+                                .collect(),
+                        ),
+                        out: Some(
+                            patui_step_plugin
+                                .out
+                                .into_iter()
+                                .map(|(k, v)| (k, v.into()))
+                                .collect(),
+                        ),
+                    })
+                }
             },
         }
     }
@@ -97,6 +126,29 @@ impl From<&PatuiStep> for PatuiStepEditable {
                 PatuiStepDetails::Sender(patui_step_sender) => {
                     PatuiStepDetailsEditable::Sender(PatuiStepSenderEditable {
                         expr: (&patui_step_sender.expr).into(),
+                    })
+                }
+                PatuiStepDetails::Plugin(patui_step_plugin) => {
+                    PatuiStepDetailsEditable::Plugin(PatuiStepPluginEditable {
+                        path: patui_step_plugin.path.clone(),
+                        config: Some(
+                            (&patui_step_plugin.config)
+                                .into_iter()
+                                .map(|(k, v)| (k.clone(), v.into()))
+                                .collect(),
+                        ),
+                        r#in: Some(
+                            (&patui_step_plugin.r#in)
+                                .into_iter()
+                                .map(|(k, v)| (k.clone(), v.into()))
+                                .collect(),
+                        ),
+                        out: Some(
+                            (&patui_step_plugin.out)
+                                .into_iter()
+                                .map(|(k, v)| (k.clone(), v.into()))
+                                .collect(),
+                        ),
                     })
                 }
             },
@@ -153,6 +205,41 @@ impl TryFrom<&PatuiStepEditable> for PatuiStep {
                         expr: (&patui_step_sender_editable.expr[..]).try_into()?,
                     })
                 }
+                PatuiStepDetailsEditable::Plugin(patui_step_plugin_editable) => {
+                    PatuiStepDetails::Plugin(PatuiStepPlugin {
+                        path: patui_step_plugin_editable.path.clone(),
+                        config: match &patui_step_plugin_editable.config {
+                            Some(config) => config
+                                .into_iter()
+                                .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
+                                    Ok(v) => Ok((k.clone(), v)),
+                                    Err(e) => Err(e),
+                                })
+                                .collect::<Result<_>>()?,
+                            None => HashMap::new(),
+                        },
+                        r#in: match &patui_step_plugin_editable.r#in {
+                            Some(r#in) => r#in
+                                .into_iter()
+                                .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
+                                    Ok(v) => Ok((k.clone(), v)),
+                                    Err(e) => Err(e),
+                                })
+                                .collect::<Result<_>>()?,
+                            None => HashMap::new(),
+                        },
+                        out: match &patui_step_plugin_editable.out {
+                            Some(out) => out
+                                .into_iter()
+                                .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
+                                    Ok(v) => Ok((k.clone(), v)),
+                                    Err(e) => Err(e),
+                                })
+                                .collect::<Result<_>>()?,
+                            None => HashMap::new(),
+                        },
+                    })
+                }
             },
         })
     }
@@ -165,6 +252,7 @@ pub(crate) enum PatuiStepDetailsEditable {
     Write(PatuiStepWriteEditable),
     Assertion(PatuiStepAssertionEditable),
     Sender(PatuiStepSenderEditable),
+    Plugin(PatuiStepPluginEditable),
 }
 
 #[derive(
@@ -177,7 +265,7 @@ pub(crate) enum PatuiStepDetails {
     Sender(PatuiStepSender),
     TransformStream(PatuiStepTransformStream),
     Assertion(PatuiStepAssertion),
-    // TODO: Plugin
+    Plugin(PatuiStepPlugin),
 }
 
 impl PatuiStepDetails {
@@ -198,41 +286,34 @@ impl PatuiStepDetails {
         Ok(match self {
             PatuiStepDetails::TransformStream(stream) => serde_yaml::to_string(stream)?,
             PatuiStepDetails::Assertion(assertion) => serde_yaml::to_string(assertion)?,
-            PatuiStepDetails::Read(patui_step_read) => serde_yaml::to_string(patui_step_read)?,
-            PatuiStepDetails::Write(patui_step_write) => serde_yaml::to_string(patui_step_write)?,
-            PatuiStepDetails::Sender(patui_step_sender) => {
-                serde_yaml::to_string(patui_step_sender)?
-            }
+            PatuiStepDetails::Read(reader) => serde_yaml::to_string(reader)?,
+            PatuiStepDetails::Write(writer) => serde_yaml::to_string(writer)?,
+            PatuiStepDetails::Sender(sender) => serde_yaml::to_string(sender)?,
+            PatuiStepDetails::Plugin(plugin) => serde_yaml::to_string(plugin)?,
         })
     }
 
-    pub(crate) fn to_editable_yaml(&self) -> Result<String> {
-        match self {
-            _ => self.inner_yaml(),
-        }
-    }
+    // pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStepDetails) -> Result<Self> {
+    //     loop {
+    //         yaml_str = edit(&yaml_str)?;
+    //         match PatuiStepDetails::from_yaml_str(&yaml_str, step) {
+    //             Ok(step) => {
+    //                 return Ok(step);
+    //             }
+    //             Err(e) => {
+    //                 eprintln!("Failed to parse yaml: {e}\nPress any key to continue editing or Ctrl-C to cancel...");
+    //                 let buffer = &mut [0u8];
+    //                 let _ = std::io::stdin().read_exact(buffer);
+    //             }
+    //         };
+    //     }
+    // }
 
-    pub(crate) fn edit_yaml(mut yaml_str: String, step: &PatuiStepDetails) -> Result<Self> {
-        loop {
-            yaml_str = edit(&yaml_str)?;
-            match PatuiStepDetails::from_yaml_str(&yaml_str, step) {
-                Ok(step) => {
-                    return Ok(step);
-                }
-                Err(e) => {
-                    eprintln!("Failed to parse yaml: {e}\nPress any key to continue editing or Ctrl-C to cancel...");
-                    let buffer = &mut [0u8];
-                    let _ = std::io::stdin().read_exact(buffer);
-                }
-            };
-        }
-    }
-
-    pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStepDetails) -> Result<Self> {
-        Ok(match step {
-            _ => serde_yaml::from_str::<PatuiStepDetails>(yaml)?,
-        })
-    }
+    // pub(crate) fn from_yaml_str(yaml: &str, step: &PatuiStepDetails) -> Result<Self> {
+    //     Ok(match step {
+    //         _ => serde_yaml::from_str::<PatuiStepDetails>(yaml)?,
+    //     })
+    // }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -247,22 +328,35 @@ impl PatuiStepData {
         Self { timestamp, data }
     }
 
-    pub(crate) fn into_data(self) -> PatuiStepDataFlavour {
-        self.data
-    }
+    // pub(crate) fn into_data(self) -> PatuiStepDataFlavour {
+    //     self.data
+    // }
 
+    #[cfg(test)]
     pub(crate) fn data(&self) -> &PatuiStepDataFlavour {
         &self.data
     }
 }
 
+impl TryFrom<super::ptplugin::PatuiStepData> for PatuiStepData {
+    type Error = eyre::Error;
+
+    fn try_from(value: super::ptplugin::PatuiStepData) -> Result<Self, Self::Error> {
+        Ok(PatuiStepData::new(rmp_serde::from_slice(&value.bytes)?))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepDataFlavour {
+    Null,
+    Bool(bool),
     Bytes(Bytes),
     String(String),
-    Number(i64),
-    Json(serde_json::Value),
-    Yaml(serde_yaml::Value),
+    Integer(String),
+    Float(String),
+    Array(Vec<PatuiStepDataFlavour>),
+    Map(HashMap<String, PatuiStepDataFlavour>),
+    Set(Vec<PatuiStepDataFlavour>),
 }
 
 impl PatuiStepDataFlavour {
@@ -273,31 +367,97 @@ impl PatuiStepDataFlavour {
         }
     }
 
-    pub(crate) fn as_number(&self) -> Result<i64> {
-        match self {
-            Self::Number(number) => Ok(*number),
-            _ => Err(eyre!("not number")),
+    // pub(crate) fn as_number(&self) -> Result<i64> {
+    //     match self {
+    //         Self::Number(number) => Ok(*number),
+    //         _ => Err(eyre!("not number")),
+    //     }
+    // }
+
+    // pub(crate) fn is_bytes(&self) -> bool {
+    //     matches!(self, Self::Bytes(_))
+    // }
+
+    // pub(crate) fn is_string(&self) -> bool {
+    //     matches!(self, Self::String(_))
+    // }
+
+    // pub(crate) fn is_number(&self) -> bool {
+    //     matches!(self, Self::Number(_))
+    // }
+
+    #[cfg(test)]
+    pub(crate) fn is_object(&self) -> bool {
+        matches!(self, Self::Map(_))
+    }
+
+    // pub(crate) fn is_yaml(&self) -> bool {
+    //     matches!(self, Self::Yaml(_))
+    // }
+}
+
+impl From<bool> for PatuiStepDataFlavour {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<Bytes> for PatuiStepDataFlavour {
+    fn from(value: Bytes) -> Self {
+        Self::Bytes(value)
+    }
+}
+
+impl From<String> for PatuiStepDataFlavour {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<i64> for PatuiStepDataFlavour {
+    fn from(value: i64) -> Self {
+        Self::Integer(format!("{}", value))
+    }
+}
+
+impl From<f64> for PatuiStepDataFlavour {
+    fn from(value: f64) -> Self {
+        Self::Float(format!("{}", value))
+    }
+}
+
+impl TryFrom<serde_json::Value> for PatuiStepDataFlavour {
+    type Error = eyre::Error;
+
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        match value {
+            serde_json::Value::Null => Ok(Self::Null),
+            serde_json::Value::Bool(value) => Ok(Self::Bool(value)),
+            serde_json::Value::Number(value) => {
+                if let Some(value) = value.as_i64() {
+                    Ok(Self::Integer(format!("{}", value)))
+                } else if let Some(value) = value.as_f64() {
+                    Ok(Self::Float(format!("{}", value)))
+                } else {
+                    Err(eyre!("Invalid number"))
+                }
+            }
+            serde_json::Value::String(value) => Ok(Self::String(value)),
+            serde_json::Value::Array(value) => {
+                let value = value
+                    .into_iter()
+                    .map(|x| x.try_into())
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Self::Array(value))
+            }
+            serde_json::Value::Object(value) => {
+                let value = value
+                    .into_iter()
+                    .map(|(k, v)| Ok((k, v.try_into()?)))
+                    .collect::<Result<HashMap<_, _>>>()?;
+                Ok(Self::Map(value))
+            }
         }
-    }
-
-    pub(crate) fn is_bytes(&self) -> bool {
-        matches!(self, Self::Bytes(_))
-    }
-
-    pub(crate) fn is_string(&self) -> bool {
-        matches!(self, Self::String(_))
-    }
-
-    pub(crate) fn is_number(&self) -> bool {
-        matches!(self, Self::Number(_))
-    }
-
-    pub(crate) fn is_json(&self) -> bool {
-        matches!(self, Self::Json(_))
-    }
-
-    pub(crate) fn is_yaml(&self) -> bool {
-        matches!(self, Self::Yaml(_))
     }
 }
 

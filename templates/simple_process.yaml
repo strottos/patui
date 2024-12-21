@@ -2,12 +2,13 @@ name: simple_process
 description: A test that spawns an ls process and checks the output for expected behaviour
 steps:
   - name: run_coreutils_cat
-    details: !Process
-      command: /usr/bin/env
-      args:
-        - coreutils
-        - cat
-      in: file("./tests/data/test.txt")
+    details: !Plugin
+      path: ~/bin/patui-process
+      config:
+        command: "\"/usr/bin/env\""
+        args: "[\"coreutils\", \"cat\"]"
+      in:
+        stdin: file("./tests/data/test.txt")
 
   - name: coreutils_cat_lines
     details: !TransformStream

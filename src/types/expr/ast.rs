@@ -139,7 +139,7 @@ impl Hash for PatuiExpr {
 }
 
 impl PartialOrd for PatuiExpr {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, _other: &Self) -> Option<std::cmp::Ordering> {
         todo!()
     }
 }

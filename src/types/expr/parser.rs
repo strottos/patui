@@ -8,8 +8,6 @@ use super::{
 };
 
 pub(crate) fn parse(input: &str) -> Result<PatuiExpr> {
-    let raw = input.to_string();
-
     let mut lexer = LexerPeekable::new(Token::lexer(input));
 
     let expr = parse_expr(input, &mut lexer, vec![]);
@@ -296,7 +294,7 @@ fn parse_bytes(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiExpr> 
                 });
             }
             Ok(Token::LeftSquareBrace) => {
-                let bytes = parse_bytes_list(input, lexer)?;
+                let bytes = parse_bytes_list(lexer)?;
                 return Ok(PatuiExpr {
                     raw: input.to_string(),
                     kind: ExprKind::Lit(Lit {
@@ -312,7 +310,7 @@ fn parse_bytes(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiExpr> 
     Err(eyre!("Error, ran out of tokens while parsing bytes",))
 }
 
-fn parse_bytes_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Bytes> {
+fn parse_bytes_list(lexer: &mut LexerPeekable<'_>) -> Result<Bytes> {
     let mut bytes = Vec::new();
 
     while let Some(token) = lexer.next() {
@@ -382,6 +380,7 @@ fn parse_field(
 
 fn parse_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiExpr> {
     let start = lexer.span().start;
+    #[allow(unused)]
     let mut end = lexer.span().end;
 
     let mut elements = Vec::new();
@@ -400,8 +399,6 @@ fn parse_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiExpr> {
             return Err(eyre!("Couldn't parse list from string"));
         }
     }
-
-    tracing::trace!("Peek after list: {:?}", lexer.peek());
 
     Ok(PatuiExpr {
         raw: input[start..end].to_string(),
@@ -423,6 +420,7 @@ fn parse_index(
         return Err(eyre!("Couldn't parse list from string"));
     }
 
+    #[allow(unused)]
     let end = lexer.span().end;
 
     Ok(PatuiExpr {
@@ -440,6 +438,7 @@ fn parse_index(
 
 fn parse_set_or_map(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<PatuiExpr> {
     let start = lexer.span().start;
+    #[allow(unused)]
     let mut end = lexer.span().end;
 
     let mut map_elements = Vec::new();

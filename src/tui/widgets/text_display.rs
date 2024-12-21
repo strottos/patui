@@ -7,7 +7,7 @@ use ratatui::{
     text::{Line, Text as RatatuiText},
     widgets::{
         Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        StatefulWidget, WidgetRef, Wrap,
+        StatefulWidget, WidgetRef,
     },
 };
 

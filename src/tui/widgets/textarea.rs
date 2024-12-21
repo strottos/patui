@@ -58,14 +58,14 @@ impl<'a> TextArea<'a> {
         }
     }
 
-    pub(crate) fn set_valid_entries(&mut self, mut valid_entries: Vec<String>) {
-        valid_entries.sort();
-        self.valid_entries = valid_entries;
-        if self.validate.is_empty() {
-            self.validate
-                .push(Box::new(|s| s.valid_entries.contains(&s.get_text())));
-        }
-    }
+    // pub(crate) fn set_valid_entries(&mut self, mut valid_entries: Vec<String>) {
+    //     valid_entries.sort();
+    //     self.valid_entries = valid_entries;
+    //     if self.validate.is_empty() {
+    //         self.validate
+    //             .push(Box::new(|s| s.valid_entries.contains(&s.get_text())));
+    //     }
+    // }
 
     pub(crate) fn get_text(&'a self) -> String {
         self.inner.lines().join("\n")
@@ -75,13 +75,13 @@ impl<'a> TextArea<'a> {
         self.height
     }
 
-    pub(crate) fn name(&'a self) -> &'a str {
-        &self.name
-    }
+    // pub(crate) fn name(&'a self) -> &'a str {
+    //     &self.name
+    // }
 
-    pub(crate) fn is_valid(&'a self) -> bool {
-        self.is_valid
-    }
+    // pub(crate) fn is_valid(&'a self) -> bool {
+    //     self.is_valid
+    // }
 
     pub(crate) fn clear(&mut self) {
         self.inner.select_all();

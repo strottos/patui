@@ -3,10 +3,8 @@ pub(crate) enum ScrollType {
     Single(isize),
     HalfPageUp,
     HalfPageDown,
-    HalfPageLeft,
-    HalfPageRight,
+    // HalfPageLeft,
+    // HalfPageRight,
     FullPageUp,
     FullPageDown,
-    Top,
-    Bottom,
 }

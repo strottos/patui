@@ -3,7 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bytes::Bytes;
 use eyre::{eyre, Result};
 use futures::StreamExt;
 use tokio::{
@@ -16,10 +15,7 @@ use tokio_util::io::ReaderStream;
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
 use crate::types::{
-    expr::{
-        ast::{ExprKind, Lit, LitKind},
-        get_all_idents,
-    },
+    expr::ast::{ExprKind, LitKind},
     PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
 };
 
@@ -50,12 +46,13 @@ impl PatuiStepRunnerRead {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
-    fn init(
+    async fn init(
         &mut self,
         current_step_name: &str,
         step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
-        let receivers = init_subscribe_steps(&self.step.r#in, current_step_name, step_runners)?;
+        let receivers =
+            init_subscribe_steps(&self.step.r#in, current_step_name, step_runners).await?;
         self.receivers = Some(receivers);
 
         Ok(())
@@ -65,7 +62,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         let step = self.step.clone();
         let step_name = self.step_name.clone();
 
-        let mut out_sender = self.out.as_ref().unwrap().0.clone();
+        let out_sender = self.out.as_ref().unwrap().0.clone();
         let receivers = self.receivers.take();
 
         let task = tokio::spawn(async move {
@@ -124,7 +121,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         Ok(())
     }
 
-    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
+    async fn subscribe(&mut self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         match sub {
             "out" => Ok(self.out.as_ref().unwrap().0.subscribe()),
             _ => Err(eyre!("Invalid subscription {}", sub)),
@@ -148,7 +145,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         sub_ref: &str,
         rx: broadcast::Receiver<PatuiStepData>,
     ) -> Result<()> {
-        let receivers = HashMap::from(([(sub_ref.try_into().unwrap(), rx)]));
+        let receivers = HashMap::from([(sub_ref.try_into().unwrap(), rx)]);
         self.receivers = Some(receivers);
 
         Ok(())
@@ -160,13 +157,11 @@ mod tests {
     use std::time::Duration;
 
     use assertor::*;
+    use bytes::Bytes;
     use tokio::{sync::mpsc, time::timeout};
     use tracing_test::traced_test;
 
-    use crate::{
-        runner::steps::sender::PatuiStepRunnerSender,
-        types::{PatuiEventKind, PatuiStep, PatuiStepDetails, PatuiStepSender},
-    };
+    use crate::types::PatuiEventKind;
 
     use super::*;
 
@@ -180,7 +175,7 @@ mod tests {
             },
         );
 
-        let output_rx = main_step.subscribe("out");
+        let output_rx = main_step.subscribe("out").await;
 
         assert_that!(output_rx).is_ok();
         let mut output_rx = output_rx.unwrap();
@@ -193,9 +188,11 @@ mod tests {
 
         assert_that!(main_step.run(res_tx.clone())).is_ok();
 
-        input_tx.send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-            Bytes::from("This string gets sent by the test send data step"),
-        )));
+        input_tx
+            .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
+                Bytes::from("This string gets sent by the test send data step"),
+            )))
+            .unwrap();
 
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
@@ -229,7 +226,7 @@ mod tests {
         };
         let mut main_step = PatuiStepRunnerRead::new("main".to_string(), &step);
 
-        let output_rx = main_step.subscribe("out");
+        let output_rx = main_step.subscribe("out").await;
 
         assert_that!(output_rx).is_ok();
         let mut output_rx = output_rx.unwrap();

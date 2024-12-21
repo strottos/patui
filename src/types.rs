@@ -8,7 +8,7 @@ use std::io::Read;
 
 use bytes::Bytes;
 use edit::edit;
-use eyre::{eyre, Result};
+use eyre::Result;
 use rusqlite::{
     types::{ToSqlOutput, Value},
     ToSql,
@@ -23,10 +23,16 @@ use crate::{
 pub(crate) use expr::PatuiExpr;
 use steps::PatuiStepEditable;
 pub(crate) use steps::{
-    PatuiStep, PatuiStepAssertion, PatuiStepData, PatuiStepDataFlavour, PatuiStepDataTransfer,
-    PatuiStepDetails, PatuiStepRead, PatuiStepSender, PatuiStepTransformStream,
-    PatuiStepTransformStreamFlavour, PatuiStepWrite,
+    PatuiStep, PatuiStepAssertion, PatuiStepData, PatuiStepDataFlavour, PatuiStepDetails,
+    PatuiStepRead, PatuiStepSender, PatuiStepTransformStream, PatuiStepWrite,
 };
+
+#[cfg(test)]
+pub(crate) use steps::PatuiStepTransformStreamFlavour;
+
+pub mod ptplugin {
+    tonic::include_proto!("ptplugin");
+}
 
 /// PatuiTestEditable is for editing tests before they are saved to the
 /// database. This is usually used for sending back to the user for them
@@ -241,6 +247,7 @@ impl PatuiEvent {
         PatuiEvent::new(PatuiEventKind::Bytes(value), step_name)
     }
 
+    #[cfg(test)]
     pub(crate) fn value(&self) -> &PatuiEventKind {
         &self.value
     }
@@ -339,7 +346,7 @@ mod tests {
               - name: foo
                 depends_on: []
                 details: !Read
-                  in: "\"dir/file.txt""
+                  in: "\"dir/file.txt\""
               - name: bar
                 depends_on: []
                 details: !Assertion

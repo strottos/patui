@@ -3,12 +3,12 @@ use crate::types::PatuiStepWrite;
 
 #[derive(Debug)]
 pub(crate) struct PatuiStepRunnerWrite {
-    step: PatuiStepWrite,
+    // step: PatuiStepWrite,
 }
 
 impl PatuiStepRunnerWrite {
-    pub(crate) fn new(step: &PatuiStepWrite) -> Self {
-        Self { step: step.clone() }
+    pub(crate) fn new(_step: &PatuiStepWrite) -> Self {
+        Self {}
     }
 }
 

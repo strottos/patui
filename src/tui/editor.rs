@@ -1,7 +1,7 @@
-use eyre::{eyre, Result};
+use eyre::Result;
 
 use crate::{
-    db::{PatuiTestDb, PatuiTestStepId},
+    db::PatuiTestDb,
     types::{PatuiTest, PatuiTestDetails},
 };
 
@@ -19,20 +19,19 @@ pub(crate) fn edit_test(test: PatuiTestDb) -> Result<PatuiTest> {
     Ok(ret)
 }
 
-pub(crate) fn edit_step(mut test: PatuiTestDb, step_num: PatuiTestStepId) -> Result<PatuiTestDb> {
-    todo!();
-    // let step = test
-    //     .details
-    //     .steps
-    //     .get(usize::from(step_num))
-    //     .ok_or_else(|| eyre!("Step {} not found", step_num))?;
-    // let template = step.to_editable_yaml()?;
-    // let mut step = PatuiStep::edit_yaml(template, step)?;
-
-    // test.details
-    //     .steps
-    //     .get_mut(usize::from(step_num))
-    //     .replace(&mut step);
-
-    // Ok(test)
-}
+// pub(crate) fn edit_step(_test: PatuiTestDb, _step_num: PatuiTestStepId) -> Result<PatuiTestDb> {
+//     let step = test
+//         .details
+//         .steps
+//         .get(usize::from(step_num))
+//         .ok_or_else(|| eyre!("Step {} not found", step_num))?;
+//     let template = step.to_editable_yaml()?;
+//     let mut step = PatuiStep::edit_yaml(template, step)?;
+//
+//     test.details
+//         .steps
+//         .get_mut(usize::from(step_num))
+//         .replace(&mut step);
+//
+//     Ok(test)
+// }

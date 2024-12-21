@@ -2,7 +2,7 @@ use crossterm::event::KeyEvent;
 use eyre::Result;
 use ratatui::{layout::Rect, Frame};
 
-use super::app::{Action, HelpItem, PaneType};
+use super::app::{Action, HelpItem};
 
 mod test_details;
 mod test_list;
@@ -31,21 +31,7 @@ pub(crate) trait Pane: std::fmt::Debug {
     /// Render the component into the rect given
     fn render(&self, f: &mut Frame, rect: Rect);
 
-    fn pane_type(&self) -> PaneType;
+    // fn pane_type(&self) -> PaneType;
 
-    fn pane_title(&self) -> String;
-}
-
-pub(crate) trait ScrollablePane: Pane {
-    fn navigate(&mut self) -> Result<Vec<Action>>;
-
-    fn scroll_down(&mut self) -> Result<Vec<Action>>;
-
-    fn update_scroll(&mut self, _action: &Action) -> Result<Vec<Action>> {
-        Ok(vec![])
-    }
-
-    fn keys_scroll(&self) -> Vec<HelpItem> {
-        vec![]
-    }
+    // fn pane_title(&self) -> String;
 }

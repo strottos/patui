@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::Result;
 use indexmap::IndexMap;
@@ -8,18 +7,14 @@ use ratatui::{
 };
 
 use super::PopupComponent;
-use crate::{
-    tui::{
-        app::{Action, DbUpdate, HelpItem, PaneType},
-        error::{Error, ErrorType},
-        widgets::{Button, TextArea},
-    },
-    types::PatuiTestDetails,
+use crate::tui::{
+    app::{Action, HelpItem, PaneType},
+    widgets::{Button, TextArea},
 };
 
 #[derive(Debug)]
 pub(crate) struct TestEditComponent<'a> {
-    test: Option<PatuiTestDetails>,
+    // test: Option<PatuiTestDetails>,
     name_component: TextArea<'a>,
     desc_component: TextArea<'a>,
     selected_component_idx: usize,
@@ -48,7 +43,7 @@ impl<'a> TestEditComponent<'a> {
         let cancel_button = Button::new("Cancel".to_string());
 
         Self {
-            test: None,
+            // test: None,
             name_component,
             desc_component,
             extra_components: IndexMap::new(),
@@ -58,34 +53,34 @@ impl<'a> TestEditComponent<'a> {
         }
     }
 
-    pub(crate) fn new_update(test: PatuiTestDetails) -> Result<Self> {
-        let mut name_component = TextArea::new(
-            "Name".to_string(),
-            vec![Box::new(|x| {
-                let text = x.get_text();
-                if text.contains('\n') || text.contains('\r') || text.is_empty() {
-                    return false;
-                }
-                true
-            })],
-        );
-        name_component.selected(true);
+    // pub(crate) fn new_update(test: PatuiTestDetails) -> Result<Self> {
+    //     let mut name_component = TextArea::new(
+    //         "Name".to_string(),
+    //         vec![Box::new(|x| {
+    //             let text = x.get_text();
+    //             if text.contains('\n') || text.contains('\r') || text.is_empty() {
+    //                 return false;
+    //             }
+    //             true
+    //         })],
+    //     );
+    //     name_component.selected(true);
 
-        let desc_component = TextArea::new("Description".to_string(), vec![]);
+    //     let desc_component = TextArea::new("Description".to_string(), vec![]);
 
-        let edit_button = Button::new("Update".to_string());
-        let cancel_button = Button::new("Cancel".to_string());
+    //     let edit_button = Button::new("Update".to_string());
+    //     let cancel_button = Button::new("Cancel".to_string());
 
-        Ok(Self {
-            test: Some(test),
-            name_component,
-            desc_component,
-            selected_component_idx: 0,
-            extra_components: IndexMap::new(),
-            edit_button,
-            cancel_button,
-        })
-    }
+    //     Ok(Self {
+    //         test: Some(test),
+    //         name_component,
+    //         desc_component,
+    //         selected_component_idx: 0,
+    //         extra_components: IndexMap::new(),
+    //         edit_button,
+    //         cancel_button,
+    //     })
+    // }
 
     fn activate_selected(&mut self) {
         let num_components = self.num_components();
@@ -117,23 +112,23 @@ impl<'a> TestEditComponent<'a> {
         self.get_component(self.selected_component_idx)
     }
 
-    fn get_editable_components_mut(&mut self) -> Vec<&mut TextArea<'a>> {
-        let ret = vec![&mut self.name_component, &mut self.desc_component];
-        ret
-    }
+    // fn get_editable_components_mut(&mut self) -> Vec<&mut TextArea<'a>> {
+    //     let ret = vec![&mut self.name_component, &mut self.desc_component];
+    //     ret
+    // }
 
-    fn is_valid(&mut self) -> bool {
-        for (i, component) in self.get_editable_components_mut().iter_mut().enumerate() {
-            component.validate();
-            if !component.is_valid() {
-                self.selected_component_idx = i;
-                self.activate_selected();
-                return false;
-            }
-        }
+    // fn is_valid(&mut self) -> bool {
+    //     for (i, component) in self.get_editable_components_mut().iter_mut().enumerate() {
+    //         component.validate();
+    //         if !component.is_valid() {
+    //             self.selected_component_idx = i;
+    //             self.activate_selected();
+    //             return false;
+    //         }
+    //     }
 
-        true
-    }
+    //     true
+    // }
 
     fn is_ok_button(&self) -> bool {
         self.selected_component_idx == self.num_components() - 2
@@ -150,29 +145,28 @@ impl<'a> TestEditComponent<'a> {
         self.activate_selected();
     }
 
-    fn get_test_details(&self) -> Result<PatuiTestDetails> {
-        match self.test {
-            Some(ref test) => {
-                let now: DateTime<Local> = Local::now();
-                let mut new_test = test.clone();
-                new_test.name = self.name_component.get_text().clone();
-                new_test.description = self.desc_component.get_text().clone();
-                Ok(new_test)
-            }
-            None => {
-                let now: DateTime<Local> = Local::now();
+    // fn get_test_details(&self) -> Result<PatuiTestDetails> {
+    //     match self.test {
+    //         Some(ref test) => {
+    //             let mut new_test = test.clone();
+    //             new_test.name = self.name_component.get_text().clone();
+    //             new_test.description = self.desc_component.get_text().clone();
+    //             Ok(new_test)
+    //         }
+    //         None => {
+    //             let now: DateTime<Local> = Local::now();
 
-                Ok(PatuiTestDetails {
-                    name: self.name_component.get_text().clone(),
-                    description: self.desc_component.get_text().clone(),
-                    creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
-                    steps: vec![],
-                })
-            }
-        }
-    }
+    //             Ok(PatuiTestDetails {
+    //                 name: self.name_component.get_text().clone(),
+    //                 description: self.desc_component.get_text().clone(),
+    //                 creation_date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
+    //                 steps: vec![],
+    //             })
+    //         }
+    //     }
+    // }
 
-    fn crupdate_test(&mut self, mode: &PaneType) -> Vec<Action> {
+    fn crupdate_test(&mut self, _mode: &PaneType) -> Vec<Action> {
         vec![]
         // TODO
         // if !self.is_valid() {

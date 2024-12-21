@@ -1,8 +1,4 @@
-use std::{
-    cmp,
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::Result;
@@ -16,7 +12,7 @@ use tracing::{debug, trace};
 
 use super::{
     bottom_bar::BottomBar,
-    error::{Error, ErrorType},
+    error::{ErrorType, PatuiError},
     panes::{Pane, TestDetailsPane, TestListPane},
     popups::{ErrorComponent, HelpComponent, PopupComponent, TestEditComponent},
     terminal::{Event, Tui},
@@ -90,7 +86,7 @@ impl App {
             match db.create_tables().await {
                 Ok(created_tables) => {
                     if created_tables {
-                        let _ = action_tx.send(Action::Error(Error::new(
+                        let _ = action_tx.send(Action::Error(PatuiError::new(
                             ErrorType::Info,
                             "Welcome to Patui! Press 'n' to create a new test".to_string(),
                         )));
@@ -98,7 +94,7 @@ impl App {
                 }
                 Err(e) => {
                     // Panic if we can't send an error for display, we're in a bad state, might as well panic.
-                    if let Err(send_e) = action_tx.send(Action::Error(Error::new(
+                    if let Err(send_e) = action_tx.send(Action::Error(PatuiError::new(
                         ErrorType::Error,
                         format!("{}", e),
                     ))) {
@@ -408,7 +404,7 @@ impl App {
     async fn handle_mode_change(
         &mut self,
         mode_change: &StatusChange,
-        extra_actions: &mut Vec<Action>,
+        _extra_actions: &mut Vec<Action>,
     ) -> Result<()> {
         if self.panes.get(&PaneType::TestList).is_none() {
             self.panes.insert(
@@ -473,13 +469,13 @@ impl App {
         ret: &mut Vec<Action>,
     ) {
         if let Err(e) = self.handle_editor_mode_inner(editor_mode, tui, ret).await {
-            ret.push(Action::Error(Error::new(
+            ret.push(Action::Error(PatuiError::new(
                 ErrorType::Error,
                 format!(
                     "Error {} test, editor failure\n\n{}",
                     match editor_mode {
                         EditorMode::CreateTest => "creating",
-                        EditorMode::UpdateTest(_) | EditorMode::UpdateTestStep(_, _) => "editing",
+                        EditorMode::UpdateTest(_) => "editing", //  | EditorMode::UpdateTestStep(_, _)
                     },
                     e
                 ),
@@ -506,14 +502,13 @@ impl App {
                 let test_id = test.id;
                 ret.push(Action::DbUpdate(DbUpdate::Test(test.into())));
                 ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
-            }
-            EditorMode::UpdateTestStep(id, step_num) => {
-                let test = self.db.get_test(*id).await?;
-                let test = super::editor::edit_step(test, *step_num)?;
-                let test_id = test.id;
-                ret.push(Action::DbUpdate(DbUpdate::Test(test.into())));
-                ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
-            }
+            } // EditorMode::UpdateTestStep(id, step_num) => {
+              //     let test = self.db.get_test(*id).await?;
+              //     let test = super::editor::edit_step(test, *step_num)?;
+              //     let test_id = test.id;
+              //     ret.push(Action::DbUpdate(DbUpdate::Test(test.into())));
+              //     ret.push(Action::DbRead(DbRead::TestDetail(test_id)));
+              // }
         };
         tui.enter()?;
 
@@ -523,7 +518,7 @@ impl App {
     async fn handle_popup_create(&mut self, popup_mode: &PopupMode) -> Result<()> {
         let component: Box<dyn PopupComponent> = match popup_mode {
             PopupMode::CreateTest => Box::new(TestEditComponent::new()),
-            PopupMode::UpdateTest(id) => todo!(),
+            PopupMode::UpdateTest(_) => todo!(),
             // Box::new(TestEditComponent::new_update(
             //     self.db.get_test(*id).await?.details,
             // )?),

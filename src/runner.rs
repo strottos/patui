@@ -2,10 +2,7 @@ mod steps;
 
 use std::sync::{Arc, Mutex};
 
-use crate::{
-    db::PatuiRun,
-    types::{PatuiEvent, PatuiRunStatus},
-};
+use crate::{db::PatuiRun, types::PatuiRunStatus};
 
 use eyre::Result;
 use indexmap::IndexMap;
@@ -17,8 +14,7 @@ pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
 
     pub(crate) steps: IndexMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
-
-    results: Vec<PatuiEvent>,
+    // results: Vec<PatuiEvent>,
 }
 
 impl TestRunner {
@@ -34,16 +30,16 @@ impl TestRunner {
         Self {
             run,
             steps,
-            results: vec![],
+            // results: vec![],
         }
     }
 
     pub(crate) async fn run_test(mut self) -> Result<PatuiRun> {
         let (tx, mut rx) = mpsc::channel(100);
 
-        self.init_test()?;
+        self.init_test().await?;
 
-        for (name, step_collection) in self.steps.iter() {
+        for (_, step_collection) in self.steps.iter() {
             for step in step_collection {
                 let mut step = step.lock().unwrap();
                 step.run(tx.clone())?;
@@ -58,7 +54,7 @@ impl TestRunner {
             }
         });
 
-        for (name, step_collection) in self.steps.iter() {
+        for (_, step_collection) in self.steps.iter() {
             for step in step_collection {
                 step.lock().unwrap().wait().await?;
             }
@@ -71,9 +67,7 @@ impl TestRunner {
         Ok(self.run)
     }
 
-    fn init_test(&mut self) -> Result<()> {
-        let steps = self.steps.clone();
-
+    async fn init_test(&mut self) -> Result<()> {
         for (name, step_collection) in self.steps.iter() {
             for step in step_collection {
                 let mut step = step.lock().unwrap();
@@ -87,7 +81,7 @@ impl TestRunner {
 
                 // Make sure we have the other steps to ensure we don't try to relock this already
                 // locked mutex for this step. The `Self` step must be treated differently.
-                step.init(name, other_steps)?;
+                step.init(name, other_steps).await?;
             }
         }
 
@@ -106,7 +100,7 @@ mod tests {
     use crate::{
         db::PatuiInstance,
         types::{
-            PatuiExpr, PatuiStep, PatuiStepAssertion, PatuiStepDetails, PatuiStepRead,
+            PatuiStep, PatuiStepAssertion, PatuiStepDetails, PatuiStepRead,
             PatuiStepTransformStream, PatuiStepTransformStreamFlavour,
         },
     };
@@ -118,7 +112,7 @@ mod tests {
     async fn run_basic() {
         let now = crate::utils::get_current_time_string();
 
-        let mut test_runner = TestRunner::new(PatuiRun {
+        let test_runner = TestRunner::new(PatuiRun {
             id: 1.into(),
             instance: PatuiInstance {
                 id: 1.into(),
@@ -146,14 +140,14 @@ mod tests {
                             r#in: "steps.FooFile.out".try_into().unwrap(),
                         }),
                     },
-                    // PatuiStep {
-                    //     name: "FooAssertion".to_string(),
-                    //     when: None,
-                    //     depends_on: vec![],
-                    //     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                    //         expr: "steps.FooTransform.out.len() == 1".try_into().unwrap(),
-                    //     }),
-                    // },
+                    PatuiStep {
+                        name: "FooAssertion".to_string(),
+                        when: None,
+                        depends_on: vec![],
+                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                            expr: "steps.FooTransform.out.len() == 1".try_into().unwrap(),
+                        }),
+                    },
                     // PatuiStep {
                     //     name: "FooAssertion".to_string(),
                     //     when: None,
@@ -178,7 +172,7 @@ mod tests {
             step_run_details: vec![],
         });
 
-        let test_run = timeout(Duration::from_millis(5000), test_runner.run_test()).await;
+        let test_run = timeout(Duration::from_secs(5), test_runner.run_test()).await;
         assert_that!(test_run).is_ok();
         let test_run = test_run.unwrap();
         assert_that!(test_run).is_ok();

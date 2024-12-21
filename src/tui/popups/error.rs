@@ -3,13 +3,13 @@ use eyre::Result;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     text::Text,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
     Frame,
 };
 
 use crate::tui::{
     app::{Action, PaneType},
-    error::Error,
+    error::PatuiError,
     widgets::Button,
 };
 
@@ -17,11 +17,11 @@ use super::PopupComponent;
 
 #[derive(Debug)]
 pub(crate) struct ErrorComponent {
-    error: Error,
+    error: PatuiError,
 }
 
 impl ErrorComponent {
-    pub(crate) fn new(error: Error) -> Self {
+    pub(crate) fn new(error: PatuiError) -> Self {
         Self { error }
     }
 }

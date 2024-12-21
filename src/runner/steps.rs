@@ -1,4 +1,5 @@
 mod assertion;
+mod plugin;
 mod reader;
 mod sender;
 mod transform_stream;
@@ -9,15 +10,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bytes::Bytes;
 use eyre::{eyre, Result};
-use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
 
 use self::{
-    assertion::PatuiStepRunnerAssertion, reader::PatuiStepRunnerRead,
-    sender::PatuiStepRunnerSender, transform_stream::PatuiStepRunnerTransformStream,
-    writer::PatuiStepRunnerWrite,
+    assertion::PatuiStepRunnerAssertion, plugin::PatuiStepRunnerPlugin,
+    reader::PatuiStepRunnerRead, sender::PatuiStepRunnerSender,
+    transform_stream::PatuiStepRunnerTransformStream, writer::PatuiStepRunnerWrite,
 };
 use crate::types::{
     expr::{ast::ExprKind, get_all_idents},
@@ -28,14 +27,14 @@ use crate::types::{
 pub(crate) enum PatuiStepRunnerFlavour {
     Read(PatuiStepRunnerRead),
     Write(PatuiStepRunnerWrite),
+    Sender(PatuiStepRunnerSender),
     TransformStream(PatuiStepRunnerTransformStream),
     Assertion(PatuiStepRunnerAssertion),
-    Sender(PatuiStepRunnerSender),
+    Plugin(PatuiStepRunnerPlugin),
 }
 
 #[derive(Debug)]
 pub(crate) struct PatuiStepRunner {
-    name: String,
     flavour: PatuiStepRunnerFlavour,
 }
 
@@ -60,15 +59,15 @@ impl PatuiStepRunner {
             PatuiStepDetails::Sender(patui_step_sender) => {
                 PatuiStepRunnerFlavour::Sender(PatuiStepRunnerSender::new(patui_step_sender))
             }
+            PatuiStepDetails::Plugin(patui_step_plugin) => PatuiStepRunnerFlavour::Plugin(
+                PatuiStepRunnerPlugin::new(step.name.clone(), patui_step_plugin),
+            ),
         };
 
-        Self {
-            name: step.name.clone(),
-            flavour,
-        }
+        Self { flavour }
     }
 
-    pub(crate) fn init(
+    pub(crate) async fn init(
         &mut self,
         current_step_name: &str,
         step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
@@ -77,14 +76,23 @@ impl PatuiStepRunner {
 
         match &mut self.flavour {
             PatuiStepRunnerFlavour::TransformStream(runner) => {
-                runner.init(current_step_name, step_runners)
+                runner.init(current_step_name, step_runners).await
             }
-            PatuiStepRunnerFlavour::Read(runner) => runner.init(current_step_name, step_runners),
-            PatuiStepRunnerFlavour::Write(runner) => runner.init(current_step_name, step_runners),
+            PatuiStepRunnerFlavour::Read(runner) => {
+                runner.init(current_step_name, step_runners).await
+            }
+            PatuiStepRunnerFlavour::Write(runner) => {
+                runner.init(current_step_name, step_runners).await
+            }
             PatuiStepRunnerFlavour::Assertion(runner) => {
-                runner.init(current_step_name, step_runners)
+                runner.init(current_step_name, step_runners).await
             }
-            PatuiStepRunnerFlavour::Sender(patui_step_runner_sender) => todo!(),
+            PatuiStepRunnerFlavour::Sender(runner) => {
+                runner.init(current_step_name, step_runners).await
+            }
+            PatuiStepRunnerFlavour::Plugin(runner) => {
+                runner.init(current_step_name, step_runners).await
+            }
         }
     }
 
@@ -95,6 +103,7 @@ impl PatuiStepRunner {
             PatuiStepRunnerFlavour::Write(runner) => runner.run(tx),
             PatuiStepRunnerFlavour::Assertion(runner) => runner.run(tx),
             PatuiStepRunnerFlavour::Sender(runner) => runner.run(tx),
+            PatuiStepRunnerFlavour::Plugin(runner) => runner.run(tx),
         }
     }
 
@@ -105,19 +114,20 @@ impl PatuiStepRunner {
             PatuiStepRunnerFlavour::Write(runner) => runner.wait().await,
             PatuiStepRunnerFlavour::Assertion(runner) => runner.wait().await,
             PatuiStepRunnerFlavour::Sender(runner) => runner.wait().await,
+            PatuiStepRunnerFlavour::Plugin(runner) => runner.wait().await,
         }
     }
 
-    fn flavour(&self) -> &PatuiStepRunnerFlavour {
-        &self.flavour
+    fn flavour_mut(&mut self) -> &mut PatuiStepRunnerFlavour {
+        &mut self.flavour
     }
 }
 
 pub(crate) trait PatuiStepRunnerTrait {
-    fn init(
+    async fn init(
         &mut self,
-        current_step_name: &str,
-        step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
+        _current_step_name: &str,
+        _step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
         Ok(())
     }
@@ -126,7 +136,7 @@ pub(crate) trait PatuiStepRunnerTrait {
         Ok(())
     }
 
-    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
+    async fn subscribe(&mut self, _sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
         Err(eyre!("Subscription not supported"))
     }
 
@@ -134,21 +144,21 @@ pub(crate) trait PatuiStepRunnerTrait {
         Ok(())
     }
 
-    fn check(&mut self, action: &str) -> Result<PatuiStepData> {
-        Err(eyre!("Checking not supported"))
-    }
+    // fn check(&mut self, _action: &str) -> Result<PatuiStepData> {
+    //     Err(eyre!("Checking not supported"))
+    // }
 
     #[cfg(test)]
     fn test_set_receiver(
         &mut self,
-        sub_ref: &str,
-        rx: broadcast::Receiver<PatuiStepData>,
+        _sub_ref: &str,
+        _rx: broadcast::Receiver<PatuiStepData>,
     ) -> Result<()> {
         Err(eyre!("Test set receiver not supported"))
     }
 }
 
-fn init_subscribe_steps(
+async fn init_subscribe_steps(
     expr: &PatuiExpr,
     current_step_name: &str,
     other_step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
@@ -185,21 +195,27 @@ fn init_subscribe_steps(
 
             for step_runner in step_runners {
                 let mut step_runner = step_runner.lock().unwrap();
-                match step_runner.flavour() {
+                match step_runner.flavour_mut() {
                     PatuiStepRunnerFlavour::TransformStream(patui_step_runner_transform_stream) => {
                         receivers.insert(
                             ident.clone(),
-                            patui_step_runner_transform_stream.subscribe(&field)?,
+                            patui_step_runner_transform_stream.subscribe(&field).await?,
                         );
                     }
                     PatuiStepRunnerFlavour::Read(patui_step_runner_read) => {
-                        receivers.insert(ident.clone(), patui_step_runner_read.subscribe(&field)?);
+                        receivers.insert(
+                            ident.clone(),
+                            patui_step_runner_read.subscribe(&field).await?,
+                        );
                     }
-                    PatuiStepRunnerFlavour::Write(patui_step_runner_write) => todo!(),
+                    PatuiStepRunnerFlavour::Write(_) => todo!(),
                     PatuiStepRunnerFlavour::Assertion(_) => {
                         todo!()
                     }
-                    PatuiStepRunnerFlavour::Sender(patui_step_runner_sender) => {}
+                    PatuiStepRunnerFlavour::Sender(_) => {}
+                    PatuiStepRunnerFlavour::Plugin(_) => {
+                        todo!()
+                    }
                 }
             }
         } else {

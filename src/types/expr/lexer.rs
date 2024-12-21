@@ -1,4 +1,4 @@
-use std::{fmt, iter::Peekable, ops::Range};
+use std::{iter::Peekable, ops::Range};
 
 use logos::{Lexer, Logos};
 
@@ -122,7 +122,7 @@ pub(crate) struct LexerPeekable<'a> {
 }
 
 impl<'a> LexerPeekable<'a> {
-    pub(crate) fn new(lexer: Lexer<'a, Token>) -> LexerPeekable {
+    pub(crate) fn new(lexer: Lexer<'a, Token>) -> LexerPeekable<'a> {
         let peekable_iter = lexer.clone().peekable();
 
         Self {
@@ -150,18 +150,14 @@ impl<'a> LexerPeekable<'a> {
         if let Some(peek_next) = self.peek() {
             tracing::trace!("Peeking next: {:?}", peek_next);
             match peek_next {
-                Ok(next) => match peek_next {
-                    Ok(next_tok) => {
-                        if *next_tok == match_token {
-                            tracing::trace!("Matched");
-                            self.next().unwrap();
-                            return true;
-                        }
+                Ok(next_tok) => {
+                    if *next_tok == match_token {
+                        tracing::trace!("Matched");
+                        self.next().unwrap().unwrap();
+                        return true;
                     }
-                    _ => panic!("TODO: Handle {:?}", peek_next),
-                },
+                }
                 Err(e) => panic!("TODO: Handle: {:?}", e),
-                _ => {}
             }
         }
 
