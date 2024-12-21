@@ -272,6 +272,7 @@ impl Database {
             end_time: None,
             status: PatuiRunStatus::Pending,
             step_run_details: vec![],
+            results: vec![],
         })
     }
 

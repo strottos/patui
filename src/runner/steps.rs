@@ -5,13 +5,10 @@ mod sender;
 mod transform_stream;
 mod writer;
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use eyre::{eyre, Result};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 use self::{
     assertion::PatuiStepRunnerAssertion, plugin::PatuiStepRunnerPlugin,
@@ -20,7 +17,7 @@ use self::{
 };
 use crate::types::{
     expr::{
-        ast::{ExprKind, TermParts},
+        ast::{Expr, ExprKind, TermParts},
         get_all_terms,
     },
     PatuiEvent, PatuiExpr, PatuiStep, PatuiStepData, PatuiStepDetails,
@@ -165,16 +162,16 @@ async fn init_subscribe_steps(
     expr: &PatuiExpr,
     current_step_name: &str,
     other_step_runners: &HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
-) -> Result<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>> {
+) -> Result<HashMap<Expr, broadcast::Receiver<PatuiStepData>>> {
     let mut receivers = HashMap::new();
 
     for term in get_all_terms(expr)?.iter() {
         tracing::trace!("Checking term for subscribing: {:?}", term.kind());
         let (ref_step_name, sub_name) = match term.kind() {
             ExprKind::Term(term) => {
-                if term.value.first() == Some(&TermParts::Ident("steps".to_string())) {
-                    if let Some(TermParts::Ident(ref_step_name)) = term.value.get(1) {
-                        if let Some(TermParts::Ident(sub_name)) = term.value.get(2) {
+                if term.values.first() == Some(&TermParts::Ident("steps".to_string())) {
+                    if let Some(TermParts::Ident(ref_step_name)) = term.values.get(1) {
+                        if let Some(TermParts::Ident(sub_name)) = term.values.get(2) {
                             (ref_step_name, sub_name)
                         } else {
                             return Err(eyre!("Invalid term for subscribing: {:?}", term));
@@ -194,7 +191,7 @@ async fn init_subscribe_steps(
             tracing::trace!("Step Runners: {:?}", step_runners);
 
             for step_runner in step_runners {
-                let mut step_runner = step_runner.lock().unwrap();
+                let mut step_runner = step_runner.lock().await;
                 match step_runner.flavour_mut() {
                     PatuiStepRunnerFlavour::TransformStream(patui_step_runner_transform_stream) => {
                         receivers.insert(

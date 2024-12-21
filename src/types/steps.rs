@@ -293,10 +293,16 @@ impl PatuiStepDetails {
     // }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct PatuiStepData {
     pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
     pub(crate) data: PatuiStepDataFlavour,
+}
+
+impl PartialEq for PatuiStepData {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
 }
 
 impl PatuiStepData {

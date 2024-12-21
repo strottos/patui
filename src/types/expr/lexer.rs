@@ -5,6 +5,9 @@ use logos::{Lexer, Logos};
 #[derive(Logos, Clone, Debug, PartialEq, Eq)]
 #[logos(skip r"[ \t\r\n\f]+")]
 pub(crate) enum Token {
+    #[token("null")]
+    Null,
+
     #[token("false", |_| false, ignore(case))]
     #[token("true", |_| true, ignore(case))]
     Bool(bool),

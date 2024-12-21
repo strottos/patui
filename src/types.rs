@@ -6,7 +6,6 @@ pub(crate) mod steps;
 
 use std::io::Read;
 
-use bytes::Bytes;
 use edit::edit;
 use eyre::Result;
 use rusqlite::{
@@ -199,13 +198,11 @@ impl PatuiTestDetails {
 // Test runs
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiRunError {}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiRunStatus {
     Pending,
     Passed,
-    Error(PatuiRunError),
+    Failed,
+    Error(String),
 }
 
 impl ToSql for PatuiRunStatus {
@@ -214,6 +211,7 @@ impl ToSql for PatuiRunStatus {
             PatuiRunStatus::Pending => "pending".to_string(),
             PatuiRunStatus::Passed => "passed".to_string(),
             PatuiRunStatus::Error(_) => "error".to_string(),
+            PatuiRunStatus::Failed => "failed".to_string(),
         })))
     }
 }
@@ -222,7 +220,22 @@ impl ToSql for PatuiRunStatus {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiEventKind {
-    Bytes(Bytes),
+    Result(String, PatuiStepData),
+    Log(String),
+    Failure(String),
+    Error(String),
+}
+
+impl PatuiEventKind {
+    #[cfg(test)]
+    pub(crate) fn as_result(&self) -> Result<&PatuiStepData> {
+        match self {
+            PatuiEventKind::Result(_, patui_step_data) => Ok(&patui_step_data),
+            _ => Err(eyre::eyre!(
+                "Called as_result on PatuiEventKind that is not a Result type"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -243,11 +256,6 @@ impl PatuiEvent {
         }
     }
 
-    pub(crate) fn send_bytes(value: Bytes, step_name: String) -> Self {
-        PatuiEvent::new(PatuiEventKind::Bytes(value), step_name)
-    }
-
-    #[cfg(test)]
     pub(crate) fn value(&self) -> &PatuiEventKind {
         &self.value
     }
