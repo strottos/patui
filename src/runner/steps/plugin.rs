@@ -15,14 +15,14 @@ use tonic::{transport::Channel, Request};
 
 use crate::types::ptplugin::{self, get_info, plugin_service_client::PluginServiceClient};
 
-use super::{PatuiExpr, PatuiStepData, PatuiStepRunner, PatuiStepRunnerTrait};
+use super::{Expr, PatuiStepData, PatuiStepRunner, PatuiStepRunnerTrait};
 
 #[derive(Debug)]
 pub(crate) struct PatuiStepRunnerPlugin {
     step_name: String,
     step: PatuiStepPlugin,
 
-    receivers: Option<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>>,
+    receivers: Option<HashMap<Expr, broadcast::Receiver<PatuiStepData>>>,
     tasks: Vec<JoinHandle<()>>,
 
     plugin_process: Option<Arc<Mutex<Child>>>,
@@ -124,7 +124,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerPlugin {
                 let name = step
                     .r#in
                     .iter()
-                    .find(|(_, v)| **v == r#in)
+                    .find(|(_, v)| v.expr == r#in)
                     .unwrap()
                     .0
                     .clone();
@@ -241,7 +241,10 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerPlugin {
         sub_ref: &str,
         rx: broadcast::Receiver<PatuiStepData>,
     ) -> Result<()> {
-        let receivers = HashMap::from([(sub_ref.try_into().unwrap(), rx)]);
+        use super::PatuiExpr;
+
+        let sub_ref_expr: PatuiExpr = sub_ref.try_into()?;
+        let receivers = HashMap::from([(sub_ref_expr.expr, rx)]);
         self.receivers = Some(receivers);
 
         Ok(())

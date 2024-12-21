@@ -6,9 +6,8 @@ pub(crate) mod steps;
 
 use std::io::Read;
 
-use bytes::Bytes;
 use edit::edit;
-use eyre::Result;
+use eyre::{eyre, Result};
 use rusqlite::{
     types::{ToSqlOutput, Value},
     ToSql,
@@ -222,7 +221,21 @@ impl ToSql for PatuiRunStatus {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiEventKind {
-    Bytes(Bytes),
+    Result(PatuiStepData),
+    Log(String),
+    Failure(String),
+    Error(String),
+}
+
+impl PatuiEventKind {
+    pub(crate) fn as_result(&self) -> Result<&PatuiStepData> {
+        match self {
+            PatuiEventKind::Result(patui_step_data) => Ok(&patui_step_data),
+            _ => Err(eyre!(
+                "Called as_result on PatuiEventKind that is not a Result type"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -241,10 +254,6 @@ impl PatuiEvent {
             step_name,
             value,
         }
-    }
-
-    pub(crate) fn send_bytes(value: Bytes, step_name: String) -> Self {
-        PatuiEvent::new(PatuiEventKind::Bytes(value), step_name)
     }
 
     #[cfg(test)]

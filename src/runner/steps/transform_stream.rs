@@ -3,7 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bytes::Bytes;
 use eyre::{eyre, Result};
 use tokio::{
     sync::{broadcast, mpsc},
@@ -11,8 +10,8 @@ use tokio::{
 };
 
 use crate::types::{
-    expr::ast::ExprKind, PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour,
-    PatuiStepTransformStream,
+    expr::ast::{Expr, ExprKind},
+    PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepTransformStream,
 };
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
@@ -26,7 +25,7 @@ pub(crate) struct PatuiStepRunnerTransformStream {
         broadcast::Sender<PatuiStepData>,
         broadcast::Receiver<PatuiStepData>,
     )>,
-    receivers: Option<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>>,
+    receivers: Option<HashMap<Expr, broadcast::Receiver<PatuiStepData>>>,
 
     tasks: Vec<JoinHandle<()>>,
 }
@@ -64,12 +63,12 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         let receivers = self.receivers.take();
 
         let task = tokio::spawn(async move {
-            if matches!(step.r#in.kind(), ExprKind::Term(_)) {
+            if matches!(step.r#in.expr.kind(), ExprKind::Term(_)) {
                 tracing::trace!("Reading from step: {:?}", step.r#in);
                 let Some(mut receivers) = receivers else {
                     panic!("No receivers found");
                 };
-                let receiver = receivers.get_mut(&step.r#in).unwrap();
+                let receiver = receivers.get_mut(&step.r#in.expr).unwrap();
 
                 while let Ok(chunk) = receiver.recv().await {
                     let data = match chunk {
@@ -98,8 +97,8 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
 
                     out_sender.send(data.clone()).unwrap();
 
-                    tx.send(PatuiEvent::send_bytes(
-                        Bytes::from("Sent JSON"),
+                    tx.send(PatuiEvent::new(
+                        PatuiEventKind::Log("Sent JSON".to_string()),
                         step_name.clone(),
                     ))
                     .await
@@ -142,7 +141,10 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         sub_ref: &str,
         rx: broadcast::Receiver<PatuiStepData>,
     ) -> Result<()> {
-        let receivers = HashMap::from([(sub_ref.try_into().unwrap(), rx)]);
+        use super::PatuiExpr;
+
+        let sub_ref_expr: PatuiExpr = sub_ref.try_into()?;
+        let receivers = HashMap::from([(sub_ref_expr.expr, rx)]);
         self.receivers = Some(receivers);
 
         Ok(())

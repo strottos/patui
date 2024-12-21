@@ -3,15 +3,15 @@ use super::visitor::Visitor;
 
 use eyre::Result;
 
-pub(crate) fn get_all_terms(expr: &PatuiExpr) -> Result<Vec<PatuiExpr>> {
+pub(crate) fn get_all_terms(expr: &PatuiExpr) -> Result<Vec<Expr>> {
     struct FullIdentsVisitor {
-        idents: Vec<PatuiExpr>,
+        idents: Vec<Expr>,
     }
 
     let mut visitor = FullIdentsVisitor { idents: Vec::new() };
 
     impl Visitor for FullIdentsVisitor {
-        fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
+        fn visit_expr(&mut self, expr: &Expr) -> Result<()> {
             match expr.kind() {
                 ExprKind::Term(_) => {
                     self.idents.push(expr.clone());
@@ -42,10 +42,9 @@ mod tests {
         let idents = get_all_terms(&expr).unwrap();
 
         assert_that!(idents).has_length(1);
-        assert_that!(idents[0]).is_equal_to(PatuiExpr {
-            raw: "foo".to_string(),
+        assert_that!(idents[0]).is_equal_to(Expr {
             kind: ExprKind::Term(Term {
-                value: vec![TermParts::Ident("foo".to_string())],
+                values: vec![TermParts::Ident("foo".to_string())],
             }),
         });
     }
@@ -57,10 +56,9 @@ mod tests {
         let idents = get_all_terms(&expr).unwrap();
 
         assert_that!(idents).has_length(1);
-        assert_that!(idents[0]).is_equal_to(PatuiExpr {
-            raw: "foo.bar[1].baz".to_string(),
+        assert_that!(idents[0]).is_equal_to(Expr {
             kind: ExprKind::Term(Term {
-                value: vec![
+                values: vec![
                     TermParts::Ident("foo".to_string()),
                     TermParts::Ident("bar".to_string()),
                     TermParts::Index(1),
@@ -79,10 +77,9 @@ mod tests {
         let idents = get_all_terms(&expr).unwrap();
 
         assert_that!(idents).has_length(3);
-        assert_that!(idents[0]).is_equal_to(PatuiExpr {
-            raw: "foo.bar[1].baz".to_string(),
+        assert_that!(idents[0]).is_equal_to(Expr {
             kind: ExprKind::Term(Term {
-                value: vec![
+                values: vec![
                     TermParts::Ident("foo".to_string()),
                     TermParts::Ident("bar".to_string()),
                     TermParts::Index(1),
@@ -91,17 +88,15 @@ mod tests {
             }),
         });
 
-        assert_that!(idents[1]).is_equal_to(PatuiExpr {
-            raw: "foo[0]".to_string(),
+        assert_that!(idents[1]).is_equal_to(Expr {
             kind: ExprKind::Term(Term {
-                value: vec![TermParts::Ident("foo".to_string()), TermParts::Index(0)],
+                values: vec![TermParts::Ident("foo".to_string()), TermParts::Index(0)],
             }),
         });
 
-        assert_that!(idents[2]).is_equal_to(PatuiExpr {
-            raw: "baz().foo[0]".to_string(),
+        assert_that!(idents[2]).is_equal_to(Expr {
             kind: ExprKind::Term(Term {
-                value: vec![
+                values: vec![
                     TermParts::Ident("baz".to_string()),
                     TermParts::Call(vec![]),
                     TermParts::Ident("foo".to_string()),

@@ -15,8 +15,8 @@ use tokio_util::io::ReaderStream;
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
 use crate::types::{
-    expr::ast::{ExprKind, LitKind},
-    PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
+    expr::ast::{Expr, ExprKind, LitKind},
+    PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
 };
 
 #[derive(Debug)]
@@ -28,7 +28,7 @@ pub(crate) struct PatuiStepRunnerRead {
         broadcast::Sender<PatuiStepData>,
         broadcast::Receiver<PatuiStepData>,
     )>,
-    receivers: Option<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>>,
+    receivers: Option<HashMap<Expr, broadcast::Receiver<PatuiStepData>>>,
 
     tasks: Vec<JoinHandle<()>>,
 }
@@ -66,26 +66,27 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         let receivers = self.receivers.take();
 
         let task = tokio::spawn(async move {
-            if matches!(step.r#in.kind(), ExprKind::Term(_)) {
+            if matches!(step.r#in.expr.kind(), ExprKind::Term(_)) {
                 tracing::trace!("Reading from step: {:?}", step.r#in);
                 let Some(mut receivers) = receivers else {
                     panic!("No receivers found");
                 };
-                let receiver = receivers.get_mut(&step.r#in).unwrap();
+                let receiver = receivers.get_mut(&step.r#in.expr).unwrap();
 
                 let binding = receiver.recv().await.unwrap();
-                let data = binding.data.as_bytes().unwrap();
+                let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(
+                    binding.data.as_bytes().unwrap().clone(),
+                ));
 
-                out_sender
-                    .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                        data.clone(),
-                    )))
-                    .unwrap();
+                out_sender.send(data.clone()).unwrap();
 
-                tx.send(PatuiEvent::send_bytes(data.clone(), step_name))
-                    .await
-                    .unwrap();
-            } else if let ExprKind::Lit(lit) = step.r#in.kind() {
+                tx.send(PatuiEvent::new(
+                    PatuiEventKind::Result(data.clone()),
+                    step_name,
+                ))
+                .await
+                .unwrap();
+            } else if let ExprKind::Lit(lit) = step.r#in.expr.kind() {
                 let file_name = match &lit.kind {
                     LitKind::Str(file_name) => file_name.clone(),
                     _ => unreachable!(),
@@ -99,17 +100,16 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
                 while let Some(data) = reader.next().await {
                     tracing::trace!("Read data: {:?}", data);
 
-                    let data = data.unwrap();
+                    let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(data.unwrap()));
 
-                    out_sender
-                        .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                            data.clone(),
-                        )))
-                        .unwrap();
+                    out_sender.send(data.clone()).unwrap();
 
-                    tx.send(PatuiEvent::send_bytes(data, step_name.clone()))
-                        .await
-                        .unwrap();
+                    tx.send(PatuiEvent::new(
+                        PatuiEventKind::Result(data),
+                        step_name.clone(),
+                    ))
+                    .await
+                    .unwrap();
                 }
             } else {
                 panic!("Expression not supported for reader: {}", step.r#in);
@@ -145,7 +145,10 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         sub_ref: &str,
         rx: broadcast::Receiver<PatuiStepData>,
     ) -> Result<()> {
-        let receivers = HashMap::from([(sub_ref.try_into().unwrap(), rx)]);
+        use super::PatuiExpr;
+
+        let sub_ref_expr: PatuiExpr = sub_ref.try_into()?;
+        let receivers = HashMap::from([(sub_ref_expr.expr, rx)]);
         self.receivers = Some(receivers);
 
         Ok(())
@@ -160,8 +163,6 @@ mod tests {
     use bytes::Bytes;
     use tokio::{sync::mpsc, time::timeout};
     use tracing_test::traced_test;
-
-    use crate::types::PatuiEventKind;
 
     use super::*;
 
@@ -199,7 +200,10 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Bytes(Bytes::from(
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        let res = res.value().as_result();
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from(
             "This string gets sent by the test send data step",
         )));
 
@@ -240,7 +244,10 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Bytes(Bytes::from(
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        let res = res.value().as_result();
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from(
             "Hello, World!\nStuffmore\n",
         )));
 
