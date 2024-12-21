@@ -6,8 +6,8 @@ use tokio::{sync::broadcast, task::JoinHandle};
 
 use super::PatuiStepRunnerTrait;
 use crate::types::{
-    expr::ast::{ExprKind, Lit, LitKind},
-    PatuiEvent, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
+    expr::ast::{Expr, ExprKind, Lit, LitKind},
+    PatuiEvent, PatuiEventKind, PatuiExpr, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
 };
 
 #[derive(Debug)]
@@ -18,7 +18,6 @@ pub(crate) struct PatuiStepRunnerSender {
         broadcast::Sender<PatuiStepData>,
         broadcast::Receiver<PatuiStepData>,
     )>,
-    receivers: Option<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>>,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -29,7 +28,6 @@ impl PatuiStepRunnerSender {
             step: step.clone(),
             // TODO: Tune this parameter, configurable maybe? Probably should perf test.
             out: Some(broadcast::channel(32)),
-            receivers: None,
             tasks: vec![],
         }
     }
@@ -45,23 +43,25 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
             tracing::trace!("Running sender step with expr: {:?}", step.expr);
             if let ExprKind::Lit(Lit {
                 kind: LitKind::List(elems),
-            }) = step.expr.kind()
+            }) = step.expr.expr.kind()
             {
                 for elem in elems {
                     if let ExprKind::Lit(lit) = elem.kind() {
                         let data = match &lit.kind {
+                            LitKind::Null => todo!(),
                             LitKind::Bool(_) => todo!(),
                             LitKind::Bytes(bytes) => {
                                 tracing::trace!("Sending bytes: {:?}", bytes);
-                                out_sender
-                                    .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                                        bytes.clone(),
-                                    )))
-                                    .unwrap();
+                                let data =
+                                    PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
+                                out_sender.send(data.clone()).unwrap();
 
-                                tx.send(PatuiEvent::send_bytes(bytes.clone(), step_name.clone()))
-                                    .await
-                                    .unwrap();
+                                tx.send(PatuiEvent::new(
+                                    PatuiEventKind::Result(data),
+                                    step_name.clone(),
+                                ))
+                                .await
+                                .unwrap();
                             }
                             LitKind::Integer(_) => todo!(),
                             LitKind::Decimal(_) => todo!(),
@@ -77,41 +77,33 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                     // flooding.
                     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
                 }
-            } else if let ExprKind::Lit(lit) = step.expr.kind() {
+            } else if let ExprKind::Lit(lit) = step.expr.expr.kind() {
                 let data = match &lit.kind {
+                    LitKind::Null => todo!(),
                     LitKind::Bool(_) => todo!(),
                     LitKind::Bytes(bytes) => {
-                        out_sender
-                            .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                                bytes.clone(),
-                            )))
-                            .unwrap();
+                        let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
+                        out_sender.send(data.clone()).unwrap();
 
-                        tx.send(PatuiEvent::send_bytes(bytes.clone(), step_name))
+                        tx.send(PatuiEvent::new(PatuiEventKind::Result(data), step_name))
                             .await
                             .unwrap();
                     }
                     LitKind::Integer(_) => todo!(),
                     LitKind::Decimal(_) => todo!(),
                     LitKind::Str(string) => {
-                        out_sender
-                            .send(PatuiStepData::new(PatuiStepDataFlavour::String(
-                                string.clone(),
-                            )))
-                            .unwrap();
+                        let data = PatuiStepData::new(PatuiStepDataFlavour::String(string.clone()));
+                        out_sender.send(data.clone()).unwrap();
 
-                        tx.send(PatuiEvent::send_bytes(
-                            Bytes::from(string.clone()),
-                            step_name,
-                        ))
-                        .await
-                        .unwrap();
+                        tx.send(PatuiEvent::new(PatuiEventKind::Result(data), step_name))
+                            .await
+                            .unwrap();
                     }
                     LitKind::List(_) => todo!(),
                     LitKind::Map(_) => todo!(),
                     LitKind::Set(_) => todo!(),
                 };
-            } else if let ExprKind::Term(term) = step.expr.kind() {
+            } else if let ExprKind::Term(term) = step.expr.expr.kind() {
                 todo!();
             } else {
                 todo!();
@@ -184,7 +176,11 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Bytes(Bytes::from("ABC")));
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        let res = res.value().as_result();
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap().data)
+            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
 
         assert_that!(main_step.wait().await).is_ok();
 
@@ -218,19 +214,31 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Bytes(Bytes::from("123")));
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        let res = res.value().as_result();
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap().data)
+            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("123")));
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Bytes(Bytes::from("abc")));
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        let res = res.value().as_result();
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap().data)
+            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Bytes(Bytes::from("ABC")));
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        let res = res.value().as_result();
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap().data)
+            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
 
         assert_that!(main_step.wait().await).is_ok();
 

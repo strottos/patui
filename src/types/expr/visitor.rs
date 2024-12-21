@@ -5,7 +5,7 @@ use super::ast::*;
 use eyre::Result;
 
 pub trait Visitor {
-    fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
+    fn visit_expr(&mut self, expr: &Expr) -> Result<()> {
         Ok(())
     }
 
@@ -20,8 +20,14 @@ pub trait Visitor {
 
 impl PatuiExpr {
     pub(crate) fn visit(&self, visitor: &mut dyn Visitor) -> Result<()> {
+        self.expr.visit(visitor)
+    }
+}
+
+impl Expr {
+    pub(crate) fn visit(&self, visitor: &mut dyn Visitor) -> Result<()> {
         self.walk_expr(visitor)?;
-        visitor.visit_expr(self)?;
+        visitor.visit_expr(&self)?;
 
         Ok(())
     }
@@ -60,9 +66,11 @@ mod tests {
     fn visitor_basic() {
         let expr = PatuiExpr {
             raw: "1".to_string(),
-            kind: ExprKind::Lit(Lit {
-                kind: LitKind::Integer("1".to_string()),
-            }),
+            expr: Expr {
+                kind: ExprKind::Lit(Lit {
+                    kind: LitKind::Integer("1".to_string()),
+                }),
+            },
         };
 
         struct StepVisitor {
@@ -113,7 +121,7 @@ mod tests {
                 Ok(())
             }
 
-            fn visit_expr(&mut self, expr: &PatuiExpr) -> Result<()> {
+            fn visit_expr(&mut self, expr: &Expr) -> Result<()> {
                 self.expr_visits += 1;
                 Ok(())
             }

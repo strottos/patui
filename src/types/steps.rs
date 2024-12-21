@@ -1,7 +1,7 @@
 mod other;
 mod transform_stream;
 
-use std::io::Read;
+use std::{collections::HashMap, io::Read};
 
 use bytes::Bytes;
 use convert_case::{Case, Casing};
@@ -235,10 +235,16 @@ impl PatuiStepDetails {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct PatuiStepData {
     pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
     pub(crate) data: PatuiStepDataFlavour,
+}
+
+impl PartialEq for PatuiStepData {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
 }
 
 impl PatuiStepData {
@@ -262,10 +268,11 @@ pub(crate) enum PatuiStepDataFlavour {
     Bool(bool),
     Bytes(Bytes),
     String(String),
-    Integer(i64), // TODO: Bigints?
-    Float(f64),
+    Integer(String),
+    Float(String),
     Array(Vec<PatuiStepDataFlavour>),
-    Map(Vec<(String, PatuiStepDataFlavour)>),
+    Map(HashMap<String, PatuiStepDataFlavour>),
+    Set(Vec<PatuiStepDataFlavour>),
 }
 
 impl PatuiStepDataFlavour {
@@ -276,9 +283,9 @@ impl PatuiStepDataFlavour {
         }
     }
 
-    pub(crate) fn as_integer(&self) -> Result<i64> {
+    pub(crate) fn as_integer(&self) -> Result<&str> {
         match self {
-            Self::Integer(number) => Ok(*number),
+            Self::Integer(number) => Ok(number),
             _ => Err(eyre!("not number")),
         }
     }
@@ -332,13 +339,13 @@ impl From<String> for PatuiStepDataFlavour {
 
 impl From<i64> for PatuiStepDataFlavour {
     fn from(value: i64) -> Self {
-        Self::Integer(value)
+        Self::Integer(format!("{}", value))
     }
 }
 
 impl From<f64> for PatuiStepDataFlavour {
     fn from(value: f64) -> Self {
-        Self::Float(value)
+        Self::Float(format!("{}", value))
     }
 }
 
@@ -351,9 +358,9 @@ impl TryFrom<serde_json::Value> for PatuiStepDataFlavour {
             serde_json::Value::Bool(b) => Self::Bool(b),
             serde_json::Value::Number(number) => {
                 if let Some(number) = number.as_i64() {
-                    Self::Integer(number)
+                    Self::Integer(format!("{}", number))
                 } else if let Some(number) = number.as_f64() {
-                    Self::Float(number)
+                    Self::Float(format!("{}", number))
                 } else {
                     return Err(eyre!("Invalid number {}", number));
                 }
@@ -367,7 +374,7 @@ impl TryFrom<serde_json::Value> for PatuiStepDataFlavour {
             serde_json::Value::Object(map) => Self::Map(
                 map.into_iter()
                     .map(|(k, v)| Ok((k, v.try_into()?)))
-                    .collect::<Result<Vec<_>>>()?,
+                    .collect::<Result<HashMap<String, _>>>()?,
             ),
         };
 
