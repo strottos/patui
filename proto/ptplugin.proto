@@ -34,15 +34,6 @@ message GetInfo {
     }
 }
 
-message GetStepRunner {
-    message Request {
-        string name = 1;
-    }
-    message Response {
-        StepRunner step_runner = 1;
-    }
-}
-
 message Init {
     message Request {
         string                  step_name = 1;
@@ -58,6 +49,16 @@ message Run {
     message Request {
     }
     message Response {
+    }
+}
+
+message Publish {
+    message Request {
+        string        name = 1;
+        PatuiStepData data = 2;
+    }
+    message Response {
+        repeated Diagnostic diagnostics = 1;
     }
 }
 
@@ -81,9 +82,9 @@ message Wait {
 
 service PluginService {
     rpc GetInfo(GetInfo.Request) returns (GetInfo.Response) {}
-    rpc GetStepRunner(GetStepRunner.Request) returns (GetStepRunner.Response) {}
     rpc Init(Init.Request) returns (Init.Response) {}
     rpc Run(Run.Request) returns (Run.Response) {}
+    rpc Publish(stream Publish.Request) returns (stream Publish.Response) {}
     rpc Subscribe(Subscribe.Request) returns (stream Subscribe.Response) {}
     rpc Wait(Wait.Request) returns (Wait.Response) {}
 }

@@ -1211,6 +1211,7 @@ dependencies = [
 name = "test_patui_plugin"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "better-panic",
  "bytes",
  "chrono",

@@ -1442,6 +1442,7 @@ version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "assertor",
+ "async-stream",
  "better-panic",
  "bincode",
  "blake3",

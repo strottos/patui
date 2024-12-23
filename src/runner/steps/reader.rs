@@ -52,7 +52,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
         let receivers =
-            init_subscribe_steps(&self.step.r#in, current_step_name, step_runners).await?;
+            init_subscribe_steps(&self.step.r#in, current_step_name, &step_runners).await?;
         self.receivers = Some(receivers);
 
         Ok(())

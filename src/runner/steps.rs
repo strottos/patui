@@ -161,7 +161,7 @@ pub(crate) trait PatuiStepRunnerTrait {
 async fn init_subscribe_steps(
     expr: &PatuiExpr,
     current_step_name: &str,
-    other_step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
+    other_step_runners: &HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
 ) -> Result<HashMap<PatuiExpr, broadcast::Receiver<PatuiStepData>>> {
     let mut receivers = HashMap::new();
 

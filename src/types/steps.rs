@@ -81,13 +81,6 @@ impl From<PatuiStep> for PatuiStepEditable {
                                 .map(|(k, v)| (k, v.into()))
                                 .collect(),
                         ),
-                        out: Some(
-                            patui_step_plugin
-                                .out
-                                .into_iter()
-                                .map(|(k, v)| (k, v.into()))
-                                .collect(),
-                        ),
                     })
                 }
             },
@@ -139,12 +132,6 @@ impl From<&PatuiStep> for PatuiStepEditable {
                         ),
                         r#in: Some(
                             (&patui_step_plugin.r#in)
-                                .into_iter()
-                                .map(|(k, v)| (k.clone(), v.into()))
-                                .collect(),
-                        ),
-                        out: Some(
-                            (&patui_step_plugin.out)
                                 .into_iter()
                                 .map(|(k, v)| (k.clone(), v.into()))
                                 .collect(),
@@ -220,16 +207,6 @@ impl TryFrom<&PatuiStepEditable> for PatuiStep {
                         },
                         r#in: match &patui_step_plugin_editable.r#in {
                             Some(r#in) => r#in
-                                .into_iter()
-                                .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
-                                    Ok(v) => Ok((k.clone(), v)),
-                                    Err(e) => Err(e),
-                                })
-                                .collect::<Result<_>>()?,
-                            None => HashMap::new(),
-                        },
-                        out: match &patui_step_plugin_editable.out {
-                            Some(out) => out
                                 .into_iter()
                                 .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
                                     Ok(v) => Ok((k.clone(), v)),
@@ -343,6 +320,16 @@ impl TryFrom<super::ptplugin::PatuiStepData> for PatuiStepData {
 
     fn try_from(value: super::ptplugin::PatuiStepData) -> Result<Self, Self::Error> {
         Ok(PatuiStepData::new(rmp_serde::from_slice(&value.bytes)?))
+    }
+}
+
+impl TryFrom<PatuiStepData> for super::ptplugin::PatuiStepData {
+    type Error = eyre::Error;
+
+    fn try_from(value: PatuiStepData) -> Result<Self, Self::Error> {
+        Ok(super::ptplugin::PatuiStepData {
+            bytes: rmp_serde::to_vec(&value.data)?,
+        })
     }
 }
 

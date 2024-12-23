@@ -9,6 +9,7 @@ repository = "https://github.com/strottos/patui"
 homepage = "https://github.com/strottos/patui"
 
 [dependencies]
+async-stream = "0.3.6"
 better-panic = { git = "https://github.com/strottos/better-panic", branch = "upgrade-backtrace" } # Includes a fix that stops hanging on ARM Windows targets.
 bytes = { version = "1.9.0", features = ["serde"] }
 chrono = { version = "0.4.38", features = ["serde"] }

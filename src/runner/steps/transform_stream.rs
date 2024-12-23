@@ -50,7 +50,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
         let receivers =
-            init_subscribe_steps(&self.step.r#in, current_step_name, step_runners).await?;
+            init_subscribe_steps(&self.step.r#in, current_step_name, &step_runners).await?;
         self.receivers = Some(receivers);
 
         Ok(())
@@ -182,11 +182,13 @@ mod tests {
 
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
-        input_tx.send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-            Bytes::from(r#"{"key": "value"}"#),
-        )));
+        input_tx
+            .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
+                Bytes::from(r#"{"key": "value"}"#),
+            )))
+            .unwrap();
 
-        let (res_tx, mut res_rx) = mpsc::channel(1);
+        let (res_tx, _) = mpsc::channel(1);
 
         assert_that!(main_step.run(res_tx.clone())).is_ok();
 

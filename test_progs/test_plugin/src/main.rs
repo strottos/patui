@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     env,
     fs::create_dir_all,
+    pin::Pin,
     sync::{Arc, Mutex},
 };
 
@@ -14,16 +15,16 @@ use tokio::{
     sync::{mpsc, RwLock},
     time::sleep,
 };
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{transport::Server, Code, Request, Response, Status};
 use tracing_subscriber::{
     fmt::writer::BoxMakeWriter, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry,
 };
 
 use self::ptplugin::{
-    get_info, get_step_runner, init,
+    get_info, init,
     plugin_service_server::{PluginService, PluginServiceServer},
-    run, subscribe, wait, PatuiStepData, StepRunner,
+    publish, run, subscribe, wait, PatuiStepData, StepRunner,
 };
 
 pub mod ptplugin {
@@ -64,14 +65,22 @@ pub(crate) struct MyPlugin {
     >,
     tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     shutdown_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    echo_tx: Mutex<Option<mpsc::Sender<PatuiStepData>>>,
+    echo_rx: Mutex<Option<mpsc::Receiver<PatuiStepData>>>,
 }
 
 impl MyPlugin {
-    pub(crate) fn new(shutdown_signal: oneshot::Sender<()>) -> Self {
+    pub(crate) fn new(
+        shutdown_signal: oneshot::Sender<()>,
+        echo_tx: mpsc::Sender<PatuiStepData>,
+        echo_rx: mpsc::Receiver<PatuiStepData>,
+    ) -> Self {
         MyPlugin {
             subscribers: Arc::new(RwLock::new(HashMap::new())),
             tasks: Arc::new(Mutex::new(Vec::new())),
             shutdown_signal: Arc::new(Mutex::new(Some(shutdown_signal))),
+            echo_tx: Mutex::new(Some(echo_tx)),
+            echo_rx: Mutex::new(Some(echo_rx)),
         }
     }
 }
@@ -96,15 +105,6 @@ impl PluginService for MyPlugin {
         Ok(Response::new(reply))
     }
 
-    async fn get_step_runner(
-        &self,
-        request: Request<get_step_runner::Request>,
-    ) -> std::result::Result<Response<get_step_runner::Response>, Status> {
-        tracing::info!("Request get_step_runner: {:?}", request.remote_addr());
-
-        todo!();
-    }
-
     async fn init(
         &self,
         request: Request<init::Request>,
@@ -123,44 +123,60 @@ impl PluginService for MyPlugin {
         tracing::info!("Request run {:?}", request.remote_addr());
 
         let subscribers = self.subscribers.clone();
+        let mut echo_rx = self.echo_rx.lock().unwrap().take().unwrap();
 
         self.tasks.lock().unwrap().push(tokio::spawn(async move {
-            for bytes in [
-                rmp_serde::to_vec(&PatuiStepDataFlavour::Null).unwrap(),
-                rmp_serde::to_vec(&PatuiStepDataFlavour::Bool(true)).unwrap(),
-                rmp_serde::to_vec(&PatuiStepDataFlavour::String("test".to_string())).unwrap(),
-                rmp_serde::to_vec(&PatuiStepDataFlavour::Array(vec![
-                    PatuiStepDataFlavour::Integer("1".to_string()),
-                    PatuiStepDataFlavour::Integer("2".to_string()),
-                    PatuiStepDataFlavour::Integer("3".to_string()),
-                ]))
-                .unwrap(),
-                rmp_serde::to_vec(&PatuiStepDataFlavour::Map(HashMap::from([
-                    (
-                        "a".to_string(),
-                        PatuiStepDataFlavour::Integer("1".to_string()),
-                    ),
-                    (
-                        "b".to_string(),
-                        PatuiStepDataFlavour::Integer("2".to_string()),
-                    ),
-                ])))
-                .unwrap(),
-            ] {
-                sleep(tokio::time::Duration::from_millis(10)).await;
+            {
                 let lock = subscribers.read().await;
                 for (name, subscribers) in lock.iter() {
                     if name == "out" {
-                        for tx in subscribers.iter() {
-                            tracing::debug!("Sending {:?}", bytes);
-                            tx.send(Ok(subscribe::Response {
-                                data: Some(PatuiStepData {
-                                    bytes: bytes.clone(),
-                                }),
+                        for bytes in [
+                            rmp_serde::to_vec(&PatuiStepDataFlavour::Null).unwrap(),
+                            rmp_serde::to_vec(&PatuiStepDataFlavour::Bool(true)).unwrap(),
+                            rmp_serde::to_vec(&PatuiStepDataFlavour::String("test".to_string()))
+                                .unwrap(),
+                            rmp_serde::to_vec(&PatuiStepDataFlavour::Array(vec![
+                                PatuiStepDataFlavour::Integer("1".to_string()),
+                                PatuiStepDataFlavour::Integer("2".to_string()),
+                                PatuiStepDataFlavour::Integer("3".to_string()),
+                            ]))
+                            .unwrap(),
+                            rmp_serde::to_vec(&PatuiStepDataFlavour::Map(HashMap::from([
+                                (
+                                    "a".to_string(),
+                                    PatuiStepDataFlavour::Integer("1".to_string()),
+                                ),
+                                (
+                                    "b".to_string(),
+                                    PatuiStepDataFlavour::Integer("2".to_string()),
+                                ),
+                            ])))
+                            .unwrap(),
+                        ] {
+                            sleep(tokio::time::Duration::from_millis(10)).await;
+
+                            for tx in subscribers.iter() {
+                                tracing::debug!("Sending {:?}", bytes);
+                                tx.send(Ok(subscribe::Response {
+                                    data: Some(PatuiStepData {
+                                        bytes: bytes.clone(),
+                                    }),
+                                    diagnostics: vec![],
+                                }))
+                                .await
+                                .unwrap();
+                            }
+                        }
+                    } else if name == "echo" {
+                        while let Some(res) = echo_rx.recv().await {
+                            tracing::trace!("Echoing {:?}", res);
+                            let response = subscribe::Response {
+                                data: Some(res),
                                 diagnostics: vec![],
-                            }))
-                            .await
-                            .unwrap();
+                            };
+                            for tx in subscribers.iter() {
+                                tx.send(Ok(response.clone())).await.unwrap();
+                            }
                         }
                     }
                 }
@@ -168,9 +184,42 @@ impl PluginService for MyPlugin {
 
             let mut lock = subscribers.write().await;
             lock.clear();
+            tracing::info!("Cleared subscribers");
         }));
 
         Ok(Response::new(run::Response {}))
+    }
+
+    type PublishStream = Pin<
+        Box<
+            dyn Stream<Item = std::result::Result<publish::Response, tonic::Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn publish(
+        &self,
+        request: tonic::Request<tonic::Streaming<publish::Request>>,
+    ) -> std::result::Result<tonic::Response<Self::PublishStream>, tonic::Status> {
+        let mut stream = request.into_inner();
+        let echo_tx = self.echo_tx.lock().unwrap().take().unwrap().clone();
+
+        let output = async_stream::try_stream! {
+            while let Some(Ok(message)) = stream.next().await {
+                tracing::info!("Message published: {:?}", message);
+
+                echo_tx.send(message.data.unwrap()).await.unwrap();
+
+                let result = publish::Response {
+                    diagnostics: vec![],
+                };
+
+                yield result.clone();
+            }
+        };
+
+        Ok(Response::new(Box::pin(output) as Self::PublishStream))
     }
 
     type SubscribeStream = ReceiverStream<std::result::Result<subscribe::Response, Status>>;
@@ -346,8 +395,9 @@ async fn do_main() -> Result<()> {
     let addr = addr.parse().unwrap();
 
     let (tx, rx) = oneshot::channel();
+    let (echo_tx, echo_rx) = mpsc::channel(100);
 
-    let plugin = MyPlugin::new(tx);
+    let plugin = MyPlugin::new(tx, echo_tx, echo_rx);
 
     Server::builder()
         .add_service(PluginServiceServer::new(plugin))

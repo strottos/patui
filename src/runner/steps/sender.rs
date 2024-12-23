@@ -1,6 +1,9 @@
 use bytes::Bytes;
 use eyre::{eyre, Result};
-use tokio::{sync::broadcast, task::JoinHandle};
+use tokio::{
+    sync::{broadcast, mpsc},
+    task::JoinHandle,
+};
 
 use super::PatuiStepRunnerTrait;
 use crate::types::{
@@ -32,7 +35,7 @@ impl PatuiStepRunnerSender {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
-    fn run(&mut self, tx: tokio::sync::mpsc::Sender<PatuiEvent>) -> Result<()> {
+    fn run(&mut self, tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         let step = self.step.clone();
         let step_name = self.step_name.clone();
         let out_sender = self.out.as_ref().unwrap().0.clone();
