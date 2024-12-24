@@ -80,7 +80,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerPlugin {
     async fn init(
         &mut self,
         current_step_name: &str,
-        step_runners: HashMap<String, Vec<Arc<std::sync::Mutex<PatuiStepRunner>>>>,
+        step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<()> {
         let mut receivers = HashMap::new();
         for r#in in self.step.r#in.values() {

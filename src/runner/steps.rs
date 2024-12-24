@@ -5,13 +5,10 @@ mod sender;
 mod transform_stream;
 mod writer;
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use eyre::{eyre, Result};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 use self::{
     assertion::PatuiStepRunnerAssertion, plugin::PatuiStepRunnerPlugin,
@@ -194,7 +191,7 @@ async fn init_subscribe_steps(
             tracing::trace!("Step Runners: {:?}", step_runners);
 
             for step_runner in step_runners {
-                let mut step_runner = step_runner.lock().unwrap();
+                let mut step_runner = step_runner.lock().await;
                 match step_runner.flavour_mut() {
                     PatuiStepRunnerFlavour::TransformStream(patui_step_runner_transform_stream) => {
                         receivers.insert(

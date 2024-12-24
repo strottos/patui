@@ -1,11 +1,8 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use eyre::{eyre, Result};
 use tokio::{
-    sync::{broadcast, mpsc, RwLock},
+    sync::{broadcast, mpsc, Mutex, RwLock},
     task::JoinHandle,
 };
 
@@ -66,9 +63,9 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
             // enough data we go back to waiting.
             let results = results.clone();
             let expr = &step.expr.expr;
-            while let Some(_) = notify_rx.recv().await {
+            while notify_rx.recv().await.is_some() {
                 let results = results.read().await.clone();
-                match eval(&expr, &results) {
+                match eval(expr, &results) {
                     Ok(EvalResult::Known(patui_step_data)) => match patui_step_data.data {
                         PatuiStepDataFlavour::Bool(b) => {
                             if b {
@@ -225,8 +222,8 @@ fn eval(expr: &Expr, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<Eval
             crate::types::expr::ast::BinOp::And => todo!(),
             crate::types::expr::ast::BinOp::Or => todo!(),
             crate::types::expr::ast::BinOp::Equal => {
-                let lhs_eval = eval(&*lhs, results)?;
-                let rhs_eval = eval(&*rhs, results)?;
+                let lhs_eval = eval(lhs, results)?;
+                let rhs_eval = eval(rhs, results)?;
                 match lhs_eval {
                     EvalResult::Known(lhs_data) => match rhs_eval {
                         EvalResult::Known(rhs_data) => Ok(EvalResult::Known(PatuiStepData::new(
@@ -302,7 +299,7 @@ fn eval(expr: &Expr, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<Eval
 fn eval_lit(lit: &Lit, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<PatuiStepData> {
     match &lit.kind {
         LitKind::Null => Ok(PatuiStepData::new(PatuiStepDataFlavour::Null)),
-        LitKind::Bool(b) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Bool(b.clone()))),
+        LitKind::Bool(b) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Bool(*b))),
         LitKind::Bytes(bytes) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
             bytes.clone(),
         ))),
@@ -552,6 +549,6 @@ mod tests {
         let ret = ret.unwrap();
         let ret = ret.get_step_data();
         assert_that!(ret).is_ok();
-        assert_that!(ret.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Bool(true));
+        assert_that!(ret.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bool(true));
     }
 }

@@ -12,7 +12,7 @@ use eyre::Result;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::types::{
-    PatuiRunStatus, PatuiRunStep, PatuiRunStepDisplay, PatuiStep, PatuiTestDetails,
+    PatuiEvent, PatuiRunStatus, PatuiRunStep, PatuiRunStepDisplay, PatuiStep, PatuiTestDetails,
     PatuiTestEditable,
 };
 
@@ -285,6 +285,7 @@ pub(crate) struct PatuiRun {
     pub(crate) end_time: Option<String>,
     pub(crate) status: PatuiRunStatus,
     pub(crate) step_run_details: Vec<PatuiRunStep>,
+    pub(crate) results: Vec<PatuiEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -295,6 +296,7 @@ pub(crate) struct PatuiRunDisplay {
     pub(crate) end_time: Option<String>,
     pub(crate) status: PatuiRunStatus,
     pub(crate) step_run_details: Vec<PatuiRunStepDisplay>,
+    pub(crate) results: Vec<PatuiEvent>,
 }
 
 impl TryFrom<PatuiRun> for PatuiRunDisplay {
@@ -312,6 +314,7 @@ impl TryFrom<PatuiRun> for PatuiRunDisplay {
                 .into_iter()
                 .map(|step| step.try_into())
                 .collect::<Result<Vec<_>, Self::Error>>()?,
+            results: value.results,
         })
     }
 }

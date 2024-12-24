@@ -1,12 +1,15 @@
 mod steps;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::{db::PatuiRun, types::PatuiRunStatus};
+use crate::{
+    db::PatuiRun,
+    types::{PatuiEventKind, PatuiRunStatus},
+};
 
 use eyre::Result;
 use indexmap::IndexMap;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 use self::steps::PatuiStepRunner;
 
@@ -14,7 +17,6 @@ pub(crate) struct TestRunner {
     pub(crate) run: PatuiRun,
 
     pub(crate) steps: IndexMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
-    // results: Vec<PatuiEvent>,
 }
 
 impl TestRunner {
@@ -24,45 +26,62 @@ impl TestRunner {
         for step in &run.instance.steps {
             let name = step.name.clone();
             let entry = steps.entry(name).or_insert_with(Vec::new);
-            entry.push(Arc::new(Mutex::new(PatuiStepRunner::new(&step))));
+            entry.push(Arc::new(Mutex::new(PatuiStepRunner::new(step))));
         }
 
-        Self {
-            run,
-            steps,
-            // results: vec![],
-        }
+        Self { run, steps }
     }
 
     pub(crate) async fn run_test(mut self) -> Result<PatuiRun> {
         let (tx, mut rx) = mpsc::channel(100);
 
         self.init_test().await?;
+        let status = Arc::new(Mutex::new(PatuiRunStatus::Pending));
+        let status_clone = status.clone();
 
         for (_, step_collection) in self.steps.iter() {
             for step in step_collection {
-                let mut step = step.lock().unwrap();
+                let mut step = step.lock().await;
                 step.run(tx.clone())?;
             }
         }
 
         drop(tx);
 
+        let results = Arc::new(Mutex::new(Some(vec![])));
+        let results_clone = results.clone();
+
         let receive_task = tokio::spawn(async move {
+            let results = results_clone.clone();
+            let status = status_clone;
             while let Some(res) = rx.recv().await {
+                if matches!(res.value(), PatuiEventKind::Failure(_)) {
+                    *status.lock().await = PatuiRunStatus::Failed;
+                } else if let PatuiEventKind::Error(e) = res.value() {
+                    *status.lock().await = PatuiRunStatus::Error(e.clone());
+                }
                 tracing::trace!("Received result: {:?}", res);
+                let results = results.clone();
+                let mut lock = results.lock().await;
+                lock.as_mut().unwrap().push(res);
             }
         });
 
         for (_, step_collection) in self.steps.iter() {
             for step in step_collection {
-                step.lock().unwrap().wait().await?;
+                step.lock().await.wait().await?;
             }
         }
 
+        let mut status_lock = status.lock().await;
+        if *status_lock == PatuiRunStatus::Pending {
+            *status_lock = PatuiRunStatus::Passed;
+        }
+        self.run.status = status_lock.clone();
+
         receive_task.await?;
 
-        self.run.status = PatuiRunStatus::Passed;
+        self.run.results = results.lock().await.take().unwrap();
 
         Ok(self.run)
     }
@@ -70,7 +89,7 @@ impl TestRunner {
     async fn init_test(&mut self) -> Result<()> {
         for (name, step_collection) in self.steps.iter() {
             for step in step_collection {
-                let mut step = step.lock().unwrap();
+                let mut step = step.lock().await;
 
                 let other_steps = self
                     .steps
@@ -148,28 +167,30 @@ mod tests {
                             expr: "steps.FooTransform.out.len() == 1".try_into().unwrap(),
                         }),
                     },
-                    // PatuiStep {
-                    //     name: "FooAssertion".to_string(),
-                    //     when: None,
-                    //     depends_on: vec![],
-                    //     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                    //         expr: "steps.FooTransform.out[0].baz[2] == 3".try_into().unwrap(),
-                    //     }),
-                    // },
-                    // PatuiStep {
-                    //     name: "FooAssertion".to_string(),
-                    //     when: None,
-                    //     depends_on: vec![],
-                    //     details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                    //         expr: "steps.FooTransform.out.bar[2] == \"c\"".try_into().unwrap(),
-                    //     }),
-                    // },
+                    PatuiStep {
+                        name: "FooAssertion".to_string(),
+                        when: None,
+                        depends_on: vec![],
+                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                            expr: "steps.FooTransform.out[0].baz[2] == 3".try_into().unwrap(),
+                        }),
+                    },
+                    PatuiStep {
+                        name: "FooAssertion".to_string(),
+                        when: None,
+                        depends_on: vec![],
+                        details: PatuiStepDetails::Assertion(PatuiStepAssertion {
+                            expr: "steps.FooTransform.out.bar[2] == \"c\"".try_into().unwrap(),
+                        }),
+                    },
                 ],
             },
             start_time: now,
             end_time: None,
             status: PatuiRunStatus::Pending,
+            // Umm, we use this? Don't think we actually do.
             step_run_details: vec![],
+            results: vec![],
         });
 
         let test_run = timeout(Duration::from_secs(5), test_runner.run_test()).await;
@@ -179,5 +200,6 @@ mod tests {
         let test_run = test_run.unwrap();
 
         assert_that!(&test_run.status).is_equal_to(&PatuiRunStatus::Passed);
+        assert_that!(&test_run.results.len()).is_equal_to(&5);
     }
 }

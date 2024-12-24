@@ -1,14 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use eyre::{eyre, Result};
 use futures::StreamExt;
 use tokio::{
     fs::File,
     io::BufReader,
-    sync::{broadcast, mpsc},
+    sync::{broadcast, mpsc, Mutex},
     task::JoinHandle,
 };
 use tokio_util::io::ReaderStream;
@@ -81,7 +78,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
                 out_sender.send(data.clone()).unwrap();
 
                 tx.send(PatuiEvent::new(
-                    PatuiEventKind::Result(data.clone()),
+                    PatuiEventKind::Result("Read data from step".to_string(), data.clone()),
                     step_name,
                 ))
                 .await
@@ -105,7 +102,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
                     out_sender.send(data.clone()).unwrap();
 
                     tx.send(PatuiEvent::new(
-                        PatuiEventKind::Result(data),
+                        PatuiEventKind::Result("Read data from file".to_string(), data),
                         step_name.clone(),
                     ))
                     .await
@@ -200,10 +197,10 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(res.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
             "This string gets sent by the test send data step",
         )));
 
@@ -212,7 +209,7 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
             "This string gets sent by the test send data step",
         )));
 
@@ -244,10 +241,10 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(res.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
             "Hello, World!\nStuffmore\n",
         )));
 
@@ -256,7 +253,7 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
             "Hello, World!\nStuffmore\n",
         )));
 

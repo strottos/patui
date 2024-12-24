@@ -1,11 +1,8 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use eyre::{eyre, Result};
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::{broadcast, mpsc, Mutex},
     task::JoinHandle,
 };
 

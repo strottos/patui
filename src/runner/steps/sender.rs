@@ -57,7 +57,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                                 out_sender.send(data.clone()).unwrap();
 
                                 tx.send(PatuiEvent::new(
-                                    PatuiEventKind::Result(data),
+                                    PatuiEventKind::Result("Sending".to_string(), data),
                                     step_name.clone(),
                                 ))
                                 .await
@@ -85,9 +85,12 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                         let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
                         out_sender.send(data.clone()).unwrap();
 
-                        tx.send(PatuiEvent::new(PatuiEventKind::Result(data), step_name))
-                            .await
-                            .unwrap();
+                        tx.send(PatuiEvent::new(
+                            PatuiEventKind::Result("Sending".to_string(), data),
+                            step_name,
+                        ))
+                        .await
+                        .unwrap();
                     }
                     LitKind::Integer(_) => todo!(),
                     LitKind::Decimal(_) => todo!(),
@@ -95,9 +98,12 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                         let data = PatuiStepData::new(PatuiStepDataFlavour::String(string.clone()));
                         out_sender.send(data.clone()).unwrap();
 
-                        tx.send(PatuiEvent::new(PatuiEventKind::Result(data), step_name))
-                            .await
-                            .unwrap();
+                        tx.send(PatuiEvent::new(
+                            PatuiEventKind::Result("Sending".to_string(), data),
+                            step_name,
+                        ))
+                        .await
+                        .unwrap();
                     }
                     LitKind::List(_) => todo!(),
                     LitKind::Map(_) => todo!(),
@@ -170,11 +176,11 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
         assert_that!(res.unwrap().data)
-            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
 
         assert_that!(main_step.wait().await).is_ok();
 
@@ -183,7 +189,7 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
     }
 
     #[traced_test]
@@ -208,31 +214,31 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
         assert_that!(res.unwrap().data)
-            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("123")));
+            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("123")));
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
         assert_that!(res.unwrap().data)
-            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
+            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
         let res = res.unwrap();
         assert_that!(res).is_some();
         let res = res.unwrap();
-        assert_that!(matches!(res.value(), PatuiEventKind::Result(_))).is_true();
+        assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
         assert_that!(res.unwrap().data)
-            .is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
 
         assert_that!(main_step.wait().await).is_ok();
 
@@ -241,20 +247,20 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("123")));
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("123")));
 
         let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
 
         let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(&PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
     }
 }
