@@ -12,11 +12,11 @@ pub(crate) fn get_all_terms(expr: &PatuiExpr) -> Result<Vec<Expr>> {
 
     impl Visitor for FullIdentsVisitor {
         fn visit_expr(&mut self, expr: &Expr) -> Result<()> {
-            match expr.kind() {
-                ExprKind::Term(_) => {
+            if let ExprKind::Term(term) = expr.kind() {
+                if let [TermParts::Lit(_)] = &term.values[..] {
+                } else {
                     self.idents.push(expr.clone());
                 }
-                _ => {}
             }
 
             Ok(())
@@ -61,7 +61,15 @@ mod tests {
                 values: vec![
                     TermParts::Ident("foo".to_string()),
                     TermParts::Ident("bar".to_string()),
-                    TermParts::Index(1),
+                    TermParts::Index(P {
+                        ptr: Box::new(Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                })],
+                            }),
+                        }),
+                    }),
                     TermParts::Ident("baz".to_string()),
                 ],
             }),
@@ -82,7 +90,15 @@ mod tests {
                 values: vec![
                     TermParts::Ident("foo".to_string()),
                     TermParts::Ident("bar".to_string()),
-                    TermParts::Index(1),
+                    TermParts::Index(P {
+                        ptr: Box::new(Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Integer("1".to_string()),
+                                })],
+                            }),
+                        }),
+                    }),
                     TermParts::Ident("baz".to_string()),
                 ],
             }),
@@ -90,7 +106,18 @@ mod tests {
 
         assert_that!(idents[1]).is_equal_to(Expr {
             kind: ExprKind::Term(Term {
-                values: vec![TermParts::Ident("foo".to_string()), TermParts::Index(0)],
+                values: vec![
+                    TermParts::Ident("foo".to_string()),
+                    TermParts::Index(P {
+                        ptr: Box::new(Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Integer("0".to_string()),
+                                })],
+                            }),
+                        }),
+                    }),
+                ],
             }),
         });
 
@@ -100,7 +127,15 @@ mod tests {
                     TermParts::Ident("baz".to_string()),
                     TermParts::Call(vec![]),
                     TermParts::Ident("foo".to_string()),
-                    TermParts::Index(0),
+                    TermParts::Index(P {
+                        ptr: Box::new(Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Integer("0".to_string()),
+                                })],
+                            }),
+                        }),
+                    }),
                 ],
             }),
         });

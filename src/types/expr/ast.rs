@@ -35,6 +35,8 @@ pub(crate) enum LitKind {
     List(Vec<P<Expr>>),
     Map(Vec<P<(Expr, Expr)>>),
     Set(Vec<P<Expr>>),
+    Wildcard,
+    Range(P<Expr>, P<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,11 +46,9 @@ pub(crate) struct Lit {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum TermParts {
-    Expr(P<Expr>),
     Ident(String),
-    Index(usize),
-    Wildcard,
-    Range(usize, usize),
+    Index(P<Expr>),
+    Lit(Lit),
     Call(Vec<P<Expr>>),
 }
 
@@ -84,8 +84,6 @@ pub(crate) enum BinOp {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum ExprKind {
-    /// Literal
-    Lit(Lit),
     /// Abstract Term
     Term(Term),
     /// If: expr2 if expr1 else expr3
@@ -167,17 +165,6 @@ impl From<&PatuiExpr> for String {
     }
 }
 
-impl<'a> From<&'a PatuiExpr> for &'a str {
-    fn from(value: &'a PatuiExpr) -> Self {
-        match &value.expr.kind {
-            ExprKind::Lit(Lit {
-                kind: LitKind::Str(s),
-            }) => s,
-            _ => todo!(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use assertor::*;
@@ -194,8 +181,10 @@ mod tests {
                 PatuiExpr {
                     raw: "123".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Integer("123".to_string()),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Integer("123".to_string()),
+                            })],
                         }),
                     },
                 },
@@ -205,8 +194,10 @@ mod tests {
                 PatuiExpr {
                     raw: "123.45".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Decimal("123.45".to_string()),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Decimal("123.45".to_string()),
+                            })],
                         }),
                     },
                 },
@@ -216,8 +207,10 @@ mod tests {
                 PatuiExpr {
                     raw: "true".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bool(true),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bool(true),
+                            })],
                         }),
                     },
                 },
@@ -227,8 +220,10 @@ mod tests {
                 PatuiExpr {
                     raw: "false".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bool(false),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bool(false),
+                            })],
                         }),
                     },
                 },
@@ -238,8 +233,10 @@ mod tests {
                 PatuiExpr {
                     raw: "\"hello\"".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Str("hello".to_string()),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Str("hello".to_string()),
+                            })],
                         }),
                     },
                 },
@@ -249,8 +246,10 @@ mod tests {
                 PatuiExpr {
                     raw: "b\"hello\"".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bytes(Bytes::from("hello")),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bytes(Bytes::from("hello")),
+                            })],
                         }),
                     },
                 },
@@ -260,8 +259,10 @@ mod tests {
                 PatuiExpr {
                     raw: "b[]".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bytes(Bytes::from("")),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bytes(Bytes::from("")),
+                            })],
                         }),
                     },
                 },
@@ -271,8 +272,10 @@ mod tests {
                 PatuiExpr {
                     raw: "b[104]".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bytes(Bytes::from("h")),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bytes(Bytes::from("h")),
+                            })],
                         }),
                     },
                 },
@@ -281,8 +284,10 @@ mod tests {
             //     "b[0x6c]",
             //     PatuiExpr {
             //         raw: "b[0x6c]".to_string(),
-            //         kind: ExprKind::Lit(Lit {
+            //         kind: ExprKind::Term(Term {
+            //                values: vec![TermParts::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("l")),
+            //     })],
             //     }),
             //     },
             // ),
@@ -290,8 +295,10 @@ mod tests {
             //     "b[0x6C]",
             //     PatuiExpr {
             //     raw: "b[0x6C]".to_string(),
-            //      kind: ExprKind::Lit(Lit {
+            //      kind: ExprKind::Term(Term {
+            //                values: vec![TermParts::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("l")),
+            //     })],
             //     }),
             //     },
             // ),
@@ -300,8 +307,10 @@ mod tests {
                 PatuiExpr {
                     raw: "b['o']".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bytes(Bytes::from("o")),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bytes(Bytes::from("o")),
+                            })],
                         }),
                     },
                 },
@@ -311,8 +320,10 @@ mod tests {
                 PatuiExpr {
                     raw: "b[\"O\"]".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bytes(Bytes::from("O")),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bytes(Bytes::from("O")),
+                            })],
                         }),
                     },
                 },
@@ -322,8 +333,10 @@ mod tests {
                 PatuiExpr {
                     raw: r#"b["h", "e", 108, 108, 'o']"#.to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Bytes(Bytes::from("hello")),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Bytes(Bytes::from("hello")),
+                            })],
                         }),
                     },
                 },
@@ -332,27 +345,33 @@ mod tests {
             //     "b[104, 0x65, 0x6c, 0x6C, 'o']",
             //     PatuiExpr {
             //     raw: "b[104, 0x65, 0x6c, 0x6C, 'o']".to_string(),
-            //      kind: ExprKind::Lit(Lit {
+            //      kind: ExprKind::Term(Term {
+            //      values: vec![TermParts::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("hello")),
+            //     })],
             //     }),
             //     },
             // ),
             // (
             //     "b[104, 0x65, 0x6c, 0x6C, 'o',]",
             //     PatuiExpr {
-            //     raw: //     "b[104, 0x65, 0x6c, 0x6C, 'o',]".to_string(),
-            //      kind: //     ExprKind::Lit(Lit {
+            //     raw: "b[104, 0x65, 0x6c, 0x6C, 'o',]".to_string(),
+            //      kind: ExprKind::Term(Term {
+            //      values: vec![TermParts::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("hello")),
+            //     })],
             //     }),
             //     },
             // ),
             // (
             //     "b[      104    , 0x65      , 0x6c  , 0x6C   , 'o'  , ]",
             //     PatuiExpr {
-            //     raw: //     "b[      104    , 0x65      , 0x6c  , 0x6C   , 'o'  ,
+            //     raw: "b[      104    , 0x65      , 0x6c  , 0x6C   , 'o'  ,
             //     ]".to_string(),
-            //      kind: //     ExprKind::Lit(Lit {
+            //      kind: ExprKind::Term(Term {
+            //      values: vec![TermParts::Lit(Lit {
             //         kind: LitKind::Bytes(Bytes::from("hello")),
+            //     })],
             //     }),
             //     },
             // ),
@@ -372,30 +391,38 @@ mod tests {
                 PatuiExpr {
                     raw: "[123, 456, 789]".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::List(vec![
-                                P {
-                                    ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
-                                            kind: LitKind::Integer("123".to_string()),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::List(vec![
+                                    P {
+                                        ptr: Box::new(Expr {
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Integer("123".to_string()),
+                                                })],
+                                            }),
                                         }),
-                                    }),
-                                },
-                                P {
-                                    ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
-                                            kind: LitKind::Integer("456".to_string()),
+                                    },
+                                    P {
+                                        ptr: Box::new(Expr {
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Integer("456".to_string()),
+                                                })],
+                                            }),
                                         }),
-                                    }),
-                                },
-                                P {
-                                    ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
-                                            kind: LitKind::Integer("789".to_string()),
+                                    },
+                                    P {
+                                        ptr: Box::new(Expr {
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Integer("789".to_string()),
+                                                })],
+                                            }),
                                         }),
-                                    }),
-                                },
-                            ]),
+                                    },
+                                ]),
+                            })],
                         }),
                     },
                 },
@@ -405,65 +432,81 @@ mod tests {
                 PatuiExpr {
                     raw: "{\"a\": 1, \"b\": [1,2,3]}".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Map(vec![
-                                P {
-                                    ptr: Box::new((
-                                        Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Str("a".to_string()),
-                                            }),
-                                        },
-                                        Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Integer("1".to_string()),
-                                            }),
-                                        },
-                                    )),
-                                },
-                                P {
-                                    ptr: Box::new((
-                                        Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Str("b".to_string()),
-                                            }),
-                                        },
-                                        Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::List(vec![
-                                                    P {
-                                                        ptr: Box::new(Expr {
-                                                            kind: ExprKind::Lit(Lit {
-                                                                kind: LitKind::Integer(
-                                                                    "1".to_string(),
-                                                                ),
-                                                            }),
-                                                        }),
-                                                    },
-                                                    P {
-                                                        ptr: Box::new(Expr {
-                                                            kind: ExprKind::Lit(Lit {
-                                                                kind: LitKind::Integer(
-                                                                    "2".to_string(),
-                                                                ),
-                                                            }),
-                                                        }),
-                                                    },
-                                                    P {
-                                                        ptr: Box::new(Expr {
-                                                            kind: ExprKind::Lit(Lit {
-                                                                kind: LitKind::Integer(
-                                                                    "3".to_string(),
-                                                                ),
-                                                            }),
-                                                        }),
-                                                    },
-                                                ]),
-                                            }),
-                                        },
-                                    )),
-                                },
-                            ]),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Map(vec![
+                                    P {
+                                        ptr: Box::new((
+                                            Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Str("a".to_string()),
+                                                    })],
+                                                }),
+                                            },
+                                            Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Integer("1".to_string()),
+                                                    })],
+                                                }),
+                                            },
+                                        )),
+                                    },
+                                    P {
+                                        ptr: Box::new((
+                                            Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Str("b".to_string()),
+                                                    })],
+                                                }),
+                                            },
+                                            Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::List(vec![
+                                                            P {
+                                                                ptr: Box::new(Expr {
+                                                                    kind: ExprKind::Term(Term {
+                                                                        values: vec![TermParts::Lit(Lit {
+                                                                        kind: LitKind::Integer(
+                                                                            "1".to_string(),
+                                                                        ),
+                                                                    })],
+                                                                    }),
+                                                                }),
+                                                            },
+                                                            P {
+                                                                ptr: Box::new(Expr {
+                                                                    kind: ExprKind::Term(Term {
+                                                                        values: vec![TermParts::Lit(Lit {
+                                                                        kind: LitKind::Integer(
+                                                                            "2".to_string(),
+                                                                        ),
+                                                                    })],
+                                                                    }),
+                                                                }),
+                                                            },
+                                                            P {
+                                                                ptr: Box::new(Expr {
+                                                                    kind: ExprKind::Term(Term {
+                                                                        values: vec![TermParts::Lit(Lit {
+                                                                        kind: LitKind::Integer(
+                                                                            "3".to_string(),
+                                                                        ),
+                                                                    })],
+                                                                    }),
+                                                                }),
+                                                            },
+                                                        ]),
+                                                    })],
+                                                }),
+                                            },
+                                        )),
+                                    },
+                                ]),
+                            })],
                         }),
                     },
                 },
@@ -473,52 +516,66 @@ mod tests {
                 PatuiExpr {
                     raw: "{1, 2, \"foo\", [1,2], 2}".to_string(),
                     expr: Expr {
-                        kind: ExprKind::Lit(Lit {
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
                             kind: LitKind::Set(vec![
                                 P {
                                     ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
                                             kind: LitKind::Integer("1".to_string()),
+                                        })],
                                         }),
                                     }),
                                 },
                                 P {
                                     ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
                                             kind: LitKind::Integer("2".to_string()),
+                                        })],
                                         }),
                                     }),
                                 },
                                 P {
                                     ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
                                             kind: LitKind::Str("foo".to_string()),
+                                        })],
                                         }),
                                     }),
                                 },
                                 P {
                                     ptr: Box::new(Expr {
-                                        kind: ExprKind::Lit(Lit {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
                                             kind: LitKind::List(vec![
                                                 P {
                                                     ptr: Box::new(Expr {
-                                                        kind: ExprKind::Lit(Lit {
+                                                        kind: ExprKind::Term(Term {
+                                                            values: vec![TermParts::Lit(Lit {
                                                             kind: LitKind::Integer("1".to_string()),
+                                                        })],
                                                         }),
                                                     }),
                                                 },
                                                 P {
                                                     ptr: Box::new(Expr {
-                                                        kind: ExprKind::Lit(Lit {
+                                                        kind: ExprKind::Term(Term {
+                                                            values: vec![TermParts::Lit(Lit {
                                                             kind: LitKind::Integer("2".to_string()),
+                                                        })],
                                                         }),
                                                     }),
                                                 },
                                             ]),
+                                        })],
                                         }),
                                     }),
                                 },
                             ]),
+                        })],
                         }),
                     },
                 },
@@ -607,7 +664,18 @@ mod tests {
                     raw: "foo[0]".to_string(),
                     expr: Expr {
                         kind: ExprKind::Term(Term {
-                            values: vec![TermParts::Ident("foo".to_string()), TermParts::Index(0)],
+                            values: vec![
+                                TermParts::Ident("foo".to_string()),
+                                TermParts::Index(P {
+                                    ptr: Box::new(Expr {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
+                                                kind: LitKind::Integer("0".to_string()),
+                                            })],
+                                        }),
+                                    }),
+                                }),
+                            ],
                         }),
                     },
                 },
@@ -621,7 +689,7 @@ mod tests {
                             values: vec![
                                 TermParts::Ident("foo".to_string()),
                                 TermParts::Ident("bar".to_string()),
-                                TermParts::Expr(P {
+                                TermParts::Index(P {
                                     ptr: Box::new(Expr {
                                         kind: ExprKind::Term(Term {
                                             values: vec![
@@ -642,7 +710,202 @@ mod tests {
                     raw: "bar[*]".to_string(),
                     expr: Expr {
                         kind: ExprKind::Term(Term {
-                            values: vec![TermParts::Ident("bar".to_string()), TermParts::Wildcard],
+                            values: vec![
+                                TermParts::Ident("bar".to_string()),
+                                TermParts::Index(P {
+                                    ptr: Box::new(Expr {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
+                                                kind: LitKind::Wildcard,
+                                            })],
+                                        }),
+                                    }),
+                                }),
+                            ],
+                        }),
+                    },
+                },
+            ),
+            (
+                "\"string\"[1..3]",
+                PatuiExpr {
+                    raw: "\"string\"[1..3]".to_string(),
+                    expr: Expr {
+                        kind: ExprKind::Term(Term {
+                            values: vec![
+                                TermParts::Lit(Lit {
+                                    kind: LitKind::Str("string".to_string()),
+                                }),
+                                TermParts::Index(P {
+                                    ptr: Box::new(Expr {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
+                                                kind: LitKind::Range(
+                                                    P {
+                                                        ptr: Box::new(Expr {
+                                                            kind: ExprKind::Term(Term {
+                                                                values: vec![TermParts::Lit(Lit {
+                                                                    kind: LitKind::Integer(
+                                                                        "1".to_string(),
+                                                                    ),
+                                                                })],
+                                                            }),
+                                                        }),
+                                                    },
+                                                    P {
+                                                        ptr: Box::new(Expr {
+                                                            kind: ExprKind::Term(Term {
+                                                                values: vec![TermParts::Lit(Lit {
+                                                                    kind: LitKind::Integer(
+                                                                        "3".to_string(),
+                                                                    ),
+                                                                })],
+                                                            }),
+                                                        }),
+                                                    },
+                                                ),
+                                            })],
+                                        }),
+                                    }),
+                                }),
+                            ],
+                        }),
+                    },
+                },
+            ),
+            (
+                "b\"bytes\"[1]",
+                PatuiExpr {
+                    raw: "b\"bytes\"[1]".to_string(),
+                    expr: Expr {
+                        kind: ExprKind::Term(Term {
+                            values: vec![
+                                TermParts::Lit(Lit {
+                                    kind: LitKind::Bytes(Bytes::from("bytes")),
+                                }),
+                                TermParts::Index(P {
+                                    ptr: Box::new(Expr {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
+                                                kind: LitKind::Integer("1".to_string()),
+                                            })],
+                                        }),
+                                    }),
+                                }),
+                            ],
+                        }),
+                    },
+                },
+            ),
+            (
+                "[1,2,3][1]",
+                PatuiExpr {
+                    raw: "[1,2,3][1]".to_string(),
+                    expr: Expr {
+                        kind: ExprKind::Term(Term {
+                            values: vec![
+                                TermParts::Lit(Lit {
+                                    kind: LitKind::List(vec![
+                                        P {
+                                            ptr: Box::new(Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Integer("1".to_string()),
+                                                    })],
+                                                }),
+                                            }),
+                                        },
+                                        P {
+                                            ptr: Box::new(Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Integer("2".to_string()),
+                                                    })],
+                                                }),
+                                            }),
+                                        },
+                                        P {
+                                            ptr: Box::new(Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Integer("3".to_string()),
+                                                    })],
+                                                }),
+                                            }),
+                                        },
+                                    ]),
+                                }),
+                                TermParts::Index(P {
+                                    ptr: Box::new(Expr {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
+                                                kind: LitKind::Integer("1".to_string()),
+                                            })],
+                                        }),
+                                    }),
+                                }),
+                            ],
+                        }),
+                    },
+                },
+            ),
+            (
+                "{\"a\":1,\"b\":2}[\"a\"]",
+                PatuiExpr {
+                    raw: "{\"a\":1,\"b\":2}[\"a\"]".to_string(),
+                    expr: Expr {
+                        kind: ExprKind::Term(Term {
+                            values: vec![
+                                TermParts::Lit(Lit {
+                                    kind: LitKind::Map(vec![
+                                        P {
+                                            ptr: Box::new((
+                                                Expr {
+                                                    kind: ExprKind::Term(Term {
+                                                        values: vec![TermParts::Lit(Lit {
+                                                            kind: LitKind::Str("a".to_string()),
+                                                        })],
+                                                    }),
+                                                },
+                                                Expr {
+                                                    kind: ExprKind::Term(Term {
+                                                        values: vec![TermParts::Lit(Lit {
+                                                            kind: LitKind::Integer("1".to_string()),
+                                                        })],
+                                                    }),
+                                                },
+                                            )),
+                                        },
+                                        P {
+                                            ptr: Box::new((
+                                                Expr {
+                                                    kind: ExprKind::Term(Term {
+                                                        values: vec![TermParts::Lit(Lit {
+                                                            kind: LitKind::Str("b".to_string()),
+                                                        })],
+                                                    }),
+                                                },
+                                                Expr {
+                                                    kind: ExprKind::Term(Term {
+                                                        values: vec![TermParts::Lit(Lit {
+                                                            kind: LitKind::Integer("2".to_string()),
+                                                        })],
+                                                    }),
+                                                },
+                                            )),
+                                        },
+                                    ]),
+                                }),
+                                TermParts::Index(P {
+                                    ptr: Box::new(Expr {
+                                        kind: ExprKind::Term(Term {
+                                            values: vec![TermParts::Lit(Lit {
+                                                kind: LitKind::Str("a".to_string()),
+                                            })],
+                                        }),
+                                    }),
+                                }),
+                            ],
                         }),
                     },
                 },
@@ -685,8 +948,10 @@ mod tests {
                             UnOp::Not,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
@@ -703,15 +968,19 @@ mod tests {
                             BinOp::Add,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -728,15 +997,19 @@ mod tests {
                             BinOp::Subtract,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -753,15 +1026,19 @@ mod tests {
                             BinOp::Multiply,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -778,15 +1055,19 @@ mod tests {
                             BinOp::Divide,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -803,15 +1084,19 @@ mod tests {
                             BinOp::Modulo,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -839,15 +1124,19 @@ mod tests {
                             BinOp::Equal,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -864,15 +1153,19 @@ mod tests {
                             BinOp::NotEqual,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -889,15 +1182,19 @@ mod tests {
                             BinOp::LessThan,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -914,15 +1211,19 @@ mod tests {
                             BinOp::LessThanEqual,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -939,15 +1240,19 @@ mod tests {
                             BinOp::GreaterThan,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -964,15 +1269,19 @@ mod tests {
                             BinOp::GreaterThanEqual,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("1".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("1".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Integer("2".to_string()),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer("2".to_string()),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1000,15 +1309,19 @@ mod tests {
                             BinOp::And,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(false),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(false),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1025,15 +1338,19 @@ mod tests {
                             BinOp::Or,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(false),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(false),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1050,8 +1367,10 @@ mod tests {
                             BinOp::And,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1061,8 +1380,10 @@ mod tests {
                                         BinOp::Or,
                                         P {
                                             ptr: Box::new(Expr {
-                                                kind: ExprKind::Lit(Lit {
-                                                    kind: LitKind::Bool(false),
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Bool(false),
+                                                    })],
                                                 }),
                                             }),
                                         },
@@ -1072,19 +1393,23 @@ mod tests {
                                                     BinOp::Equal,
                                                     P {
                                                         ptr: Box::new(Expr {
-                                                            kind: ExprKind::Lit(Lit {
-                                                                kind: LitKind::Integer(
-                                                                    "1".to_string(),
-                                                                ),
+                                                            kind: ExprKind::Term(Term {
+                                                                values: vec![TermParts::Lit(Lit {
+                                                                    kind: LitKind::Integer(
+                                                                        "1".to_string(),
+                                                                    ),
+                                                                })],
                                                             }),
                                                         }),
                                                     },
                                                     P {
                                                         ptr: Box::new(Expr {
-                                                            kind: ExprKind::Lit(Lit {
-                                                                kind: LitKind::Integer(
-                                                                    "2".to_string(),
-                                                                ),
+                                                            kind: ExprKind::Term(Term {
+                                                                values: vec![TermParts::Lit(Lit {
+                                                                    kind: LitKind::Integer(
+                                                                        "2".to_string(),
+                                                                    ),
+                                                                })],
                                                             }),
                                                         }),
                                                     },
@@ -1107,8 +1432,10 @@ mod tests {
                             UnOp::Not,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1125,8 +1452,10 @@ mod tests {
                             UnOp::Not,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1170,15 +1499,19 @@ mod tests {
                                 TermParts::Call(vec![
                                     P {
                                         ptr: Box::new(Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Str("a".to_string()),
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Str("a".to_string()),
+                                                })],
                                             }),
                                         }),
                                     },
                                     P {
                                         ptr: Box::new(Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Integer("1".to_string()),
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Integer("1".to_string()),
+                                                })],
                                             }),
                                         }),
                                     },
@@ -1277,16 +1610,20 @@ mod tests {
             //                 P {
             //                     ptr: Box::new(PatuiExpr {
             //                         raw: "1".to_string(),
-            //                         kind: ExprKind::Lit(Lit {
+            //                         kind: ExprKind::Term(Term {
+            //                         values: vec![TermParts::Lit(Lit {
             //                             kind: LitKind::Integer("1".to_string()),
+            //                         })],
             //                         }),
             //                     }),
             //                 },
             //                 P {
             //                     ptr: Box::new(PatuiExpr {
             //                         raw: "2".to_string(),
-            //                         kind: ExprKind::Lit(Lit {
+            //                         kind: ExprKind::Term(Term {
+            //                         values: vec![TermParts::Lit(Lit {
             //                             kind: LitKind::Integer("2".to_string()),
+            //                         })],
             //                         }),
             //                     }),
             //                 },
@@ -1316,24 +1653,30 @@ mod tests {
             //                                 P {
             //                                     ptr: Box::new(PatuiExpr {
             //                                         raw: "3".to_string(),
-            //                                         kind: ExprKind::Lit(Lit {
+            //                                         kind: ExprKind::Term(Term {
+            //                                         values: vec![TermParts::Lit(Lit {
             //                                             kind: LitKind::Integer("3".to_string()),
+            //                                         })],
             //                                         }),
             //                                     }),
             //                                 },
             //                                 P {
             //                                     ptr: Box::new(PatuiExpr {
             //                                         raw: "4".to_string(),
-            //                                         kind: ExprKind::Lit(Lit {
+            //                                         kind: ExprKind::Term(Term {
+            //                                         values: vec![TermParts::Lit(Lit {
             //                                             kind: LitKind::Integer("4".to_string()),
+            //                                         })],
             //                                         }),
             //                                     }),
             //                                 },
             //                                 P {
             //                                     ptr: Box::new(PatuiExpr {
             //                                         raw: "5".to_string(),
-            //                                         kind: ExprKind::Lit(Lit {
+            //                                         kind: ExprKind::Term(Term {
+            //                                         values: vec![TermParts::Lit(Lit {
             //                                             kind: LitKind::Integer("5".to_string()),
+            //                                         })],
             //                                         }),
             //                                     }),
             //                                 },
@@ -1369,15 +1712,19 @@ mod tests {
                                         BinOp::And,
                                         P {
                                             ptr: Box::new(Expr {
-                                                kind: ExprKind::Lit(Lit {
-                                                    kind: LitKind::Bool(true),
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Bool(true),
+                                                    })],
                                                 }),
                                             }),
                                         },
                                         P {
                                             ptr: Box::new(Expr {
-                                                kind: ExprKind::Lit(Lit {
-                                                    kind: LitKind::Bool(false),
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Bool(false),
+                                                    })],
                                                 }),
                                             }),
                                         },
@@ -1386,8 +1733,10 @@ mod tests {
                             },
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1404,8 +1753,10 @@ mod tests {
                             BinOp::And,
                             P {
                                 ptr: Box::new(Expr {
-                                    kind: ExprKind::Lit(Lit {
-                                        kind: LitKind::Bool(true),
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Bool(true),
+                                        })],
                                     }),
                                 }),
                             },
@@ -1415,15 +1766,19 @@ mod tests {
                                         BinOp::Or,
                                         P {
                                             ptr: Box::new(Expr {
-                                                kind: ExprKind::Lit(Lit {
-                                                    kind: LitKind::Bool(false),
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Bool(false),
+                                                    })],
                                                 }),
                                             }),
                                         },
                                         P {
                                             ptr: Box::new(Expr {
-                                                kind: ExprKind::Lit(Lit {
-                                                    kind: LitKind::Bool(true),
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![TermParts::Lit(Lit {
+                                                        kind: LitKind::Bool(true),
+                                                    })],
                                                 }),
                                             }),
                                         },
@@ -1465,27 +1820,41 @@ mod tests {
                                                             values: vec![
                                                                 TermParts::Ident("foo".to_string()),
                                                                 TermParts::Ident("bar".to_string()),
-                                                                TermParts::Index(2),
+                                                                TermParts::Index(P {
+                                                                    ptr: Box::new(Expr {
+                                                                        kind: ExprKind::Term(Term {
+                                                                            values: vec![TermParts::Lit(Lit {
+                                                                                kind: LitKind::Integer("2".to_string()),
+                                                                            })],
+                                                                        }),
+                                                                    }),
+                                                                }),
                                                                 TermParts::Ident("baz".to_string()),
                                                                 TermParts::Call(vec![
                                                                     P {
                                                                         ptr: Box::new(Expr {
-                                                                            kind: ExprKind::Lit(Lit {
-                                                                                kind: LitKind::Integer("1".to_string()),
+                                                                            kind: ExprKind::Term(Term {
+                                                                                values: vec![TermParts::Lit(Lit {
+                                                                                    kind: LitKind::Integer("1".to_string()),
+                                                                                })],
                                                                             }),
                                                                         }),
                                                                     },
                                                                     P {
                                                                         ptr: Box::new(Expr {
-                                                                            kind: ExprKind::Lit(Lit {
-                                                                                kind: LitKind::Integer("2".to_string()),
+                                                                            kind: ExprKind::Term(Term {
+                                                                                values: vec![TermParts::Lit(Lit {
+                                                                                    kind: LitKind::Integer("2".to_string()),
+                                                                                })],
                                                                             }),
                                                                         }),
                                                                     },
                                                                     P {
                                                                         ptr: Box::new(Expr {
-                                                                            kind: ExprKind::Lit(Lit {
-                                                                                kind: LitKind::Integer("3".to_string()),
+                                                                            kind: ExprKind::Term(Term {
+                                                                                values: vec![TermParts::Lit(Lit {
+                                                                                    kind: LitKind::Integer("3".to_string()),
+                                                                                })],
                                                                             }),
                                                                         }),
                                                                     },
@@ -1496,8 +1865,10 @@ mod tests {
                                                 },
                                                 P {
                                                     ptr: Box::new(Expr {
-                                                        kind: ExprKind::Lit(Lit {
-                                                            kind: LitKind::Integer("5".to_string()),
+                                                        kind: ExprKind::Term(Term {
+                                                            values: vec![TermParts::Lit(Lit {
+                                                                kind: LitKind::Integer("5".to_string()),
+                                                            })],
                                                         }),
                                                     }),
                                                 },
@@ -1506,8 +1877,10 @@ mod tests {
                                     },
                                     P {
                                         ptr: Box::new(Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Integer("123".to_string()),
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Integer("123".to_string()),
+                                                })],
                                             }),
                                         }),
                                     },
@@ -1519,7 +1892,17 @@ mod tests {
                                 kind: ExprKind::Term(Term {
                                     values: vec![
                                         TermParts::Ident("foobar".to_string()),
-                                        TermParts::Ident("abc".to_string()),
+                                        TermParts::Index(P {
+                                            ptr: Box::new(Expr {
+                                                kind: ExprKind::Term(Term {
+                                                    values: vec![
+                                                        TermParts::Lit(Lit {
+                                                            kind: LitKind::Str("abc".to_string())
+                                                        })
+                                                    ]
+                                                })
+                                            })
+                                        }),
                                     ],
                                 }),
                             }),
@@ -1540,9 +1923,11 @@ mod tests {
                                     BinOp::Equal,
                                     P {
                                         ptr: Box::new(Expr {
-                                            kind: ExprKind::Lit(Lit {
-                                                kind: LitKind::Integer("1".to_string())
-                                            })
+                                            kind: ExprKind::Term(Term {
+                                                values: vec![TermParts::Lit(Lit {
+                                                    kind: LitKind::Integer("1".to_string())
+                                                })]
+                                            }),
                                         })
                                     },
                                     P {
@@ -1551,16 +1936,20 @@ mod tests {
                                                 BinOp::Add,
                                                 P {
                                                     ptr: Box::new(Expr {
-                                                        kind: ExprKind::Lit(Lit {
-                                                            kind: LitKind::Integer("2".to_string())
-                                                        })
+                                                        kind: ExprKind::Term(Term {
+                                                            values: vec![TermParts::Lit(Lit {
+                                                                kind: LitKind::Integer("2".to_string())
+                                                            })]
+                                                        }),
                                                     })
                                                 },
                                                 P {
                                                     ptr: Box::new(Expr {
-                                                        kind: ExprKind::Lit(Lit {
-                                                            kind: LitKind::Integer("3".to_string())
-                                                        })
+                                                        kind: ExprKind::Term(Term {
+                                                            values: vec![TermParts::Lit(Lit {
+                                                                kind: LitKind::Integer("3".to_string())
+                                                            })]
+                                                        }),
                                                     })
                                                 }
                                             )
@@ -1579,9 +1968,11 @@ mod tests {
                                                 BinOp::Or,
                                                 P {
                                                     ptr: Box::new(Expr {
-                                                        kind: ExprKind::Lit(Lit {
-                                                            kind: LitKind::Bool(true)
-                                                        })
+                                                        kind: ExprKind::Term(Term {
+                                                            values: vec![TermParts::Lit(Lit {
+                                                                kind: LitKind::Bool(true)
+                                                            })]
+                                                        }),
                                                     })
                                                 },
                                                 P {
@@ -1594,7 +1985,15 @@ mod tests {
                                                                         values: vec![
                                                                             TermParts::Ident("foo".to_string()),
                                                                             TermParts::Ident("bar".to_string()),
-                                                                            TermParts::Index(1),
+                                                                            TermParts::Index(P {
+                                                                                ptr: Box::new(Expr {
+                                                                                    kind: ExprKind::Term(Term {
+                                                                                        values: vec![TermParts::Lit(Lit {
+                                                                                            kind: LitKind::Integer("1".to_string()),
+                                                                                        })],
+                                                                                    }),
+                                                                                }),
+                                                                            }),
                                                                         ]
                                                                     })
                                                                 })
@@ -1604,7 +2003,7 @@ mod tests {
                                                                     kind: ExprKind::Term(Term {
                                                                         values: vec![
                                                                             TermParts::Ident("bar".to_string()),
-                                                                            TermParts::Expr(P {
+                                                                            TermParts::Index(P {
                                                                                 ptr: Box::new(Expr {
                                                                                     kind: ExprKind::Term(Term {
                                                                                         values: vec![
@@ -1634,16 +2033,20 @@ mod tests {
                                                             BinOp::Equal,
                                                             P {
                                                                 ptr: Box::new(Expr {
-                                                                    kind: ExprKind::Lit(Lit {
-                                                                        kind: LitKind::Str("123".to_string())
-                                                                    })
+                                                                    kind: ExprKind::Term(Term {
+                                                                        values: vec![TermParts::Lit(Lit {
+                                                                            kind: LitKind::Str("123".to_string())
+                                                                        })]
+                                                                    }),
                                                                 })
                                                             },
                                                             P {
                                                                 ptr: Box::new(Expr {
-                                                                    kind: ExprKind::Lit(Lit {
-                                                                        kind: LitKind::Integer("123".to_string())
-                                                                    })
+                                                                    kind: ExprKind::Term(Term {
+                                                                        values: vec![TermParts::Lit(Lit {
+                                                                            kind: LitKind::Integer("123".to_string())
+                                                                        })]
+                                                                    }),
                                                                 })
                                                             }
                                                         )
@@ -1659,55 +2062,69 @@ mod tests {
                                                                         BinOp::Equal,
                                                                         P {
                                                                             ptr: Box::new(Expr {
-                                                                                kind: ExprKind::Lit(Lit {
-                                                                                    kind: LitKind::List(vec![
-                                                                                        P {
-                                                                                            ptr: Box::new(Expr {
-                                                                                                kind: ExprKind::Lit(Lit {
-                                                                                                    kind: LitKind::Integer("1".to_string())
+                                                                                kind: ExprKind::Term(Term {
+                                                                                    values: vec![TermParts::Lit(Lit {
+                                                                                        kind: LitKind::List(vec![
+                                                                                            P {
+                                                                                                ptr: Box::new(Expr {
+                                                                                                    kind: ExprKind::Term(Term {
+                                                                                                        values: vec![TermParts::Lit(Lit {
+                                                                                                            kind: LitKind::Integer("1".to_string())
+                                                                                                        })]
+                                                                                                    }),
                                                                                                 })
-                                                                                            })
-                                                                                        },
-                                                                                        P {
-                                                                                            ptr: Box::new(Expr {
-                                                                                                kind: ExprKind::Lit(Lit {
-                                                                                                    kind: LitKind::Integer("2".to_string())
+                                                                                            },
+                                                                                            P {
+                                                                                                ptr: Box::new(Expr {
+                                                                                                    kind: ExprKind::Term(Term {
+                                                                                                        values: vec![TermParts::Lit(Lit {
+                                                                                                            kind: LitKind::Integer("2".to_string())
+                                                                                                        })]
+                                                                                                    }),
                                                                                                 })
-                                                                                            })
-                                                                                        },
-                                                                                        P {
-                                                                                            ptr: Box::new(Expr {
-                                                                                                kind: ExprKind::Lit(Lit {
-                                                                                                    kind: LitKind::Integer("3".to_string())
+                                                                                            },
+                                                                                            P {
+                                                                                                ptr: Box::new(Expr {
+                                                                                                    kind: ExprKind::Term(Term {
+                                                                                                        values: vec![TermParts::Lit(Lit {
+                                                                                                            kind: LitKind::Integer("3".to_string())
+                                                                                                        })]
+                                                                                                    }),
                                                                                                 })
-                                                                                            })
-                                                                                        },
-                                                                                    ])
-                                                                                })
+                                                                                            },
+                                                                                        ])
+                                                                                    })]
+                                                                                }),
                                                                             })
                                                                         },
                                                                         P {
                                                                             ptr: Box::new(Expr {
-                                                                                kind: ExprKind::Lit(Lit {
-                                                                                    kind: LitKind::Map(vec![
-                                                                                        P {
-                                                                                            ptr: Box::new(
-                                                                                                (
-                                                                                                    Expr {
-                                                                                                        kind: ExprKind::Lit(Lit {
-                                                                                                            kind: LitKind::Str("a".to_string())
-                                                                                                        })
-                                                                                                    },
-                                                                                                    Expr {
-                                                                                                        kind: ExprKind::Lit(Lit {
-                                                                                                            kind: LitKind::Integer("1".to_string())
-                                                                                                        })
-                                                                                                    }
+                                                                                kind: ExprKind::Term(Term {
+                                                                                    values: vec![TermParts::Lit(Lit {
+                                                                                        kind: LitKind::Map(vec![
+                                                                                            P {
+                                                                                                ptr: Box::new(
+                                                                                                    (
+                                                                                                        Expr {
+                                                                                                            kind: ExprKind::Term(Term {
+                                                                                                                values: vec![TermParts::Lit(Lit {
+                                                                                                                    kind: LitKind::Str("a".to_string())
+                                                                                                                })]
+                                                                                                            }),
+                                                                                                        },
+                                                                                                        Expr {
+                                                                                                            kind: ExprKind::Term(Term {
+                                                                                                                values: vec![TermParts::Lit(Lit {
+                                                                                                                    kind: LitKind::Integer("1".to_string())
+                                                                                                                })]
+                                                                                                            }),
+                                                                                                        }
+                                                                                                    )
                                                                                                 )
-                                                                                            )
-                                                                                        }
-                                                                                    ])
-                                                                                })
+                                                                                            }
+                                                                                        ])
+                                                                                    })]
+                                                                                }),
                                                                             })
                                                                         }
                                                                     )
@@ -1719,9 +2136,11 @@ mod tests {
                                                                         UnOp::Not,
                                                                         P {
                                                                             ptr: Box::new(Expr {
-                                                                                kind: ExprKind::Lit(Lit {
-                                                                                    kind: LitKind::Bool(true)
-                                                                                })
+                                                                                kind: ExprKind::Term(Term {
+                                                                                    values: vec![TermParts::Lit(Lit {
+                                                                                        kind: LitKind::Bool(true)
+                                                                                    })]
+                                                                                }),
                                                                             })
                                                                         }
                                                                     )

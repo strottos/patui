@@ -27,15 +27,22 @@ impl PatuiExpr {
 impl Expr {
     pub(crate) fn visit(&self, visitor: &mut dyn Visitor) -> Result<()> {
         self.walk_expr(visitor)?;
-        visitor.visit_expr(&self)?;
+        visitor.visit_expr(self)?;
 
         Ok(())
     }
 
     fn walk_expr(&self, visitor: &mut dyn Visitor) -> Result<()> {
         match &self.kind {
-            ExprKind::Lit(lit) => visitor.visit_lit(lit)?,
-            ExprKind::Term(term) => visitor.visit_term(term)?,
+            ExprKind::Term(term) => {
+                for value in &term.values {
+                    if let TermParts::Lit(lit) = value {
+                        visitor.visit_lit(lit)?;
+                    } else {
+                        visitor.visit_term(term)?;
+                    }
+                }
+            }
             ExprKind::If(p, p1, p2) => {
                 p.visit(visitor)?;
                 p1.visit(visitor)?;
@@ -67,8 +74,10 @@ mod tests {
         let expr = PatuiExpr {
             raw: "1".to_string(),
             expr: Expr {
-                kind: ExprKind::Lit(Lit {
-                    kind: LitKind::Integer("1".to_string()),
+                kind: ExprKind::Term(Term {
+                    values: vec![TermParts::Lit(Lit {
+                        kind: LitKind::Integer("1".to_string()),
+                    })],
                 }),
             },
         };
@@ -134,7 +143,7 @@ mod tests {
         expr.visit(&mut step_visitor).unwrap();
 
         assert_eq!(step_visitor.lit_visits, 9);
-        assert_eq!(step_visitor.term_visits, 2);
+        assert_eq!(step_visitor.term_visits, 5);
         assert_eq!(step_visitor.expr_visits, 22);
     }
 }

@@ -5,9 +5,12 @@ use tokio::{
 };
 
 use super::PatuiStepRunnerTrait;
-use crate::types::{
-    expr::ast::{ExprKind, Lit, LitKind},
-    PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
+use crate::{
+    runner::steps::TermParts,
+    types::{
+        expr::ast::{ExprKind, Lit, LitKind, Term},
+        PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
+    },
 };
 
 #[derive(Debug)]
@@ -41,76 +44,88 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
 
         let task = tokio::spawn(async move {
             tracing::trace!("Running sender step with expr: {:?}", step.expr);
-            if let ExprKind::Lit(Lit {
-                kind: LitKind::List(elems),
-            }) = step.expr.expr.kind()
-            {
-                for elem in elems {
-                    if let ExprKind::Lit(lit) = elem.kind() {
-                        match &lit.kind {
-                            LitKind::Null => todo!(),
-                            LitKind::Bool(_) => todo!(),
-                            LitKind::Bytes(bytes) => {
-                                tracing::trace!("Sending bytes: {:?}", bytes);
-                                let data =
-                                    PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
-                                out_sender.send(data.clone()).unwrap();
+            if let ExprKind::Term(Term { values }) = step.expr.expr.kind() {
+                if let [TermParts::Lit(Lit { kind })] = &values[..] {
+                    match kind {
+                        LitKind::List(elems) => {
+                            for elem in elems {
+                                if let ExprKind::Term(Term {
+                                    values: inner_values,
+                                }) = elem.kind()
+                                {
+                                    if let [TermParts::Lit(lit)] = &inner_values[..] {
+                                        match &lit.kind {
+                                            LitKind::Null => todo!(),
+                                            LitKind::Bool(_) => todo!(),
+                                            LitKind::Bytes(bytes) => {
+                                                tracing::trace!("Sending bytes: {:?}", bytes);
+                                                let data = PatuiStepData::new(
+                                                    PatuiStepDataFlavour::Bytes(bytes.clone()),
+                                                );
+                                                out_sender.send(data.clone()).unwrap();
 
-                                tx.send(PatuiEvent::new(
-                                    PatuiEventKind::Result("Sending".to_string(), data),
-                                    step_name.clone(),
-                                ))
-                                .await
-                                .unwrap();
+                                                tx.send(PatuiEvent::new(
+                                                    PatuiEventKind::Result(
+                                                        "Sending".to_string(),
+                                                        data,
+                                                    ),
+                                                    step_name.clone(),
+                                                ))
+                                                .await
+                                                .unwrap();
+                                            }
+                                            LitKind::Integer(_) => todo!(),
+                                            LitKind::Decimal(_) => todo!(),
+                                            LitKind::Str(_) => todo!(),
+                                            LitKind::List(_) => todo!(),
+                                            LitKind::Map(_) => todo!(),
+                                            LitKind::Set(_) => todo!(),
+                                            LitKind::Wildcard => todo!(),
+                                            LitKind::Range(_, _) => todo!(),
+                                        };
+                                    } else {
+                                        todo!();
+                                    }
+                                } else {
+                                    todo!();
+                                }
+                                // Milli sleep to allow channel to process receiving and hopefully prevent
+                                // flooding.
+                                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
                             }
-                            LitKind::Integer(_) => todo!(),
-                            LitKind::Decimal(_) => todo!(),
-                            LitKind::Str(_) => todo!(),
-                            LitKind::List(_) => todo!(),
-                            LitKind::Map(_) => todo!(),
-                            LitKind::Set(_) => todo!(),
-                        };
-                    } else {
-                        todo!();
+                        }
+                        LitKind::Bytes(bytes) => {
+                            let data =
+                                PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
+                            out_sender.send(data.clone()).unwrap();
+
+                            tx.send(PatuiEvent::new(
+                                PatuiEventKind::Result("Sending".to_string(), data),
+                                step_name,
+                            ))
+                            .await
+                            .unwrap();
+                        }
+                        LitKind::Str(string) => {
+                            let data =
+                                PatuiStepData::new(PatuiStepDataFlavour::String(string.clone()));
+                            out_sender.send(data.clone()).unwrap();
+
+                            tx.send(PatuiEvent::new(
+                                PatuiEventKind::Result("Sending".to_string(), data),
+                                step_name,
+                            ))
+                            .await
+                            .unwrap();
+                        }
+                        _ => todo!(),
                     }
                     // Milli sleep to allow channel to process receiving and hopefully prevent
                     // flooding.
                     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                } else {
+                    todo!();
                 }
-            } else if let ExprKind::Lit(lit) = step.expr.expr.kind() {
-                match &lit.kind {
-                    LitKind::Null => todo!(),
-                    LitKind::Bool(_) => todo!(),
-                    LitKind::Bytes(bytes) => {
-                        let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
-                        out_sender.send(data.clone()).unwrap();
-
-                        tx.send(PatuiEvent::new(
-                            PatuiEventKind::Result("Sending".to_string(), data),
-                            step_name,
-                        ))
-                        .await
-                        .unwrap();
-                    }
-                    LitKind::Integer(_) => todo!(),
-                    LitKind::Decimal(_) => todo!(),
-                    LitKind::Str(string) => {
-                        let data = PatuiStepData::new(PatuiStepDataFlavour::String(string.clone()));
-                        out_sender.send(data.clone()).unwrap();
-
-                        tx.send(PatuiEvent::new(
-                            PatuiEventKind::Result("Sending".to_string(), data),
-                            step_name,
-                        ))
-                        .await
-                        .unwrap();
-                    }
-                    LitKind::List(_) => todo!(),
-                    LitKind::Map(_) => todo!(),
-                    LitKind::Set(_) => todo!(),
-                }
-            } else if let ExprKind::Term(_term) = step.expr.expr.kind() {
-                todo!();
             } else {
                 todo!();
             }

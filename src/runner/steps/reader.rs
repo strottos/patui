@@ -11,9 +11,12 @@ use tokio::{
 use tokio_util::io::ReaderStream;
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
-use crate::types::{
-    expr::ast::{Expr, ExprKind, LitKind},
-    PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
+use crate::{
+    runner::steps::TermParts,
+    types::{
+        expr::ast::{Expr, ExprKind, LitKind, Term},
+        PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
+    },
 };
 
 #[derive(Debug)]
@@ -63,51 +66,85 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         let receivers = self.receivers.take();
 
         let task = tokio::spawn(async move {
-            if matches!(step.r#in.expr.kind(), ExprKind::Term(_)) {
-                tracing::trace!("Reading from step: {:?}", step.r#in);
-                let Some(mut receivers) = receivers else {
-                    panic!("No receivers found");
-                };
-                let receiver = receivers.get_mut(&step.r#in.expr).unwrap();
+            if let ExprKind::Term(Term { values }) = step.r#in.expr.kind() {
+                if values.first() == Some(&TermParts::Ident("steps".to_string())) {
+                    tracing::trace!("Reading from step: {:?}", step.r#in);
+                    let Some(mut receivers) = receivers else {
+                        panic!("No receivers found");
+                    };
+                    let receiver = receivers.get_mut(&step.r#in.expr).unwrap();
 
-                let binding = receiver.recv().await.unwrap();
-                let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                    binding.data.as_bytes().unwrap().clone(),
-                ));
-
-                out_sender.send(data.clone()).unwrap();
-
-                tx.send(PatuiEvent::new(
-                    PatuiEventKind::Result("Read data from step".to_string(), data.clone()),
-                    step_name,
-                ))
-                .await
-                .unwrap();
-            } else if let ExprKind::Lit(lit) = step.r#in.expr.kind() {
-                let file_name = match &lit.kind {
-                    LitKind::Str(file_name) => file_name.clone(),
-                    _ => unreachable!(),
-                };
-
-                tracing::trace!("Reading from file: {:?}", file_name);
-
-                let mut reader =
-                    ReaderStream::new(BufReader::new(File::open(file_name).await.unwrap()));
-
-                while let Some(data) = reader.next().await {
-                    tracing::trace!("Read data: {:?}", data);
-
-                    let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(data.unwrap()));
+                    let binding = receiver.recv().await.unwrap();
+                    let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(
+                        binding.data.as_bytes().unwrap().clone(),
+                    ));
 
                     out_sender.send(data.clone()).unwrap();
 
                     tx.send(PatuiEvent::new(
-                        PatuiEventKind::Result("Read data from file".to_string(), data),
-                        step_name.clone(),
+                        PatuiEventKind::Result("Read data from step".to_string(), data.clone()),
+                        step_name,
                     ))
                     .await
                     .unwrap();
+                } else if values.len() == 1 {
+                    if let Some(TermParts::Lit(lit)) = values.first() {
+                        let file_name = match &lit.kind {
+                            LitKind::Str(file_name) => file_name.clone(),
+                            _ => unreachable!(),
+                        };
+
+                        tracing::trace!("Reading from file: {:?}", file_name);
+
+                        let mut reader =
+                            ReaderStream::new(BufReader::new(File::open(file_name).await.unwrap()));
+
+                        while let Some(data) = reader.next().await {
+                            tracing::trace!("Read data: {:?}", data);
+
+                            let data =
+                                PatuiStepData::new(PatuiStepDataFlavour::Bytes(data.unwrap()));
+
+                            out_sender.send(data.clone()).unwrap();
+
+                            tx.send(PatuiEvent::new(
+                                PatuiEventKind::Result("Read data from file".to_string(), data),
+                                step_name.clone(),
+                            ))
+                            .await
+                            .unwrap();
+                        }
+                    } else {
+                        todo!();
+                    }
+                } else {
+                    panic!("Expression not supported for reader: {}", step.r#in);
                 }
+            // } else if let ExprKind::Lit(lit) = step.r#in.expr.kind() {
+            //     let file_name = match &lit.kind {
+            //         LitKind::Str(file_name) => file_name.clone(),
+            //         _ => unreachable!(),
+            //     };
+
+            //     tracing::trace!("Reading from file: {:?}", file_name);
+
+            //     let mut reader =
+            //         ReaderStream::new(BufReader::new(File::open(file_name).await.unwrap()));
+
+            //     while let Some(data) = reader.next().await {
+            //         tracing::trace!("Read data: {:?}", data);
+
+            //         let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(data.unwrap()));
+
+            //         out_sender.send(data.clone()).unwrap();
+
+            //         tx.send(PatuiEvent::new(
+            //             PatuiEventKind::Result("Read data from file".to_string(), data),
+            //             step_name.clone(),
+            //         ))
+            //         .await
+            //         .unwrap();
+            //     }
             } else {
                 panic!("Expression not supported for reader: {}", step.r#in);
             }

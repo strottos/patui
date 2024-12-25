@@ -48,11 +48,11 @@ impl TestRunner {
 
         drop(tx);
 
-        let results = Arc::new(Mutex::new(Some(vec![])));
-        let results_clone = results.clone();
+        let events = Arc::new(Mutex::new(Some(vec![])));
+        let events_clone = events.clone();
 
         let receive_task = tokio::spawn(async move {
-            let results = results_clone.clone();
+            let events = events_clone.clone();
             let status = status_clone;
             while let Some(res) = rx.recv().await {
                 if matches!(res.value(), PatuiEventKind::Failure(_)) {
@@ -61,8 +61,8 @@ impl TestRunner {
                     *status.lock().await = PatuiRunStatus::Error(e.clone());
                 }
                 tracing::trace!("Received result: {:?}", res);
-                let results = results.clone();
-                let mut lock = results.lock().await;
+                let events = events.clone();
+                let mut lock = events.lock().await;
                 lock.as_mut().unwrap().push(res);
             }
         });
@@ -73,15 +73,15 @@ impl TestRunner {
             }
         }
 
+        receive_task.await?;
+
         let mut status_lock = status.lock().await;
         if *status_lock == PatuiRunStatus::Pending {
             *status_lock = PatuiRunStatus::Passed;
         }
         self.run.status = status_lock.clone();
 
-        receive_task.await?;
-
-        self.run.results = results.lock().await.take().unwrap();
+        self.run.events = events.lock().await.take().unwrap();
 
         Ok(self.run)
     }
@@ -190,7 +190,7 @@ mod tests {
             status: PatuiRunStatus::Pending,
             // Umm, we use this? Don't think we actually do.
             step_run_details: vec![],
-            results: vec![],
+            events: vec![],
         });
 
         let test_run = timeout(Duration::from_secs(5), test_runner.run_test()).await;
@@ -200,6 +200,6 @@ mod tests {
         let test_run = test_run.unwrap();
 
         assert_that!(&test_run.status).is_equal_to(&PatuiRunStatus::Passed);
-        assert_that!(&test_run.results.len()).is_equal_to(&5);
+        assert_that!(&test_run.events.len()).is_equal_to(&5);
     }
 }

@@ -8,7 +8,10 @@ use tokio::{
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
 use crate::types::{
-    expr::ast::{Expr, ExprKind, Lit, LitKind, Term, TermParts},
+    expr::{
+        ast::{Expr, ExprKind, Lit, LitKind, Term, TermParts},
+        eval_step_data,
+    },
     PatuiEvent, PatuiEventKind, PatuiStepAssertion, PatuiStepData, PatuiStepDataFlavour,
 };
 
@@ -223,27 +226,32 @@ fn eval(expr: &Expr, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<Eval
             crate::types::expr::ast::BinOp::Or => todo!(),
             crate::types::expr::ast::BinOp::Equal => {
                 let lhs_eval = eval(lhs, results)?;
+                tracing::trace!("lhs_eval: {:?}", lhs_eval);
                 let rhs_eval = eval(rhs, results)?;
-                match lhs_eval {
-                    EvalResult::Known(lhs_data) => match rhs_eval {
-                        EvalResult::Known(rhs_data) => Ok(EvalResult::Known(PatuiStepData::new(
+                tracing::trace!("rhs_eval: {:?}", rhs_eval);
+                match (lhs_eval, rhs_eval) {
+                    (EvalResult::Known(lhs_data), EvalResult::Known(rhs_data)) => {
+                        Ok(EvalResult::Known(PatuiStepData::new(
                             PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
-                        ))),
-                        EvalResult::Predictable(rhs_data) => Ok(EvalResult::Predictable(
-                            PatuiStepData::new(PatuiStepDataFlavour::Bool(lhs_data == rhs_data)),
-                        )),
-                        EvalResult::Unknown => Err(eyre!("Unknown result")),
-                    },
-                    EvalResult::Predictable(lhs_data) => match rhs_eval {
-                        EvalResult::Known(rhs_data) => Ok(EvalResult::Predictable(
-                            PatuiStepData::new(PatuiStepDataFlavour::Bool(lhs_data == rhs_data)),
-                        )),
-                        EvalResult::Predictable(rhs_data) => Ok(EvalResult::Predictable(
-                            PatuiStepData::new(PatuiStepDataFlavour::Bool(lhs_data == rhs_data)),
-                        )),
-                        EvalResult::Unknown => Err(eyre!("Unknown result")),
-                    },
-                    EvalResult::Unknown => Err(eyre!("Unknown result")),
+                        )))
+                    }
+                    (EvalResult::Predictable(lhs_data), EvalResult::Known(rhs_data)) => {
+                        Ok(EvalResult::Predictable(PatuiStepData::new(
+                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
+                        )))
+                    }
+                    (EvalResult::Known(lhs_data), EvalResult::Predictable(rhs_data)) => {
+                        Ok(EvalResult::Predictable(PatuiStepData::new(
+                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
+                        )))
+                    }
+                    (EvalResult::Predictable(lhs_data), EvalResult::Predictable(rhs_data)) => {
+                        Ok(EvalResult::Predictable(PatuiStepData::new(
+                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
+                        )))
+                    }
+                    (EvalResult::Unknown, _) => Ok(EvalResult::Unknown),
+                    (_, EvalResult::Unknown) => Ok(EvalResult::Unknown),
                 }
             }
             crate::types::expr::ast::BinOp::NotEqual => todo!(),
@@ -258,37 +266,71 @@ fn eval(expr: &Expr, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<Eval
             kind: ExprKind::UnOp(_un_op, _p),
         } => todo!(),
         Expr {
-            kind: ExprKind::Lit(lit),
-        } => Ok(EvalResult::Known(eval_lit(lit, results)?)),
-        Expr {
             kind: ExprKind::Term(Term { values, .. }),
         } => match values.first().as_ref() {
             Some(&TermParts::Ident(ident)) => match &ident[..] {
                 "steps" => {
-                    let Some(relevant_parts) = values.get(0..3) else {
+                    let Some(step_parts) = values.get(0..3) else {
                         return Err(eyre!("Not enough parts in term to evaluate: {:?}", values));
                     };
                     if let Some(result) = results.get(&Expr {
                         kind: ExprKind::Term(Term {
-                            values: relevant_parts.to_vec(),
+                            values: step_parts.to_vec(),
                         }),
                     }) {
+                        tracing::trace!(
+                            "Found result for step term {:?}: {:?}",
+                            step_parts,
+                            result
+                        );
                         let index = match values.get(3) {
-                            Some(TermParts::Index(i)) => *i,
-                            _ => Err(eyre!("No index in term: {:?}", values))?,
+                            Some(i) => match i {
+                                TermParts::Index(p) => match &**p {
+                                    Expr {
+                                        kind: ExprKind::Term(Term { values }),
+                                    } => match &values[..] {
+                                        [TermParts::Lit(Lit {
+                                            kind: LitKind::Integer(i),
+                                        })] => i.parse::<usize>().unwrap(),
+                                        _ => todo!(),
+                                    },
+                                    _ => todo!(),
+                                },
+                                _ => todo!(),
+                            },
+                            _ => todo!(),
                         };
 
+                        tracing::trace!("Index: {:?}", index);
+                        tracing::trace!("Result: {:?}", result);
+
                         match result.get(index) {
-                            Some(data) => Ok(EvalResult::Known(data.clone())),
+                            Some(step_data) => {
+                                tracing::trace!(
+                                    "Found result for step index term {:?}[{:?}]: {:?}",
+                                    step_parts,
+                                    index,
+                                    step_data
+                                );
+                                let ret = eval_step_data(step_data.data.clone(), values.get(4..))?;
+                                Ok(EvalResult::Known(PatuiStepData::new(ret)))
+                            }
                             None => Ok(EvalResult::Unknown),
                         }
                     } else {
                         Err(eyre!("No data for term"))
                     }
                 }
-                _ => Err(eyre!("Unknown term first element: {:?}", values.first())),
+                // Will there ever be anything beyond steps? Feels unlikely... if so can remove
+                // this keyword later.
+                _ => Err(eyre!("Unknown term first element: {:?}", ident)),
             },
-            _ => Err(eyre!("Unknown term first element: {:?}", values.first())),
+            Some(&TermParts::Lit(lit)) => {
+                let step_data = eval_lit(lit, results)?;
+                let ret = eval_step_data(step_data, values.get(1..))?;
+                Ok(EvalResult::Known(PatuiStepData::new(ret)))
+            }
+            _ => Err(eyre!("Term first element not found: {:?}", values)),
         },
         Expr {
             kind: ExprKind::If(_p1, _p2, _p3),
@@ -296,24 +338,25 @@ fn eval(expr: &Expr, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<Eval
     }
 }
 
-fn eval_lit(lit: &Lit, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<PatuiStepData> {
+fn eval_lit(
+    lit: &Lit,
+    results: &HashMap<Expr, Vec<PatuiStepData>>,
+) -> Result<PatuiStepDataFlavour> {
     match &lit.kind {
-        LitKind::Null => Ok(PatuiStepData::new(PatuiStepDataFlavour::Null)),
-        LitKind::Bool(b) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Bool(*b))),
-        LitKind::Bytes(bytes) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-            bytes.clone(),
-        ))),
-        LitKind::Integer(i) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Integer(i.clone()))),
-        LitKind::Decimal(f) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Float(f.clone()))),
-        LitKind::Str(s) => Ok(PatuiStepData::new(PatuiStepDataFlavour::String(s.clone()))),
-        LitKind::List(vec) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Array(
+        LitKind::Null => Ok(PatuiStepDataFlavour::Null),
+        LitKind::Bool(b) => Ok(PatuiStepDataFlavour::Bool(*b)),
+        LitKind::Bytes(bytes) => Ok(PatuiStepDataFlavour::Bytes(bytes.clone())),
+        LitKind::Integer(i) => Ok(PatuiStepDataFlavour::Integer(i.clone())),
+        LitKind::Decimal(f) => Ok(PatuiStepDataFlavour::Float(f.clone())),
+        LitKind::Str(s) => Ok(PatuiStepDataFlavour::String(s.clone())),
+        LitKind::List(vec) => Ok(PatuiStepDataFlavour::Array(
             vec.iter()
                 .map(|lit| eval(lit, results))
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .map(|result| result.get_step_data().unwrap().data.clone())
                 .collect(),
-        ))),
+        )),
         LitKind::Map(map) => {
             let map = map
                 .iter()
@@ -322,28 +365,39 @@ fn eval_lit(lit: &Lit, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<Pa
                     match (key, eval(value, results)) {
                         (
                             Expr {
-                                kind:
-                                    ExprKind::Lit(Lit {
-                                        kind: LitKind::Str(s),
-                                    }),
+                                kind: ExprKind::Term(Term { values }),
                             },
                             Ok(value),
-                        ) => Ok((s.clone(), value.get_step_data().unwrap().data.clone())),
+                        ) => {
+                            if values.len() != 1 {
+                                return Err(eyre!("Invalid key in map: {:?}", values));
+                            }
+                            if let TermParts::Lit(Lit {
+                                kind: LitKind::Str(s),
+                            }) = values.first().unwrap()
+                            {
+                                Ok((s.clone(), value.get_step_data().unwrap().data.clone()))
+                            } else {
+                                Err(eyre!("Invalid key in map: {:?}", values))
+                            }
+                        }
                         _ => Err(eyre!("Invalid key/value in map: {:?} - {:?}", key, value)),
                     }
                 })
                 .collect::<Result<HashMap<_, _>>>()?;
 
-            Ok(PatuiStepData::new(PatuiStepDataFlavour::Map(map)))
+            Ok(PatuiStepDataFlavour::Map(map))
         }
-        LitKind::Set(vec) => Ok(PatuiStepData::new(PatuiStepDataFlavour::Set(
+        LitKind::Set(vec) => Ok(PatuiStepDataFlavour::Set(
             vec.iter()
                 .map(|lit| eval(lit, results))
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .map(|result| result.get_step_data().unwrap().data.clone())
                 .collect(),
-        ))),
+        )),
+        LitKind::Wildcard => todo!(),
+        LitKind::Range(_, _) => todo!(),
     }
 }
 
@@ -412,7 +466,7 @@ mod tests {
 
         let (res_tx, mut res_rx) = mpsc::channel(1);
 
-        assert_that!(main_step.run(res_tx.clone())).is_err();
+        assert_that!(main_step.run(res_tx.clone())).is_ok();
 
         let res = timeout(Duration::from_millis(500), res_rx.recv()).await;
         assert_that!(res).is_ok();
@@ -420,52 +474,6 @@ mod tests {
         assert_that!(res).is_some();
         let res = res.unwrap();
         assert_that!(matches!(res.value(), PatuiEventKind::Failure(_))).is_equal_to(true);
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_result_without_sub() {
-        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
-
-        let ret = super::eval(&expr.expr, &HashMap::from([]));
-
-        assert_that!(ret).is_err();
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_result_without_result() {
-        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
-
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
-
-        let ret = super::eval(&expr.expr, &HashMap::from([(key.expr, vec![])]));
-
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        assert_that!(ret).is_equal_to(EvalResult::Unknown);
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_result_with_null() {
-        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
-
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
-
-        let ret = super::eval(
-            &expr.expr,
-            &HashMap::from([(
-                key.expr,
-                vec![PatuiStepData::new(PatuiStepDataFlavour::Null)],
-            )]),
-        );
-
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        let ret = ret.get_step_data();
-        assert_that!(ret).is_ok();
-        assert_that!(ret.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Null);
     }
 
     #[traced_test]
@@ -532,7 +540,53 @@ mod tests {
 
     #[traced_test]
     #[test]
-    fn evaluate_null_result_equals_null() {
+    fn evaluate_result_without_sub() {
+        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
+
+        let ret = super::eval(&expr.expr, &HashMap::from([]));
+
+        assert_that!(ret).is_err();
+    }
+
+    #[traced_test]
+    #[test]
+    fn evaluate_result_without_result() {
+        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
+
+        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
+
+        let ret = super::eval(&expr.expr, &HashMap::from([(key.expr, vec![])]));
+
+        assert_that!(ret).is_ok();
+        let ret = ret.unwrap();
+        assert_that!(ret).is_equal_to(EvalResult::Unknown);
+    }
+
+    #[traced_test]
+    #[test]
+    fn evaluate_result_with_null() {
+        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
+
+        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
+
+        let ret = super::eval(
+            &expr.expr,
+            &HashMap::from([(
+                key.expr,
+                vec![PatuiStepData::new(PatuiStepDataFlavour::Null)],
+            )]),
+        );
+
+        assert_that!(ret).is_ok();
+        let ret = ret.unwrap();
+        let ret = ret.get_step_data();
+        assert_that!(ret).is_ok();
+        assert_that!(ret.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Null);
+    }
+
+    #[traced_test]
+    #[test]
+    fn evaluate_term_equals_null_is_true() {
         let expr: PatuiExpr = "steps.test_input.out[0] == null".try_into().unwrap();
 
         let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
@@ -542,6 +596,58 @@ mod tests {
             &HashMap::from([(
                 key.expr,
                 vec![PatuiStepData::new(PatuiStepDataFlavour::Null)],
+            )]),
+        );
+
+        assert_that!(ret).is_ok();
+        let ret = ret.unwrap();
+        let ret = ret.get_step_data();
+        assert_that!(ret).is_ok();
+        assert_that!(ret.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bool(true));
+    }
+
+    #[traced_test]
+    #[test]
+    fn evaluate_term_equals_integer_is_true() {
+        let expr: PatuiExpr = "steps.test_input.out[0] == 123".try_into().unwrap();
+
+        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
+
+        let ret = super::eval(
+            &expr.expr,
+            &HashMap::from([(
+                key.expr,
+                vec![PatuiStepData::new(PatuiStepDataFlavour::Integer(
+                    "123".to_string(),
+                ))],
+            )]),
+        );
+
+        assert_that!(ret).is_ok();
+        let ret = ret.unwrap();
+        let ret = ret.get_step_data();
+        assert_that!(ret).is_ok();
+        assert_that!(ret.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bool(true));
+    }
+
+    #[traced_test]
+    #[test]
+    fn evaluate_term_with_indexes_equals_list_is_true() {
+        let expr: PatuiExpr = "steps.test_input.out[0][1] == [1,2,3][1]"
+            .try_into()
+            .unwrap();
+
+        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
+
+        let ret = super::eval(
+            &expr.expr,
+            &HashMap::from([(
+                key.expr,
+                vec![PatuiStepData::new(PatuiStepDataFlavour::Array(vec![
+                    PatuiStepDataFlavour::Integer("0".to_string()),
+                    PatuiStepDataFlavour::Integer("2".to_string()),
+                    PatuiStepDataFlavour::Integer("4".to_string()),
+                ]))],
             )]),
         );
 
