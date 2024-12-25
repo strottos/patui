@@ -34,7 +34,6 @@ pub(crate) fn parse_expr(
     parse_until: Vec<Token>,
 ) -> Result<Expr> {
     let mut expr = None;
-    let mut expr_start = None;
 
     while let Some(token) = lexer.next() {
         let token = match token {
@@ -42,58 +41,20 @@ pub(crate) fn parse_expr(
             Err(e) => return Err(eyre!("Error parsing token: {:?}", e)),
         };
 
-        if expr_start.is_none() {
-            expr_start = Some(lexer.span().start);
-        }
-
         tracing::trace!("Token: {:?}", token);
         tracing::trace!("Peek token: {:?}", lexer.peek());
 
         match token {
-            Token::Null => {
-                expr = Some(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Null,
-                    }),
-                });
-            }
-            Token::Integer(int) => {
-                expr = Some(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Integer(int),
-                    }),
-                });
-            }
-            Token::Decimal(dec) => {
-                expr = Some(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Decimal(dec),
-                    }),
-                });
-            }
-            Token::Bool(b) => {
-                expr = Some(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Bool(b),
-                    }),
-                });
-            }
-            Token::String(s) => {
-                expr = Some(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Str(s),
-                    }),
-                });
-            }
-            Token::BytesPrefix => expr = Some(parse_bytes(lexer)?),
-            Token::Ident(id) => {
-                expr = Some(parse_ident(input, lexer, id)?);
-            }
-            Token::LeftSquareBrace => {
-                expr = Some(parse_list(input, lexer)?);
-            }
-            Token::LeftCurlyBrace => {
-                expr = Some(parse_set_or_map(input, lexer)?);
+            Token::Null
+            | Token::Integer(_)
+            | Token::Decimal(_)
+            | Token::Bool(_)
+            | Token::String(_)
+            | Token::BytesPrefix
+            | Token::Ident(_)
+            | Token::LeftSquareBrace
+            | Token::LeftCurlyBrace => {
+                expr = Some(parse_term(input, lexer, token)?);
             }
             Token::LeftBracket => {
                 expr = Some(parse_bracket_ordering(input, lexer)?);
@@ -206,8 +167,10 @@ pub(crate) fn parse_expr(
                 } else {
                     // * can be an index, e.g. `foo[*]`, we use a special `Token` lit type for this
                     expr = Some(Expr {
-                        kind: ExprKind::Lit(Lit {
-                            kind: LitKind::Str("*".to_string()),
+                        kind: ExprKind::Term(Term {
+                            values: vec![TermParts::Lit(Lit {
+                                kind: LitKind::Str("*".to_string()),
+                            })],
                         }),
                     });
                 }
@@ -236,7 +199,7 @@ pub(crate) fn parse_expr(
         if let Some(Ok(ref peek_token)) = lexer.peek() {
             tracing::trace!("Peek token: {:?}", peek_token);
             tracing::trace!("parse_until: {:?}", parse_until);
-            if parse_until.contains(&peek_token) {
+            if parse_until.contains(peek_token) {
                 break;
             }
         }
@@ -245,22 +208,18 @@ pub(crate) fn parse_expr(
     expr.ok_or_else(|| eyre!("Couldn't parse expression"))
 }
 
-fn parse_bytes(lexer: &mut LexerPeekable<'_>) -> Result<Expr> {
-    while let Some(token) = lexer.next() {
+fn parse_bytes(lexer: &mut LexerPeekable<'_>) -> Result<Lit> {
+    if let Some(token) = lexer.next() {
         match token {
             Ok(Token::String(s)) => {
-                return Ok(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Bytes(Bytes::from(s)),
-                    }),
+                return Ok(Lit {
+                    kind: LitKind::Bytes(Bytes::from(s)),
                 });
             }
             Ok(Token::LeftSquareBrace) => {
                 let bytes = parse_bytes_list(lexer)?;
-                return Ok(Expr {
-                    kind: ExprKind::Lit(Lit {
-                        kind: LitKind::Bytes(bytes),
-                    }),
+                return Ok(Lit {
+                    kind: LitKind::Bytes(bytes),
                 });
             }
             Ok(tok) => panic!("Unexpectedly reached token: {:?}", tok),
@@ -299,10 +258,39 @@ fn parse_bytes_list(lexer: &mut LexerPeekable<'_>) -> Result<Bytes> {
     Err(eyre!("Error, ran out of tokens while parsing bytes list",))
 }
 
-fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result<Expr> {
-    tracing::trace!("Parsing ident from {}", id);
+fn parse_term(input: &str, lexer: &mut LexerPeekable<'_>, token: Token) -> Result<Expr> {
+    tracing::trace!("Parsing term from {}", input);
 
-    let mut ident_parts = vec![TermParts::Ident(id)];
+    let mut ident_parts = vec![];
+
+    match token {
+        Token::Null => ident_parts.push(TermParts::Lit(Lit {
+            kind: LitKind::Null,
+        })),
+        Token::Bool(b) => ident_parts.push(TermParts::Lit(Lit {
+            kind: LitKind::Bool(b),
+        })),
+        Token::Integer(int) => ident_parts.push(TermParts::Lit(Lit {
+            kind: LitKind::Integer(int),
+        })),
+        Token::Decimal(dec) => ident_parts.push(TermParts::Lit(Lit {
+            kind: LitKind::Decimal(dec),
+        })),
+        Token::String(s) => ident_parts.push(TermParts::Lit(Lit {
+            kind: LitKind::Str(s),
+        })),
+        Token::Ident(id) => ident_parts.push(TermParts::Ident(id)),
+        Token::LeftSquareBrace => {
+            ident_parts.push(TermParts::Lit(parse_list(input, lexer)?));
+        }
+        Token::LeftCurlyBrace => {
+            ident_parts.push(TermParts::Lit(parse_set_or_map(input, lexer)?));
+        }
+        Token::BytesPrefix => {
+            ident_parts.push(TermParts::Lit(parse_bytes(lexer)?));
+        }
+        _ => panic!("Unexpected token: {:?}", token),
+    }
 
     loop {
         if lexer.next_if_match(Token::LeftSquareBrace) {
@@ -311,22 +299,87 @@ fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result
                     let Some(Ok(Token::Integer(int))) = lexer.next() else {
                         unreachable!();
                     };
-                    let int = int.parse::<usize>()?;
-                    ident_parts.push(TermParts::Index(int));
+                    if lexer.next_if_match(Token::Range) {
+                        let start = Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Integer(int),
+                                })],
+                            }),
+                        };
+                        let end = match lexer.peek() {
+                            Some(Ok(Token::Integer(_))) => {
+                                let Some(Ok(Token::Integer(int))) = lexer.next() else {
+                                    unreachable!();
+                                };
+                                Expr {
+                                    kind: ExprKind::Term(Term {
+                                        values: vec![TermParts::Lit(Lit {
+                                            kind: LitKind::Integer(int),
+                                        })],
+                                    }),
+                                }
+                            }
+                            Some(Ok(tok)) => return Err(eyre!("Unexpected token: {:?}", tok)),
+                            Some(Err(e)) => return Err(eyre!("Error parsing token: {:?}", e)),
+                            None => return Err(eyre!("Ran out of tokens while parsing index")),
+                        };
+                        let range = Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Range(
+                                        P {
+                                            ptr: Box::new(start),
+                                        },
+                                        P { ptr: Box::new(end) },
+                                    ),
+                                })],
+                            }),
+                        };
+                        ident_parts.push(TermParts::Index(P {
+                            ptr: Box::new(range),
+                        }));
+                    } else {
+                        ident_parts.push(TermParts::Index(P {
+                            ptr: Box::new(Expr {
+                                kind: ExprKind::Term(Term {
+                                    values: vec![TermParts::Lit(Lit {
+                                        kind: LitKind::Integer(int),
+                                    })],
+                                }),
+                            }),
+                        }));
+                    }
                 }
                 Some(Ok(Token::String(_))) => {
                     let Some(Ok(Token::String(s))) = lexer.next() else {
                         unreachable!();
                     };
-                    ident_parts.push(TermParts::Ident(s));
+                    ident_parts.push(TermParts::Index(P {
+                        ptr: Box::new(Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Str(s),
+                                })],
+                            }),
+                        }),
+                    }));
                 }
                 Some(Ok(Token::Star)) => {
                     debug_assert!(lexer.next() == Some(Ok(Token::Star)));
-                    ident_parts.push(TermParts::Wildcard);
+                    ident_parts.push(TermParts::Index(P {
+                        ptr: Box::new(Expr {
+                            kind: ExprKind::Term(Term {
+                                values: vec![TermParts::Lit(Lit {
+                                    kind: LitKind::Wildcard,
+                                })],
+                            }),
+                        }),
+                    }));
                 }
                 Some(Ok(Token::Ident(_))) => {
                     let expr = parse_expr(input, lexer, vec![Token::RightSquareBrace])?;
-                    ident_parts.push(TermParts::Expr(P {
+                    ident_parts.push(TermParts::Index(P {
                         ptr: Box::new(expr),
                     }));
                 }
@@ -375,7 +428,7 @@ fn parse_ident(input: &str, lexer: &mut LexerPeekable<'_>, id: String) -> Result
     })
 }
 
-fn parse_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Expr> {
+fn parse_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Lit> {
     let mut elements = Vec::new();
 
     loop {
@@ -394,14 +447,12 @@ fn parse_list(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Expr> {
 
     tracing::trace!("Peek after list: {:?}", lexer.peek());
 
-    Ok(Expr {
-        kind: ExprKind::Lit(Lit {
-            kind: LitKind::List(elements),
-        }),
+    Ok(Lit {
+        kind: LitKind::List(elements),
     })
 }
 
-fn parse_set_or_map(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Expr> {
+fn parse_set_or_map(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Lit> {
     let start = lexer.span().start;
 
     let mut map_elements = Vec::new();
@@ -440,26 +491,22 @@ fn parse_set_or_map(input: &str, lexer: &mut LexerPeekable<'_>) -> Result<Expr> 
         }
     }
 
-    if set_elements.len() != 0 && map_elements.len() != 0 {
+    if !set_elements.is_empty() && !map_elements.is_empty() {
         Err(eyre!(
             "Parsed set and map elements, must be one or the other"
         ))
-    } else if set_elements.len() != 0 {
-        Ok(Expr {
-            kind: ExprKind::Lit(Lit {
-                kind: LitKind::Set(
-                    set_elements
-                        .into_iter()
-                        .map(|x| P { ptr: Box::new(x) })
-                        .collect::<Vec<_>>(),
-                ),
-            }),
+    } else if !set_elements.is_empty() {
+        Ok(Lit {
+            kind: LitKind::Set(
+                set_elements
+                    .into_iter()
+                    .map(|x| P { ptr: Box::new(x) })
+                    .collect::<Vec<_>>(),
+            ),
         })
     } else {
-        Ok(Expr {
-            kind: ExprKind::Lit(Lit {
-                kind: LitKind::Map(map_elements),
-            }),
+        Ok(Lit {
+            kind: LitKind::Map(map_elements),
         })
     }
 }

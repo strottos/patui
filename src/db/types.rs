@@ -285,7 +285,7 @@ pub(crate) struct PatuiRun {
     pub(crate) end_time: Option<String>,
     pub(crate) status: PatuiRunStatus,
     pub(crate) step_run_details: Vec<PatuiRunStep>,
-    pub(crate) results: Vec<PatuiEvent>,
+    pub(crate) events: Vec<PatuiEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -314,7 +314,7 @@ impl TryFrom<PatuiRun> for PatuiRunDisplay {
                 .into_iter()
                 .map(|step| step.try_into())
                 .collect::<Result<Vec<_>, Self::Error>>()?,
-            results: value.results,
+            results: value.events,
         })
     }
 }

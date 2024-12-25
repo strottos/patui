@@ -55,6 +55,9 @@ pub(crate) enum Token {
     #[token(")")]
     RightBracket,
 
+    #[token("..")]
+    Range,
+
     #[token(".")]
     Period,
 
