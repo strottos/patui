@@ -9,7 +9,7 @@ use crate::{
     runner::steps::TermParts,
     types::{
         expr::ast::{ExprKind, Lit, LitKind, Term},
-        PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepSender,
+        PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepSender,
     },
 };
 
@@ -59,9 +59,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                                             LitKind::Bool(_) => todo!(),
                                             LitKind::Bytes(bytes) => {
                                                 tracing::trace!("Sending bytes: {:?}", bytes);
-                                                let data = PatuiStepData::new(
-                                                    PatuiStepDataFlavour::Bytes(bytes.clone()),
-                                                );
+                                                let data = PatuiStepData::Bytes(bytes.clone());
                                                 out_sender.send(data.clone()).unwrap();
 
                                                 tx.send(PatuiEvent::new(
@@ -95,8 +93,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                             }
                         }
                         LitKind::Bytes(bytes) => {
-                            let data =
-                                PatuiStepData::new(PatuiStepDataFlavour::Bytes(bytes.clone()));
+                            let data = PatuiStepData::Bytes(bytes.clone());
                             out_sender.send(data.clone()).unwrap();
 
                             tx.send(PatuiEvent::new(
@@ -107,8 +104,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
                             .unwrap();
                         }
                         LitKind::Str(string) => {
-                            let data =
-                                PatuiStepData::new(PatuiStepDataFlavour::String(string.clone()));
+                            let data = PatuiStepData::String(string.clone());
                             out_sender.send(data.clone()).unwrap();
 
                             tx.send(PatuiEvent::new(
@@ -144,7 +140,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerSender {
         }
     }
 
-    async fn wait(&mut self) -> Result<()> {
+    async fn wait(&mut self, _tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         tracing::trace!("Waiting");
 
         for task in self.tasks.drain(..) {
@@ -184,7 +180,7 @@ mod tests {
 
         let (res_tx, mut res_rx) = mpsc::channel(1);
 
-        assert_that!(main_step.run(res_tx)).is_ok();
+        assert_that!(main_step.run(res_tx.clone())).is_ok();
 
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
@@ -194,17 +190,16 @@ mod tests {
         assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data)
-            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+        assert_that!(res.unwrap()).is_equal_to(&PatuiStepData::Bytes(Bytes::from("ABC")));
 
-        assert_that!(main_step.wait().await).is_ok();
+        assert_that!(main_step.wait(res_tx.clone()).await).is_ok();
 
         let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+        assert_that!(recv).is_equal_to(&PatuiStepData::Bytes(Bytes::from("ABC")));
     }
 
     #[traced_test]
@@ -232,8 +227,7 @@ mod tests {
         assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data)
-            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("123")));
+        assert_that!(res.unwrap()).is_equal_to(&PatuiStepData::Bytes(Bytes::from("123")));
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
         let res = res.unwrap();
@@ -242,8 +236,7 @@ mod tests {
         assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data)
-            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
+        assert_that!(res.unwrap()).is_equal_to(&PatuiStepData::Bytes(Bytes::from("abc")));
         let res = timeout(Duration::from_millis(50), res_rx.recv()).await;
         assert_that!(res).is_ok();
         let res = res.unwrap();
@@ -252,30 +245,29 @@ mod tests {
         assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data)
-            .is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+        assert_that!(res.unwrap()).is_equal_to(&PatuiStepData::Bytes(Bytes::from("ABC")));
 
-        assert_that!(main_step.wait().await).is_ok();
-
-        let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
-        assert_that!(recv).is_ok();
-        let recv = recv.unwrap();
-        assert_that!(recv).is_ok();
-        let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("123")));
+        assert_that!(main_step.wait(res_tx.clone()).await).is_ok();
 
         let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("abc")));
+        assert_that!(recv).is_equal_to(&PatuiStepData::Bytes(Bytes::from("123")));
 
         let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from("ABC")));
+        assert_that!(recv).is_equal_to(&PatuiStepData::Bytes(Bytes::from("abc")));
+
+        let recv = timeout(Duration::from_millis(50), output_rx.recv()).await;
+        assert_that!(recv).is_ok();
+        let recv = recv.unwrap();
+        assert_that!(recv).is_ok();
+        let recv = recv.unwrap();
+        assert_that!(recv).is_equal_to(&PatuiStepData::Bytes(Bytes::from("ABC")));
     }
 }

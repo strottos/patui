@@ -6,5 +6,5 @@ mod query;
 mod visitor;
 
 pub(crate) use ast::PatuiExpr;
-pub(crate) use eval::eval_step_data;
+pub(crate) use eval::{eval, EvalResult};
 pub(crate) use query::get_all_terms;

@@ -293,39 +293,11 @@ impl PatuiStepDetails {
     // }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct PatuiStepData {
-    pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
-    pub(crate) data: PatuiStepDataFlavour,
-}
-
-impl PartialEq for PatuiStepData {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-    }
-}
-
-impl PatuiStepData {
-    pub(crate) fn new(data: PatuiStepDataFlavour) -> Self {
-        let timestamp = chrono::Utc::now();
-        Self { timestamp, data }
-    }
-
-    // pub(crate) fn into_data(self) -> PatuiStepDataFlavour {
-    //     self.data
-    // }
-
-    #[cfg(test)]
-    pub(crate) fn data(&self) -> &PatuiStepDataFlavour {
-        &self.data
-    }
-}
-
 impl TryFrom<super::ptplugin::PatuiStepData> for PatuiStepData {
     type Error = eyre::Error;
 
     fn try_from(value: super::ptplugin::PatuiStepData) -> Result<Self, Self::Error> {
-        Ok(PatuiStepData::new(rmp_serde::from_slice(&value.bytes)?))
+        Ok(rmp_serde::from_slice(&value.bytes)?)
     }
 }
 
@@ -334,25 +306,25 @@ impl TryFrom<PatuiStepData> for super::ptplugin::PatuiStepData {
 
     fn try_from(value: PatuiStepData) -> Result<Self, Self::Error> {
         Ok(super::ptplugin::PatuiStepData {
-            bytes: rmp_serde::to_vec(&value.data)?,
+            bytes: rmp_serde::to_vec(&value)?,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiStepDataFlavour {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub(crate) enum PatuiStepData {
     Null,
     Bool(bool),
     Bytes(Bytes),
     String(String),
     Integer(String),
     Float(String),
-    Array(Vec<PatuiStepDataFlavour>),
-    Map(HashMap<String, PatuiStepDataFlavour>),
-    Set(Vec<PatuiStepDataFlavour>),
+    Array(Vec<PatuiStepData>),
+    Map(HashMap<String, PatuiStepData>),
+    Set(Vec<PatuiStepData>),
 }
 
-impl PatuiStepDataFlavour {
+impl PatuiStepData {
     pub(crate) fn as_bytes(&self) -> Result<&Bytes> {
         match self {
             Self::Bytes(bytes) => Ok(bytes),
@@ -389,37 +361,37 @@ impl PatuiStepDataFlavour {
     // }
 }
 
-impl From<bool> for PatuiStepDataFlavour {
+impl From<bool> for PatuiStepData {
     fn from(value: bool) -> Self {
         Self::Bool(value)
     }
 }
 
-impl From<Bytes> for PatuiStepDataFlavour {
+impl From<Bytes> for PatuiStepData {
     fn from(value: Bytes) -> Self {
         Self::Bytes(value)
     }
 }
 
-impl From<String> for PatuiStepDataFlavour {
+impl From<String> for PatuiStepData {
     fn from(value: String) -> Self {
         Self::String(value)
     }
 }
 
-impl From<i64> for PatuiStepDataFlavour {
+impl From<i64> for PatuiStepData {
     fn from(value: i64) -> Self {
         Self::Integer(format!("{}", value))
     }
 }
 
-impl From<f64> for PatuiStepDataFlavour {
+impl From<f64> for PatuiStepData {
     fn from(value: f64) -> Self {
         Self::Float(format!("{}", value))
     }
 }
 
-impl TryFrom<serde_json::Value> for PatuiStepDataFlavour {
+impl TryFrom<serde_json::Value> for PatuiStepData {
     type Error = eyre::Error;
 
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
@@ -458,6 +430,6 @@ impl TryFrom<serde_json::Value> for PatuiStepDataFlavour {
 pub(crate) enum PatuiStepDataTransfer {
     #[default]
     None,
-    Fixed(PatuiStepDataFlavour),
+    Fixed(PatuiStepData),
     Ref(Box<(PatuiStep, String)>),
 }

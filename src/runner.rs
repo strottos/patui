@@ -46,8 +46,6 @@ impl TestRunner {
             }
         }
 
-        drop(tx);
-
         let events = Arc::new(Mutex::new(Some(vec![])));
         let events_clone = events.clone();
 
@@ -69,9 +67,11 @@ impl TestRunner {
 
         for (_, step_collection) in self.steps.iter() {
             for step in step_collection {
-                step.lock().await.wait().await?;
+                step.lock().await.wait(tx.clone()).await?;
             }
         }
+
+        drop(tx);
 
         receive_task.await?;
 
@@ -180,7 +180,9 @@ mod tests {
                         when: None,
                         depends_on: vec![],
                         details: PatuiStepDetails::Assertion(PatuiStepAssertion {
-                            expr: "steps.FooTransform.out.bar[2] == \"c\"".try_into().unwrap(),
+                            expr: "steps.FooTransform.out[0].bar[2] == \"c\""
+                                .try_into()
+                                .unwrap(),
                         }),
                     },
                 ],

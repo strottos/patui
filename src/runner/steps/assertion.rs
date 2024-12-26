@@ -1,18 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
-use eyre::{eyre, Result};
+use eyre::Result;
 use tokio::{
     sync::{broadcast, mpsc, Mutex, RwLock},
     task::JoinHandle,
 };
 
-use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
+use super::{init_subscribe_steps, Expr, PatuiStepRunner, PatuiStepRunnerTrait};
 use crate::types::{
-    expr::{
-        ast::{Expr, ExprKind, Lit, LitKind, Term, TermParts},
-        eval_step_data,
-    },
-    PatuiEvent, PatuiEventKind, PatuiStepAssertion, PatuiStepData, PatuiStepDataFlavour,
+    expr::{eval, EvalResult},
+    PatuiEvent, PatuiEventKind, PatuiStepAssertion, PatuiStepData,
 };
 
 #[derive(Debug)]
@@ -25,6 +22,8 @@ pub(crate) struct PatuiStepRunnerAssertion {
     tasks: Vec<JoinHandle<()>>,
 
     results: Arc<RwLock<HashMap<Expr, Vec<PatuiStepData>>>>,
+
+    done: Arc<Mutex<bool>>,
 }
 
 impl PatuiStepRunnerAssertion {
@@ -35,6 +34,7 @@ impl PatuiStepRunnerAssertion {
             receivers: None,
             tasks: vec![],
             results: Arc::new(RwLock::new(HashMap::new())),
+            done: Arc::new(Mutex::new(false)),
         }
     }
 }
@@ -57,6 +57,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
         let step = self.step.clone();
         let receivers = self.receivers.take();
         let results = self.results.clone();
+        let done = self.done.clone();
 
         // Notify of results coming in
         let (notify_tx, mut notify_rx) = mpsc::channel(1);
@@ -69,38 +70,12 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
             while notify_rx.recv().await.is_some() {
                 let results = results.read().await.clone();
                 match eval(expr, &results) {
-                    Ok(EvalResult::Known(patui_step_data)) => match patui_step_data.data {
-                        PatuiStepDataFlavour::Bool(b) => {
-                            if b {
-                                tx.send(PatuiEvent::new(
-                                    PatuiEventKind::Log(format!("Assertion passed: {:?}", expr,)),
-                                    step_name.clone(),
-                                ))
-                                .await
-                                .unwrap();
-                            } else {
-                                tx.send(PatuiEvent::new(
-                                    PatuiEventKind::Failure(format!(
-                                        "Assertion failed: {:?}",
-                                        expr,
-                                    )),
-                                    step_name.clone(),
-                                ))
-                                .await
-                                .unwrap();
-                            }
-                        }
-                        _ => tx
-                            .send(PatuiEvent::new(
-                                PatuiEventKind::Error(format!(
-                                    "Assertion evaluated to non-boolean: {:?}",
-                                    patui_step_data.data
-                                )),
-                                step_name.clone(),
-                            ))
+                    Ok(EvalResult::Known(patui_step_data)) => {
+                        do_known_result(patui_step_data, expr, step_name.clone(), tx.clone())
                             .await
-                            .unwrap(),
-                    },
+                            .unwrap();
+                        *done.lock().await = true;
+                    }
                     Ok(EvalResult::Predictable(_patui_step_data)) => todo!(),
                     Ok(EvalResult::Unknown) => {}
                     Err(_err) => tx
@@ -123,7 +98,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
                 panic!("No receivers found");
             };
             let results = results;
-            let notify_tx = notify_tx.clone();
+            let notify_tx = notify_tx;
 
             let mut tasks = vec![];
 
@@ -135,6 +110,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
 
                 tasks.push(tokio::spawn(async move {
                     let results = results.clone();
+                    let notify_tx = notify_tx;
                     while let Ok(data) = receiver.recv().await {
                         tracing::trace!("Received data: {:?}", data);
                         let mut lock = results.write().await;
@@ -143,6 +119,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
                         drop(lock);
                         notify_tx.clone().send(()).await.unwrap();
                     }
+                    tracing::trace!("Receiver done");
                 }));
             }
 
@@ -156,11 +133,36 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
         Ok(())
     }
 
-    async fn wait(&mut self) -> Result<()> {
+    async fn wait(&mut self, tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         tracing::trace!("Waiting");
 
         for task in self.tasks.drain(..) {
+            tracing::trace!("Awaiting task");
             task.await?;
+        }
+        tracing::trace!("Done tasks");
+
+        if !*self.done.lock().await {
+            let expr = &self.step.expr.expr;
+            let results = self.results.read().await.clone();
+            tracing::trace!("Checking final results: {:?}", results);
+            match eval(expr, &results) {
+                Ok(EvalResult::Known(patui_step_data)) => {
+                    do_known_result(patui_step_data, expr, self.step_name.clone(), tx.clone())
+                        .await
+                        .unwrap();
+                    *self.done.lock().await = true;
+                }
+                Ok(EvalResult::Predictable(_patui_step_data)) => todo!(),
+                Ok(EvalResult::Unknown) => {}
+                Err(_err) => tx
+                    .send(PatuiEvent::new(
+                        PatuiEventKind::Failure("Assertion failure".to_string()),
+                        self.step_name.clone(),
+                    ))
+                    .await
+                    .unwrap(),
+            }
         }
 
         Ok(())
@@ -182,223 +184,41 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerAssertion {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum EvalResult {
-    /// We can clearly say we have a successful result of the evaluation and it is independent of
-    /// any future results that may come in. E.g. `steps.foo.out[0] == "hello"` is true, any
-    /// further results coming in won't effect this as they'll be a different index.
-    Known(PatuiStepData),
-    /// The evaluation can be determined at this time but that result may change as further results
-    /// come in. If it stays in this state after all results are in the result is confirmed. E.g.
-    /// consider `steps.foo.out.len() == 4`, if we only have 3 results currently we could get
-    /// another result come in or it could be we're done in which case this is false.
-    Predictable(PatuiStepData),
-    /// We have no idea what the result is currently and if all results are in then this is an
-    /// error. E.g. consider `steps.foo.out[4] == "foo"` but we only have 3 results in so far, then
-    /// we could get another result in and then we can tell what the result is, or we are done and
-    /// then we have an error.
-    Unknown,
-}
-
-impl EvalResult {
-    fn get_step_data(&self) -> Result<&PatuiStepData> {
-        match self {
-            EvalResult::Known(patui_step_data) => Ok(patui_step_data),
-            EvalResult::Predictable(patui_step_data) => Ok(patui_step_data),
-            EvalResult::Unknown => Err(eyre!("Result currently not available")),
+async fn do_known_result(
+    patui_step_data: PatuiStepData,
+    expr: &Expr,
+    step_name: String,
+    tx: mpsc::Sender<PatuiEvent>,
+) -> Result<()> {
+    match patui_step_data {
+        PatuiStepData::Bool(b) => {
+            if b {
+                tx.send(PatuiEvent::new(
+                    PatuiEventKind::Log(format!("Assertion passed: {:?}", expr)),
+                    step_name.clone(),
+                ))
+                .await?;
+            } else {
+                tx.send(PatuiEvent::new(
+                    PatuiEventKind::Failure(format!("Assertion failed: {:?}", expr,)),
+                    step_name.clone(),
+                ))
+                .await?;
+            }
+        }
+        _ => {
+            tx.send(PatuiEvent::new(
+                PatuiEventKind::Error(format!(
+                    "Assertion evaluated to non-boolean: {:?}",
+                    patui_step_data
+                )),
+                step_name.clone(),
+            ))
+            .await?
         }
     }
-}
 
-fn eval(expr: &Expr, results: &HashMap<Expr, Vec<PatuiStepData>>) -> Result<EvalResult> {
-    tracing::trace!("Evaluating expr: {:#?}", expr);
-
-    match expr {
-        Expr {
-            kind: ExprKind::BinOp(bin_op, lhs, rhs),
-        } => match bin_op {
-            crate::types::expr::ast::BinOp::Add => todo!(),
-            crate::types::expr::ast::BinOp::Subtract => todo!(),
-            crate::types::expr::ast::BinOp::Multiply => todo!(),
-            crate::types::expr::ast::BinOp::Divide => todo!(),
-            crate::types::expr::ast::BinOp::Modulo => todo!(),
-            crate::types::expr::ast::BinOp::And => todo!(),
-            crate::types::expr::ast::BinOp::Or => todo!(),
-            crate::types::expr::ast::BinOp::Equal => {
-                let lhs_eval = eval(lhs, results)?;
-                tracing::trace!("lhs_eval: {:?}", lhs_eval);
-                let rhs_eval = eval(rhs, results)?;
-                tracing::trace!("rhs_eval: {:?}", rhs_eval);
-                match (lhs_eval, rhs_eval) {
-                    (EvalResult::Known(lhs_data), EvalResult::Known(rhs_data)) => {
-                        Ok(EvalResult::Known(PatuiStepData::new(
-                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
-                        )))
-                    }
-                    (EvalResult::Predictable(lhs_data), EvalResult::Known(rhs_data)) => {
-                        Ok(EvalResult::Predictable(PatuiStepData::new(
-                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
-                        )))
-                    }
-                    (EvalResult::Known(lhs_data), EvalResult::Predictable(rhs_data)) => {
-                        Ok(EvalResult::Predictable(PatuiStepData::new(
-                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
-                        )))
-                    }
-                    (EvalResult::Predictable(lhs_data), EvalResult::Predictable(rhs_data)) => {
-                        Ok(EvalResult::Predictable(PatuiStepData::new(
-                            PatuiStepDataFlavour::Bool(lhs_data == rhs_data),
-                        )))
-                    }
-                    (EvalResult::Unknown, _) => Ok(EvalResult::Unknown),
-                    (_, EvalResult::Unknown) => Ok(EvalResult::Unknown),
-                }
-            }
-            crate::types::expr::ast::BinOp::NotEqual => todo!(),
-            crate::types::expr::ast::BinOp::LessThan => todo!(),
-            crate::types::expr::ast::BinOp::LessThanEqual => todo!(),
-            crate::types::expr::ast::BinOp::GreaterThan => todo!(),
-            crate::types::expr::ast::BinOp::GreaterThanEqual => todo!(),
-            crate::types::expr::ast::BinOp::Contains => todo!(),
-            crate::types::expr::ast::BinOp::NotContains => todo!(),
-        },
-        Expr {
-            kind: ExprKind::UnOp(_un_op, _p),
-        } => todo!(),
-        Expr {
-            kind: ExprKind::Term(Term { values, .. }),
-        } => match values.first().as_ref() {
-            Some(&TermParts::Ident(ident)) => match &ident[..] {
-                "steps" => {
-                    let Some(step_parts) = values.get(0..3) else {
-                        return Err(eyre!("Not enough parts in term to evaluate: {:?}", values));
-                    };
-                    if let Some(result) = results.get(&Expr {
-                        kind: ExprKind::Term(Term {
-                            values: step_parts.to_vec(),
-                        }),
-                    }) {
-                        tracing::trace!(
-                            "Found result for step term {:?}: {:?}",
-                            step_parts,
-                            result
-                        );
-                        let index = match values.get(3) {
-                            Some(i) => match i {
-                                TermParts::Index(p) => match &**p {
-                                    Expr {
-                                        kind: ExprKind::Term(Term { values }),
-                                    } => match &values[..] {
-                                        [TermParts::Lit(Lit {
-                                            kind: LitKind::Integer(i),
-                                        })] => i.parse::<usize>().unwrap(),
-                                        _ => todo!(),
-                                    },
-                                    _ => todo!(),
-                                },
-                                _ => todo!(),
-                            },
-                            _ => todo!(),
-                        };
-
-                        tracing::trace!("Index: {:?}", index);
-                        tracing::trace!("Result: {:?}", result);
-
-                        match result.get(index) {
-                            Some(step_data) => {
-                                tracing::trace!(
-                                    "Found result for step index term {:?}[{:?}]: {:?}",
-                                    step_parts,
-                                    index,
-                                    step_data
-                                );
-                                let ret = eval_step_data(step_data.data.clone(), values.get(4..))?;
-                                Ok(EvalResult::Known(PatuiStepData::new(ret)))
-                            }
-                            None => Ok(EvalResult::Unknown),
-                        }
-                    } else {
-                        Err(eyre!("No data for term"))
-                    }
-                }
-                // Will there ever be anything beyond steps? Feels unlikely... if so can remove
-                // this keyword later.
-                _ => Err(eyre!("Unknown term first element: {:?}", ident)),
-            },
-            Some(&TermParts::Lit(lit)) => {
-                let step_data = eval_lit(lit, results)?;
-                let ret = eval_step_data(step_data, values.get(1..))?;
-                Ok(EvalResult::Known(PatuiStepData::new(ret)))
-            }
-            _ => Err(eyre!("Term first element not found: {:?}", values)),
-        },
-        Expr {
-            kind: ExprKind::If(_p1, _p2, _p3),
-        } => todo!(),
-    }
-}
-
-fn eval_lit(
-    lit: &Lit,
-    results: &HashMap<Expr, Vec<PatuiStepData>>,
-) -> Result<PatuiStepDataFlavour> {
-    match &lit.kind {
-        LitKind::Null => Ok(PatuiStepDataFlavour::Null),
-        LitKind::Bool(b) => Ok(PatuiStepDataFlavour::Bool(*b)),
-        LitKind::Bytes(bytes) => Ok(PatuiStepDataFlavour::Bytes(bytes.clone())),
-        LitKind::Integer(i) => Ok(PatuiStepDataFlavour::Integer(i.clone())),
-        LitKind::Decimal(f) => Ok(PatuiStepDataFlavour::Float(f.clone())),
-        LitKind::Str(s) => Ok(PatuiStepDataFlavour::String(s.clone())),
-        LitKind::List(vec) => Ok(PatuiStepDataFlavour::Array(
-            vec.iter()
-                .map(|lit| eval(lit, results))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .map(|result| result.get_step_data().unwrap().data.clone())
-                .collect(),
-        )),
-        LitKind::Map(map) => {
-            let map = map
-                .iter()
-                .map(|map| {
-                    let (key, value) = &**map;
-                    match (key, eval(value, results)) {
-                        (
-                            Expr {
-                                kind: ExprKind::Term(Term { values }),
-                            },
-                            Ok(value),
-                        ) => {
-                            if values.len() != 1 {
-                                return Err(eyre!("Invalid key in map: {:?}", values));
-                            }
-                            if let TermParts::Lit(Lit {
-                                kind: LitKind::Str(s),
-                            }) = values.first().unwrap()
-                            {
-                                Ok((s.clone(), value.get_step_data().unwrap().data.clone()))
-                            } else {
-                                Err(eyre!("Invalid key in map: {:?}", values))
-                            }
-                        }
-                        _ => Err(eyre!("Invalid key/value in map: {:?} - {:?}", key, value)),
-                    }
-                })
-                .collect::<Result<HashMap<_, _>>>()?;
-
-            Ok(PatuiStepDataFlavour::Map(map))
-        }
-        LitKind::Set(vec) => Ok(PatuiStepDataFlavour::Set(
-            vec.iter()
-                .map(|lit| eval(lit, results))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .map(|result| result.get_step_data().unwrap().data.clone())
-                .collect(),
-        )),
-        LitKind::Wildcard => todo!(),
-        LitKind::Range(_, _) => todo!(),
-    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -410,10 +230,9 @@ mod tests {
     use tokio::{sync::mpsc, time::timeout};
     use tracing_test::traced_test;
 
-    use crate::types::{PatuiEventKind, PatuiExpr};
+    use crate::types::PatuiEventKind;
 
     use super::*;
-
     #[traced_test]
     #[tokio::test]
     async fn single_channel_read_and_eval_null() {
@@ -428,9 +247,7 @@ mod tests {
 
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
-        input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Null))
-            .unwrap();
+        input_tx.send(PatuiStepData::Null).unwrap();
 
         let (res_tx, mut res_rx) = mpsc::channel(1);
 
@@ -459,9 +276,7 @@ mod tests {
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                Bytes::from("ABC"),
-            )))
+            .send(PatuiStepData::Bytes(Bytes::from("ABC")))
             .unwrap();
 
         let (res_tx, mut res_rx) = mpsc::channel(1);
@@ -477,184 +292,37 @@ mod tests {
     }
 
     #[traced_test]
-    #[test]
-    fn evaluate_lits() {
-        for (expr_str, expected) in [
-            ("true", PatuiStepDataFlavour::Bool(true)),
-            ("false", PatuiStepDataFlavour::Bool(false)),
-            ("null", PatuiStepDataFlavour::Null),
-            (
-                "b[1,2,3]",
-                PatuiStepDataFlavour::Bytes(Bytes::from(vec![1, 2, 3])),
-            ),
-            (
-                "\"hello\"",
-                PatuiStepDataFlavour::String("hello".to_string()),
-            ),
-            ("123", PatuiStepDataFlavour::Integer("123".to_string())),
-            (
-                "123.456",
-                PatuiStepDataFlavour::Float("123.456".to_string()),
-            ),
-            (
-                "[1,2,3]",
-                PatuiStepDataFlavour::Array(vec![
-                    PatuiStepDataFlavour::Integer("1".to_string()),
-                    PatuiStepDataFlavour::Integer("2".to_string()),
-                    PatuiStepDataFlavour::Integer("3".to_string()),
-                ]),
-            ),
-            (
-                "{\"a\": 1, \"b\": 2}",
-                PatuiStepDataFlavour::Map(HashMap::from([
-                    (
-                        "a".to_string(),
-                        PatuiStepDataFlavour::Integer("1".to_string()),
-                    ),
-                    (
-                        "b".to_string(),
-                        PatuiStepDataFlavour::Integer("2".to_string()),
-                    ),
-                ])),
-            ),
-            (
-                "{1,2,3}",
-                PatuiStepDataFlavour::Set(vec![
-                    PatuiStepDataFlavour::Integer("1".to_string()),
-                    PatuiStepDataFlavour::Integer("2".to_string()),
-                    PatuiStepDataFlavour::Integer("3".to_string()),
-                ]),
-            ),
-        ] {
-            let expr: PatuiExpr = expr_str.try_into().unwrap();
-
-            let ret = super::eval(&expr.expr, &HashMap::from([]));
-
-            assert_that!(ret).is_ok();
-            let ret = ret.unwrap();
-            let ret = ret.get_step_data();
-            assert_that!(ret).is_ok();
-            assert_that!(ret.unwrap().data).is_equal_to(&expected);
-        }
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_result_without_sub() {
-        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
-
-        let ret = super::eval(&expr.expr, &HashMap::from([]));
-
-        assert_that!(ret).is_err();
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_result_without_result() {
-        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
-
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
-
-        let ret = super::eval(&expr.expr, &HashMap::from([(key.expr, vec![])]));
-
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        assert_that!(ret).is_equal_to(EvalResult::Unknown);
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_result_with_null() {
-        let expr: PatuiExpr = "steps.test_input.out[0]".try_into().unwrap();
-
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
-
-        let ret = super::eval(
-            &expr.expr,
-            &HashMap::from([(
-                key.expr,
-                vec![PatuiStepData::new(PatuiStepDataFlavour::Null)],
-            )]),
+    #[tokio::test]
+    async fn assert_step_data_len_zero() {
+        let mut main_step = PatuiStepRunnerAssertion::new(
+            "main".to_string(),
+            &PatuiStepAssertion {
+                expr: "steps.test_input.out.len() == 0".try_into().unwrap(),
+            },
         );
 
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        let ret = ret.get_step_data();
-        assert_that!(ret).is_ok();
-        assert_that!(ret.unwrap().data).is_equal_to(&PatuiStepDataFlavour::Null);
-    }
+        let (input_tx, input_rx) = broadcast::channel(32);
 
-    #[traced_test]
-    #[test]
-    fn evaluate_term_equals_null_is_true() {
-        let expr: PatuiExpr = "steps.test_input.out[0] == null".try_into().unwrap();
+        assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
+        let (res_tx, mut res_rx) = mpsc::channel(1);
 
-        let ret = super::eval(
-            &expr.expr,
-            &HashMap::from([(
-                key.expr,
-                vec![PatuiStepData::new(PatuiStepDataFlavour::Null)],
-            )]),
-        );
+        assert_that!(main_step.run(res_tx.clone())).is_ok();
 
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        let ret = ret.get_step_data();
-        assert_that!(ret).is_ok();
-        assert_that!(ret.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bool(true));
-    }
+        drop(input_tx);
 
-    #[traced_test]
-    #[test]
-    fn evaluate_term_equals_integer_is_true() {
-        let expr: PatuiExpr = "steps.test_input.out[0] == 123".try_into().unwrap();
+        let res = timeout(Duration::from_millis(2000), main_step.wait(res_tx.clone())).await;
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap()).is_ok();
 
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
-
-        let ret = super::eval(
-            &expr.expr,
-            &HashMap::from([(
-                key.expr,
-                vec![PatuiStepData::new(PatuiStepDataFlavour::Integer(
-                    "123".to_string(),
-                ))],
-            )]),
-        );
-
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        let ret = ret.get_step_data();
-        assert_that!(ret).is_ok();
-        assert_that!(ret.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bool(true));
-    }
-
-    #[traced_test]
-    #[test]
-    fn evaluate_term_with_indexes_equals_list_is_true() {
-        let expr: PatuiExpr = "steps.test_input.out[0][1] == [1,2,3][1]"
-            .try_into()
-            .unwrap();
-
-        let key: PatuiExpr = "steps.test_input.out".try_into().unwrap();
-
-        let ret = super::eval(
-            &expr.expr,
-            &HashMap::from([(
-                key.expr,
-                vec![PatuiStepData::new(PatuiStepDataFlavour::Array(vec![
-                    PatuiStepDataFlavour::Integer("0".to_string()),
-                    PatuiStepDataFlavour::Integer("2".to_string()),
-                    PatuiStepDataFlavour::Integer("4".to_string()),
-                ]))],
-            )]),
-        );
-
-        assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        let ret = ret.get_step_data();
-        assert_that!(ret).is_ok();
-        assert_that!(ret.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bool(true));
+        let res = timeout(Duration::from_millis(1000), res_rx.recv()).await;
+        assert_that!(res).is_ok();
+        let res = res.unwrap();
+        assert_that!(res).is_some();
+        let res = res.unwrap();
+        assert_that!(res.value()).is_equal_to(&PatuiEventKind::Result(
+            "Assertion".to_string(),
+            PatuiStepData::Bool(true),
+        ));
     }
 }
