@@ -257,7 +257,7 @@ mod tests {
     #[tokio::test]
     async fn read_from_file() {
         let step = PatuiStepRead {
-            r#in: "\"tests/data/test.txt\"".try_into().unwrap(),
+            r#in: "\"../tests/data/test.txt\"".try_into().unwrap(),
         };
         let mut main_step = PatuiStepRunnerRead::new("main".to_string(), &step);
 

@@ -175,11 +175,11 @@ impl PatuiTestDetails {
     pub(crate) fn simple_process() -> PatuiTestDetails {
         // NB: If any of these unwraps don't work the templates need updating,
         // tests should catch this.
-        Self::from_yaml_str(include_str!("../templates/simple_process.yaml")).unwrap()
+        Self::from_yaml_str(include_str!("../../templates/simple_process.yaml")).unwrap()
     }
 
     pub(crate) fn streaming_process() -> PatuiTestDetails {
-        Self::from_yaml_str(include_str!("../templates/streaming_process.yaml")).unwrap()
+        Self::from_yaml_str(include_str!("../../templates/streaming_process.yaml")).unwrap()
     }
 
     pub(crate) fn simple_socket() -> PatuiTestDetails {

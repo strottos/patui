@@ -279,7 +279,7 @@ mod tests {
 
         let output = Command::new("cargo")
             .arg("build")
-            .current_dir("test_progs/test_plugin")
+            .current_dir("../test_progs/test_plugin")
             .output()
             .unwrap();
 
@@ -294,7 +294,7 @@ mod tests {
         let mut main_step = PatuiStepRunnerPlugin::new(
             "main".to_string(),
             &PatuiStepPlugin {
-                path: "./test_progs/test_plugin/target/debug/test_patui_plugin".to_string(),
+                path: "../test_progs/test_plugin/target/debug/test_patui_plugin".to_string(),
                 config: HashMap::new(),
                 r#in: HashMap::new(),
             },
@@ -360,7 +360,7 @@ mod tests {
         let mut main_step = PatuiStepRunnerPlugin::new(
             "main".to_string(),
             &PatuiStepPlugin {
-                path: "./test_progs/test_plugin/target/debug/test_patui_plugin".to_string(),
+                path: "../test_progs/test_plugin/target/debug/test_patui_plugin".to_string(),
                 config: HashMap::new(),
                 r#in: HashMap::from([(
                     "echo".to_string(),
