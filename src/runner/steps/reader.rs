@@ -15,7 +15,7 @@ use crate::{
     runner::steps::TermParts,
     types::{
         expr::ast::{Expr, ExprKind, LitKind, Term},
-        PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepRead,
+        PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepRead,
     },
 };
 
@@ -75,9 +75,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
                     let receiver = receivers.get_mut(&step.r#in.expr).unwrap();
 
                     let binding = receiver.recv().await.unwrap();
-                    let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                        binding.data.as_bytes().unwrap().clone(),
-                    ));
+                    let data = PatuiStepData::Bytes(binding.as_bytes().unwrap().clone());
 
                     out_sender.send(data.clone()).unwrap();
 
@@ -102,8 +100,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
                         while let Some(data) = reader.next().await {
                             tracing::trace!("Read data: {:?}", data);
 
-                            let data =
-                                PatuiStepData::new(PatuiStepDataFlavour::Bytes(data.unwrap()));
+                            let data = PatuiStepData::Bytes(data.unwrap());
 
                             out_sender.send(data.clone()).unwrap();
 
@@ -134,7 +131,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
             //     while let Some(data) = reader.next().await {
             //         tracing::trace!("Read data: {:?}", data);
 
-            //         let data = PatuiStepData::new(PatuiStepDataFlavour::Bytes(data.unwrap()));
+            //         let data = PatuiStepData::new(PatuiStepData::Bytes(data.unwrap()));
 
             //         out_sender.send(data.clone()).unwrap();
 
@@ -162,7 +159,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerRead {
         }
     }
 
-    async fn wait(&mut self) -> Result<()> {
+    async fn wait(&mut self, _tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         tracing::trace!("Waiting");
         for task in self.tasks.drain(..) {
             task.await?;
@@ -224,8 +221,8 @@ mod tests {
         assert_that!(main_step.run(res_tx.clone())).is_ok();
 
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                Bytes::from("This string gets sent by the test send data step"),
+            .send(PatuiStepData::Bytes(Bytes::from(
+                "This string gets sent by the test send data step",
             )))
             .unwrap();
 
@@ -237,7 +234,7 @@ mod tests {
         assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(res.unwrap()).is_equal_to(&PatuiStepData::Bytes(Bytes::from(
             "This string gets sent by the test send data step",
         )));
 
@@ -246,14 +243,14 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(recv).is_equal_to(&PatuiStepData::Bytes(Bytes::from(
             "This string gets sent by the test send data step",
         )));
 
         drop(input_tx);
-        drop(res_rx);
+        //drop(res_rx);
 
-        assert_that!(main_step.wait().await).is_ok();
+        assert_that!(main_step.wait(res_tx).await).is_ok();
     }
 
     #[traced_test]
@@ -281,7 +278,7 @@ mod tests {
         assert_that!(matches!(res.value(), PatuiEventKind::Result(_, _))).is_true();
         let res = res.value().as_result();
         assert_that!(res).is_ok();
-        assert_that!(res.unwrap().data).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(res.unwrap()).is_equal_to(&PatuiStepData::Bytes(Bytes::from(
             "Hello, World!\nStuffmore\n",
         )));
 
@@ -290,12 +287,12 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Bytes(Bytes::from(
+        assert_that!(recv).is_equal_to(&PatuiStepData::Bytes(Bytes::from(
             "Hello, World!\nStuffmore\n",
         )));
 
-        drop(res_rx);
+        // drop(res_rx);
 
-        assert_that!(main_step.wait().await).is_ok();
+        assert_that!(main_step.wait(res_tx.clone()).await).is_ok();
     }
 }

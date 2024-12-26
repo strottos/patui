@@ -8,14 +8,14 @@ use crate::{
 use eyre::{eyre, Result};
 use tokio::{
     process::{Child, Command},
-    sync::{broadcast, oneshot, Mutex},
+    sync::{broadcast, mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
 use tonic::{transport::Channel, Request};
 
 use crate::types::ptplugin::{self, get_info, plugin_service_client::PluginServiceClient};
 
-use super::{Expr, PatuiStepData, PatuiStepRunner, PatuiStepRunnerTrait};
+use super::{Expr, PatuiEvent, PatuiStepData, PatuiStepRunner, PatuiStepRunnerTrait};
 
 #[derive(Debug)]
 pub(crate) struct PatuiStepRunnerPlugin {
@@ -198,7 +198,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerPlugin {
         Ok(rx)
     }
 
-    async fn wait(&mut self) -> Result<()> {
+    async fn wait(&mut self, _tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         self.run_rx.take().unwrap().await?;
 
         tracing::trace!("Waiting");
@@ -260,8 +260,6 @@ mod tests {
     use tokio::{sync::mpsc, time::timeout};
     use tracing_test::traced_test;
 
-    use crate::types::PatuiStepDataFlavour;
-
     use super::*;
 
     lazy_static! {
@@ -322,36 +320,30 @@ mod tests {
         assert_that!(main_step.run(res_tx.clone())).is_ok();
 
         let task = tokio::spawn(async move {
-            let res = timeout(Duration::from_secs(2), main_step.wait()).await;
+            let res = timeout(Duration::from_secs(2), main_step.wait(res_tx.clone())).await;
             assert_that!(res).is_ok();
             assert_that!(res.unwrap()).is_ok();
         });
 
         for expected_recv in [
-            PatuiStepDataFlavour::Null,
-            PatuiStepDataFlavour::Bool(true),
-            PatuiStepDataFlavour::String("test".to_string()),
-            PatuiStepDataFlavour::Array(vec![
-                PatuiStepDataFlavour::Integer("1".to_string()),
-                PatuiStepDataFlavour::Integer("2".to_string()),
-                PatuiStepDataFlavour::Integer("3".to_string()),
+            PatuiStepData::Null,
+            PatuiStepData::Bool(true),
+            PatuiStepData::String("test".to_string()),
+            PatuiStepData::Array(vec![
+                PatuiStepData::Integer("1".to_string()),
+                PatuiStepData::Integer("2".to_string()),
+                PatuiStepData::Integer("3".to_string()),
             ]),
-            PatuiStepDataFlavour::Map(HashMap::from([
-                (
-                    "a".to_string(),
-                    PatuiStepDataFlavour::Integer("1".to_string()),
-                ),
-                (
-                    "b".to_string(),
-                    PatuiStepDataFlavour::Integer("2".to_string()),
-                ),
+            PatuiStepData::Map(HashMap::from([
+                ("a".to_string(), PatuiStepData::Integer("1".to_string())),
+                ("b".to_string(), PatuiStepData::Integer("2".to_string())),
             ])),
         ] {
             let recv = timeout(Duration::from_secs(10), output_rx.recv()).await;
             assert_that!(recv).is_ok();
             let recv = recv.unwrap();
             assert_that!(recv).is_ok();
-            assert_that!(recv.unwrap().data).is_equal_to(&expected_recv);
+            assert_that!(recv.unwrap()).is_equal_to(&expected_recv);
         }
 
         drop(output_rx);
@@ -395,19 +387,13 @@ mod tests {
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Integer(
-                r#"1"#.to_string(),
-            )))
+            .send(PatuiStepData::Integer(r#"1"#.to_string()))
             .unwrap();
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Integer(
-                r#"2"#.to_string(),
-            )))
+            .send(PatuiStepData::Integer(r#"2"#.to_string()))
             .unwrap();
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Integer(
-                r#"3"#.to_string(),
-            )))
+            .send(PatuiStepData::Integer(r#"3"#.to_string()))
             .unwrap();
 
         drop(input_tx);
@@ -415,7 +401,7 @@ mod tests {
         assert_that!(main_step.run(res_tx.clone())).is_ok();
 
         let task = tokio::spawn(async move {
-            let res = timeout(Duration::from_secs(5), main_step.wait()).await;
+            let res = timeout(Duration::from_secs(5), main_step.wait(res_tx.clone())).await;
             assert_that!(res).is_ok();
             assert_that!(res.unwrap()).is_ok();
         });
@@ -425,8 +411,7 @@ mod tests {
             assert_that!(recv).is_ok();
             let recv = recv.unwrap();
             assert_that!(recv).is_ok();
-            assert_that!(recv.unwrap().data)
-                .is_equal_to(PatuiStepDataFlavour::Integer(expected.to_string()));
+            assert_that!(recv.unwrap()).is_equal_to(&PatuiStepData::Integer(expected.to_string()));
         }
 
         assert_that!(task.await).is_ok();

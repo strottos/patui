@@ -8,7 +8,7 @@ use tokio::{
 
 use crate::types::{
     expr::ast::{Expr, ExprKind},
-    PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepDataFlavour, PatuiStepTransformStream,
+    PatuiEvent, PatuiEventKind, PatuiStepData, PatuiStepTransformStream,
 };
 
 use super::{init_subscribe_steps, PatuiStepRunner, PatuiStepRunnerTrait};
@@ -68,26 +68,19 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
                 let receiver = receivers.get_mut(&step.r#in.expr).unwrap();
 
                 while let Ok(chunk) = receiver.recv().await {
-                    let data = match chunk {
-                        PatuiStepData {
-                            data: PatuiStepDataFlavour::Bytes(data),
-                            ..
-                        } => PatuiStepData::new(
+                    let data: PatuiStepData = match chunk {
+                        PatuiStepData::Bytes(data) => {
                             serde_json::from_slice::<serde_json::Value>(&data)
                                 .unwrap()
                                 .try_into()
-                                .unwrap(),
-                        ),
-
-                        PatuiStepData {
-                            data: PatuiStepDataFlavour::String(data),
-                            ..
-                        } => PatuiStepData::new(
+                                .unwrap()
+                        }
+                        PatuiStepData::String(data) => {
                             serde_json::from_str::<serde_json::Value>(&data)
                                 .unwrap()
                                 .try_into()
-                                .unwrap(),
-                        ),
+                                .unwrap()
+                        }
 
                         _ => todo!(),
                     };
@@ -121,7 +114,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerTransformStream {
         }
     }
 
-    async fn wait(&mut self) -> Result<()> {
+    async fn wait(&mut self, _tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         tracing::trace!("Waiting");
         for task in self.tasks.drain(..) {
             task.await?;
@@ -182,9 +175,7 @@ mod tests {
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                Bytes::from(r#"{"key": "value"}"#),
-            )))
+            .send(PatuiStepData::Bytes(Bytes::from(r#"{"key": "value"}"#)))
             .unwrap();
 
         let (res_tx, _) = mpsc::channel(1);
@@ -196,10 +187,10 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(recv.data().is_object()).is_true();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Map(HashMap::from([(
+        assert_that!(recv.is_object()).is_true();
+        assert_that!(recv).is_equal_to(&PatuiStepData::Map(HashMap::from([(
             "key".into(),
-            PatuiStepDataFlavour::String("value".into()),
+            PatuiStepData::String("value".into()),
         )])));
     }
 
@@ -224,9 +215,7 @@ mod tests {
         assert_that!(main_step.test_set_receiver("steps.test_input.out", input_rx)).is_ok();
 
         input_tx
-            .send(PatuiStepData::new(PatuiStepDataFlavour::String(
-                r#"{"key": "value"}"#.to_string(),
-            )))
+            .send(PatuiStepData::String(r#"{"key": "value"}"#.to_string()))
             .unwrap();
 
         let (res_tx, _res_rx) = mpsc::channel(1);
@@ -238,10 +227,10 @@ mod tests {
         let recv = recv.unwrap();
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
-        assert_that!(recv.data().is_object()).is_true();
-        assert_that!(*recv.data()).is_equal_to(PatuiStepDataFlavour::Map(HashMap::from([(
+        assert_that!(recv.is_object()).is_true();
+        assert_that!(recv).is_equal_to(&PatuiStepData::Map(HashMap::from([(
             "key".into(),
-            PatuiStepDataFlavour::String("value".into()),
+            PatuiStepData::String("value".into()),
         )])));
     }
 }

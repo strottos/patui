@@ -22,8 +22,8 @@ use crate::{
 pub(crate) use expr::PatuiExpr;
 use steps::PatuiStepEditable;
 pub(crate) use steps::{
-    PatuiStep, PatuiStepAssertion, PatuiStepData, PatuiStepDataFlavour, PatuiStepDetails,
-    PatuiStepRead, PatuiStepSender, PatuiStepTransformStream, PatuiStepWrite,
+    PatuiStep, PatuiStepAssertion, PatuiStepData, PatuiStepDetails, PatuiStepRead, PatuiStepSender,
+    PatuiStepTransformStream, PatuiStepWrite,
 };
 
 #[cfg(test)]

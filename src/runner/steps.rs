@@ -107,14 +107,14 @@ impl PatuiStepRunner {
         }
     }
 
-    pub(crate) async fn wait(&mut self) -> Result<()> {
+    pub(crate) async fn wait(&mut self, tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         match &mut self.flavour {
-            PatuiStepRunnerFlavour::TransformStream(runner) => runner.wait().await,
-            PatuiStepRunnerFlavour::Read(runner) => runner.wait().await,
-            PatuiStepRunnerFlavour::Write(runner) => runner.wait().await,
-            PatuiStepRunnerFlavour::Assertion(runner) => runner.wait().await,
-            PatuiStepRunnerFlavour::Sender(runner) => runner.wait().await,
-            PatuiStepRunnerFlavour::Plugin(runner) => runner.wait().await,
+            PatuiStepRunnerFlavour::TransformStream(runner) => runner.wait(tx).await,
+            PatuiStepRunnerFlavour::Read(runner) => runner.wait(tx).await,
+            PatuiStepRunnerFlavour::Write(runner) => runner.wait(tx).await,
+            PatuiStepRunnerFlavour::Assertion(runner) => runner.wait(tx).await,
+            PatuiStepRunnerFlavour::Sender(runner) => runner.wait(tx).await,
+            PatuiStepRunnerFlavour::Plugin(runner) => runner.wait(tx).await,
         }
     }
 
@@ -140,7 +140,7 @@ pub(crate) trait PatuiStepRunnerTrait {
         Err(eyre!("Subscription not supported"))
     }
 
-    async fn wait(&mut self) -> Result<()> {
+    async fn wait(&mut self, _tx: mpsc::Sender<PatuiEvent>) -> Result<()> {
         Ok(())
     }
 

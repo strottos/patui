@@ -24,7 +24,7 @@ use tracing_subscriber::{
 use self::ptplugin::{
     get_info, init,
     plugin_service_server::{PluginService, PluginServiceServer},
-    publish, run, subscribe, wait, PatuiStepData, StepRunner,
+    publish, run, subscribe, wait, StepRunner,
 };
 
 pub mod ptplugin {
@@ -44,16 +44,16 @@ const VERSION_MESSAGE: &str = concat!(
 // crates this problem will go away.
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
-pub(crate) enum PatuiStepDataFlavour {
+pub(crate) enum PatuiStepData {
     Null,
     Bool(bool),
     Bytes(Bytes),
     String(String),
     Integer(String),
     Float(String),
-    Array(Vec<PatuiStepDataFlavour>),
-    Map(HashMap<String, PatuiStepDataFlavour>),
-    Set(Vec<PatuiStepDataFlavour>),
+    Array(Vec<PatuiStepData>),
+    Map(HashMap<String, PatuiStepData>),
+    Set(Vec<PatuiStepData>),
 }
 
 #[derive(Debug)]
@@ -65,15 +65,15 @@ pub(crate) struct MyPlugin {
     >,
     tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     shutdown_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    echo_tx: Mutex<Option<mpsc::Sender<PatuiStepData>>>,
-    echo_rx: Mutex<Option<mpsc::Receiver<PatuiStepData>>>,
+    echo_tx: Mutex<Option<mpsc::Sender<ptplugin::PatuiStepData>>>,
+    echo_rx: Mutex<Option<mpsc::Receiver<ptplugin::PatuiStepData>>>,
 }
 
 impl MyPlugin {
     pub(crate) fn new(
         shutdown_signal: oneshot::Sender<()>,
-        echo_tx: mpsc::Sender<PatuiStepData>,
-        echo_rx: mpsc::Receiver<PatuiStepData>,
+        echo_tx: mpsc::Sender<ptplugin::PatuiStepData>,
+        echo_rx: mpsc::Receiver<ptplugin::PatuiStepData>,
     ) -> Self {
         MyPlugin {
             subscribers: Arc::new(RwLock::new(HashMap::new())),
@@ -131,25 +131,18 @@ impl PluginService for MyPlugin {
                 for (name, subscribers) in lock.iter() {
                     if name == "out" {
                         for bytes in [
-                            rmp_serde::to_vec(&PatuiStepDataFlavour::Null).unwrap(),
-                            rmp_serde::to_vec(&PatuiStepDataFlavour::Bool(true)).unwrap(),
-                            rmp_serde::to_vec(&PatuiStepDataFlavour::String("test".to_string()))
-                                .unwrap(),
-                            rmp_serde::to_vec(&PatuiStepDataFlavour::Array(vec![
-                                PatuiStepDataFlavour::Integer("1".to_string()),
-                                PatuiStepDataFlavour::Integer("2".to_string()),
-                                PatuiStepDataFlavour::Integer("3".to_string()),
+                            rmp_serde::to_vec(&PatuiStepData::Null).unwrap(),
+                            rmp_serde::to_vec(&PatuiStepData::Bool(true)).unwrap(),
+                            rmp_serde::to_vec(&PatuiStepData::String("test".to_string())).unwrap(),
+                            rmp_serde::to_vec(&PatuiStepData::Array(vec![
+                                PatuiStepData::Integer("1".to_string()),
+                                PatuiStepData::Integer("2".to_string()),
+                                PatuiStepData::Integer("3".to_string()),
                             ]))
                             .unwrap(),
-                            rmp_serde::to_vec(&PatuiStepDataFlavour::Map(HashMap::from([
-                                (
-                                    "a".to_string(),
-                                    PatuiStepDataFlavour::Integer("1".to_string()),
-                                ),
-                                (
-                                    "b".to_string(),
-                                    PatuiStepDataFlavour::Integer("2".to_string()),
-                                ),
+                            rmp_serde::to_vec(&PatuiStepData::Map(HashMap::from([
+                                ("a".to_string(), PatuiStepData::Integer("1".to_string())),
+                                ("b".to_string(), PatuiStepData::Integer("2".to_string())),
                             ])))
                             .unwrap(),
                         ] {
@@ -158,7 +151,7 @@ impl PluginService for MyPlugin {
                             for tx in subscribers.iter() {
                                 tracing::debug!("Sending {:?}", bytes);
                                 tx.send(Ok(subscribe::Response {
-                                    data: Some(PatuiStepData {
+                                    data: Some(ptplugin::PatuiStepData {
                                         bytes: bytes.clone(),
                                     }),
                                     diagnostics: vec![],

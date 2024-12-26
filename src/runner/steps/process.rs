@@ -7,7 +7,7 @@ use tokio::{
 };
 use tokio_util::io::ReaderStream;
 
-use crate::types::{PatuiEvent, PatuiStepData, PatuiStepDataFlavour, PatuiStepProcess};
+use crate::types::{PatuiEvent, PatuiStepData, PatuiStepDataOld, PatuiStepProcess};
 
 use super::PatuiStepRunnerTrait;
 
@@ -27,16 +27,16 @@ pub(crate) struct PatuiStepRunnerProcess {
     exit_code: Option<i32>,
 
     stdin: (
-        broadcast::Receiver<PatuiStepData>,
-        broadcast::Sender<PatuiStepData>,
+        broadcast::Receiver<PatuiStepDataOld>,
+        broadcast::Sender<PatuiStepDataOld>,
     ),
     stdout: (
-        broadcast::Sender<PatuiStepData>,
-        broadcast::Receiver<PatuiStepData>,
+        broadcast::Sender<PatuiStepDataOld>,
+        broadcast::Receiver<PatuiStepDataOld>,
     ),
     stderr: (
-        broadcast::Sender<PatuiStepData>,
-        broadcast::Receiver<PatuiStepData>,
+        broadcast::Sender<PatuiStepDataOld>,
+        broadcast::Receiver<PatuiStepDataOld>,
     ),
 }
 
@@ -121,7 +121,7 @@ impl PatuiStepRunnerProcess {
                     Ok(chunk) => {
                         tracing::trace!("Read chunk: {:?}", chunk);
                         if let Err(e) =
-                            stdout_tx.send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(chunk)))
+                            stdout_tx.send(PatuiStepDataOld::new(PatuiStepData::Bytes(chunk)))
                         {
                             panic!("Error sending chunk: {:?}", e);
                         }
@@ -140,7 +140,7 @@ impl PatuiStepRunnerProcess {
                     Ok(chunk) => {
                         tracing::trace!("Read chunk: {:?}", chunk);
                         if let Err(e) =
-                            stderr_tx.send(PatuiStepData::new(PatuiStepDataFlavour::Bytes(chunk)))
+                            stderr_tx.send(PatuiStepDataOld::new(PatuiStepData::Bytes(chunk)))
                         {
                             panic!("Error sending chunk: {:?}", e);
                         }
@@ -174,7 +174,7 @@ impl PatuiStepRunnerProcess {
 }
 
 impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
-    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepData>> {
+    fn subscribe(&self, sub: &str) -> Result<broadcast::Receiver<PatuiStepDataOld>> {
         if self.step.tty.is_some() {
             Err(eyre!("Invalid subscription"))
         } else {
@@ -198,7 +198,7 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
         Ok(())
     }
 
-    fn check(&mut self, action: &str) -> Result<PatuiStepData> {
+    fn check(&mut self, action: &str) -> Result<PatuiStepDataOld> {
         match action {
             "exit_code" => {
                 let Some(exit_code) = self.exit_code else {
@@ -219,9 +219,9 @@ impl PatuiStepRunnerTrait for PatuiStepRunnerProcess {
 
                 let status = format!("{}", exit_code);
 
-                Ok(PatuiStepData::new(PatuiStepDataFlavour::Bytes(
-                    Bytes::from(status),
-                )))
+                Ok(PatuiStepDataOld::new(PatuiStepData::Bytes(Bytes::from(
+                    status,
+                ))))
             }
             _ => Err(eyre!("Invalid action")),
         }
@@ -302,7 +302,7 @@ mod tests {
         let ret = ret.unwrap();
         assert_eq!(
             *ret.data(),
-            PatuiStepDataFlavour::Bytes(Bytes::from(r#"{"foo":"bar"}"#))
+            PatuiStepData::Bytes(Bytes::from(r#"{"foo":"bar"}"#))
         );
 
         let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
@@ -313,7 +313,7 @@ mod tests {
         let ret = ret.unwrap();
         assert_eq!(
             *ret.data(),
-            PatuiStepDataFlavour::Bytes(Bytes::from(r#"{"bar":"baz"}"#))
+            PatuiStepData::Bytes(Bytes::from(r#"{"bar":"baz"}"#))
         );
 
         let ret = timeout(Duration::from_millis(50), stdout_rx.recv()).await;
@@ -324,12 +324,12 @@ mod tests {
         let ret = ret.unwrap();
         assert_eq!(
             *ret.data(),
-            PatuiStepDataFlavour::Bytes(Bytes::from(r#"{"baz":123}"#))
+            PatuiStepData::Bytes(Bytes::from(r#"{"baz":123}"#))
         );
 
         // assert_that!(step_runner_process.publish(
         //     "stdin",
-        //     PatuiStepData::new(PatuiStepDataFlavour::Bytes(Bytes::from(
+        //     PatuiStepDataOld::new(PatuiStepData::Bytes(Bytes::from(
         //         "{\"foo\":\"baz\"}\n"
         //     ))),
         // ))
@@ -343,7 +343,7 @@ mod tests {
         // let ret = ret.unwrap();
         // assert_eq!(
         //     *ret.data(),
-        //     PatuiStepDataFlavour::Bytes(Bytes::from("{\"foo\":\"baz\"}\n"))
+        //     PatuiStepData::Bytes(Bytes::from("{\"foo\":\"baz\"}\n"))
         // );
 
         // let ret = timeout(Duration::from_millis(50), step_runner_process.wait()).await;
