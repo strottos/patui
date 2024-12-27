@@ -1,8 +1,9 @@
 [workspace]
 members = [
-  "patui-cli",
+  "patui-bin",
   "patui-core",
   "patui-plugin",
+  "patui-tests",
   "plugins/*",
 ]
 resolver = "2"

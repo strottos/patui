@@ -1,0 +1,14 @@
+[package]
+name = "patui-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+patui-core = { path = "../patui-core" }
+
+assert_cmd = "2.0.16"
+assertor = "0.0.3"
+escargot = "0.5.13"
+insta = "1.41.1"
+tracing-test = "0.2.5"
+tracing = "0.1.41"

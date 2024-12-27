@@ -1,7 +1,9 @@
+mod edit;
+mod new;
 mod run;
 
 use clap::Parser;
-use miette::Result;
+use miette::{IntoDiagnostic, Result};
 use patui_core::PatuiTest;
 
 const VERSION_MESSAGE: &str = concat!(
@@ -24,14 +26,18 @@ pub(crate) enum Templates {
     ComplexProcessAndSocket,
 }
 
-fn get_template(template: Templates) -> Result<PatuiTest> {
-    match template {
-        Templates::Default => Ok(PatuiTest::default()),
-        Templates::SimpleProcess => Ok(PatuiTest::simple_process()),
-        Templates::StreamingProcess => Ok(PatuiTest::streaming_process()),
-        Templates::SimpleSocket => Ok(PatuiTest::simple_socket()),
-        Templates::StreamingSocket => Ok(PatuiTest::streaming_socket()),
-        Templates::ComplexProcessAndSocket => Ok(PatuiTest::complex_process_and_socket()),
+impl Templates {
+    fn get_template(&self) -> Result<String> {
+        match self {
+            Templates::Default => Ok(PatuiTest::default().try_into().into_diagnostic()?),
+            Templates::SimpleProcess => Ok(PatuiTest::simple_process().to_string()),
+            Templates::StreamingProcess => Ok(PatuiTest::streaming_process().to_string()),
+            Templates::SimpleSocket => Ok(PatuiTest::simple_socket().to_string()),
+            Templates::StreamingSocket => Ok(PatuiTest::streaming_socket().to_string()),
+            Templates::ComplexProcessAndSocket => {
+                Ok(PatuiTest::complex_process_and_socket().to_string())
+            }
+        }
     }
 }
 
@@ -39,12 +45,11 @@ fn get_template(template: Templates) -> Result<PatuiTest> {
 pub(crate) enum Command {
     // /// Describe specific resource
     // Describe(describe::Command),
+    /// Create a new resource in a YAML file
+    New(new::Command),
 
-    // /// Create a new resource in a YAML file
-    // New(new::Command),
-
-    // /// Edit YAML configs in a file for resources
-    // Edit(edit::Command),
+    /// Edit YAML configs in a file for resources
+    Edit(edit::Command),
 
     // /// Gets generic details about resource requested
     // Get(get::Command),
@@ -56,8 +61,8 @@ impl Command {
     pub(crate) async fn handle(&self) -> Result<()> {
         match self {
             // Command::Describe(cmd) => cmd.run(),
-            // Command::New(cmd) => cmd.run(),
-            // Command::Edit(cmd) => cmd.run(),
+            Command::New(cmd) => cmd.run().await,
+            Command::Edit(cmd) => cmd.run().await,
             // Command::Get(cmd) => cmd.run(),
             Command::Run(cmd) => cmd.run().await,
         }

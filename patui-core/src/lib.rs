@@ -3,7 +3,9 @@
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 
-mod types;
+mod expr;
+mod templates;
 mod utils;
 
-pub use types::PatuiTest;
+pub use expr::{PatuiExpr, PatuiExprError};
+pub use templates::PatuiTest;

@@ -7,14 +7,18 @@
 #![deny(missing_docs)]
 
 mod cli;
+mod util;
 
 use std::{env, fs::create_dir_all, sync::Arc};
 
+use clap::Parser;
 use lazy_static::lazy_static;
 use miette::{IntoDiagnostic, Result};
 use tracing_subscriber::{
     fmt::writer::BoxMakeWriter, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry,
 };
+
+use self::cli::Cli;
 
 lazy_static! {
     /// Various constants used in the root application code
@@ -94,6 +98,14 @@ fn initialise_panic_handler() -> Result<()> {
 
 async fn do_main() -> Result<()> {
     tracing::info!("Starting Patui");
+
+    let args = Cli::parse();
+
+    if let Some(subcommand) = args.subcommand {
+        subcommand.handle().await?;
+    } else {
+        todo!();
+    }
 
     Ok(())
 }
