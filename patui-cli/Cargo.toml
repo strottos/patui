@@ -1,0 +1,30 @@
+[package]
+name = "Patui"
+version = "0.1.0"
+authors = ["Steven Trotter <stevetrot@gmail.com>"]
+edition = "2021"
+resolver = "2"
+description = "A CLI/TUI for the patui testing framework"
+homepage = "https://patui.dev"
+repository = "https://github.com/strottos/patui"
+
+[[bin]]
+name = "patui"
+path = "src/main.rs"
+
+[dependencies]
+patui-core = { path = "../patui-core" }
+
+chrono = "0.4.39"
+clap = { version = "4.5.23", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
+color-eyre = { git = "https://github.com/eyre-rs/eyre/" }
+etcetera = "0.8.0"
+human-panic = "2.0.2"
+lazy_static = "1.5.0"
+libc = "0.2.169"
+miette = { version = "7.4.0", features = ["fancy"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+eyre = "0.6.12"
+strip-ansi-escapes = "0.2.0"
+tokio = { version = "1.42.0", features = ["fs", "io-util", "process", "rt-multi-thread", "macros", "time"] }

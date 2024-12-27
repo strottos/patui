@@ -1,0 +1,13 @@
+[package]
+name = "patui-plugin"
+version = "0.1.0"
+authors = ["Steven Trotter <stevetrot@gmail.com>"]
+edition = "2021"
+resolver = "2"
+
+[lib]
+name = "patui_plugins"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+patui-core = { path = "../patui-core" }

@@ -1,0 +1,17 @@
+[workspace]
+members = [
+  "patui-cli",
+  "patui-core",
+  "patui-plugin",
+  "plugins/*",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.76.0"
+license = "MIT"
+authors = ["Steven Trotter <stevetrot@gmail.com>"]
+repository = "https://github.com/strottos/patui"
+description = ""
