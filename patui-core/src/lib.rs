@@ -4,8 +4,14 @@
 #![deny(missing_docs)]
 
 mod expr;
+// mod runner;   Concentrating on expressions first, suppress these warnings for now
 mod templates;
 mod utils;
 
-pub use expr::{PatuiExpr, PatuiExprError};
+pub use expr::{
+    // TODO: Remove this later
+    eval,
+    PatuiExpr,
+    PatuiExprError,
+};
 pub use templates::PatuiTest;

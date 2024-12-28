@@ -8,9 +8,9 @@ use super::{
 };
 
 pub(crate) fn parse(input: &str) -> Result<PatuiExpr> {
-    let raw = input.to_string();
-
     tracing::trace!("Parsing input: '{}'", input);
+
+    let raw = input.to_string();
 
     let mut lexer = LexerPeekable::new(Token::lexer(input));
 
@@ -575,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn lex_number() {
+    fn number() {
         single_successful_lex("123", Token::Integer("123".to_string()), 0..3, "123");
         single_successful_lex(
             "123.45",
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn lex_number_errors() {
+    fn number_errors() {
         let mut lex = Token::lexer("123az");
         let tok = lex.next();
         assert_that!(tok).is_some();
@@ -613,13 +613,13 @@ mod tests {
     }
 
     #[test]
-    fn lex_bool() {
+    fn bool() {
         single_successful_lex("true", Token::Bool(true), 0..4, "true");
         single_successful_lex("FaLse", Token::Bool(false), 0..5, "FaLse");
     }
 
     #[test]
-    fn lex_string() {
+    fn string() {
         single_successful_lex(
             r#""foo bar boo""#,
             Token::String("foo bar boo".to_string()),
@@ -641,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn lex_string_errors() {
+    fn string_errors() {
         let mut lex = Token::lexer("\"foo bar boo");
         let tok = lex.next();
         assert_that!(tok).is_some();
@@ -650,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn lex_ident() {
+    fn ident() {
         single_successful_lex("foo", Token::Ident("foo".to_string()), 0..3, "foo");
         single_successful_lex(
             "foo_123_ABC_bar",
@@ -707,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn lex_complex() {
+    fn complex() {
         let mut lex =
             Token::lexer("foo123[1].bar if bar else baz && baz == true || (true && false)");
         for (expected_parsed, expected_span, expected_slice) in vec![

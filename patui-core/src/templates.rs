@@ -32,11 +32,10 @@ pub(crate) struct PatuiTestEditable {
 /// storage, for example in a database.
 ///
 /// The main interest is the `steps` field, which is a list of steps that need to be run in order.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct PatuiTest {
     pub(crate) name: String,
     pub(crate) description: Option<String>,
-    pub(crate) creation_date: String,
     pub(crate) steps: Vec<PatuiStep>,
 }
 
@@ -47,7 +46,6 @@ impl Default for PatuiTest {
         PatuiTest {
             name: "Default".to_string(),
             description: Some("Default template".to_string()),
-            creation_date: now.clone(),
             steps: vec![PatuiStep {
                 name: "DefaultProcess".to_string(),
                 when: None,
@@ -71,11 +69,6 @@ impl PatuiTest {
         self.description.as_deref()
     }
 
-    /// Get the creation date of the test
-    pub fn creation_date(&self) -> &str {
-        &self.creation_date
-    }
-
     /// This function is used to convert a YAML string into a `PatuiTest` struct.
     pub fn from_yaml_str(yaml: &str) -> Result<Self, PatuiTestError> {
         let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
@@ -87,7 +80,6 @@ impl PatuiTest {
             description: yaml_test
                 .description
                 .unwrap_or_else(|| Some("".to_string())),
-            creation_date: now,
             steps: yaml_test
                 .steps
                 .map(|steps| steps.iter().map(|s| s.try_into()).collect())
@@ -168,7 +160,7 @@ pub enum PatuiStepError {
 
 /// PatuiStep is the type used for steps after they have been saved to the
 /// database. This is used for running tests and displaying them to the user.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStep {
     pub(crate) name: String,
     pub(crate) when: Option<String>,
@@ -177,54 +169,45 @@ pub(crate) struct PatuiStep {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Deserialize,
-    Serialize,
-    EnumDiscriminants,
-    IntoStaticStr,
-    VariantNames,
+    Debug, Clone, PartialEq, Deserialize, Serialize, EnumDiscriminants, IntoStaticStr, VariantNames,
 )]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum PatuiStepDetails {
     Read(PatuiStepRead),
     Write(PatuiStepWrite),
     Sender(PatuiStepSender),
-    TransformStream(PatuiStepTransformStream),
     Assertion(PatuiStepAssertion),
     Plugin(PatuiStepPlugin),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepRead {
     pub(crate) r#in: PatuiExpr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepWrite {
     pub(crate) out: PatuiExpr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepAssertion {
     pub(crate) expr: PatuiExpr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepSender {
     pub(crate) expr: PatuiExpr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepPlugin {
     pub(crate) path: String, // TODO: Find a better solution when we're publishing plugins
     pub(crate) config: HashMap<String, PatuiExpr>,
     pub(crate) r#in: HashMap<String, PatuiExpr>,
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepTransformStreamFlavour {
     Utf8,
     #[default]
@@ -234,7 +217,7 @@ pub(crate) enum PatuiStepTransformStreamFlavour {
     Toml,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepTransformStream {
     pub(crate) r#in: PatuiExpr,
     pub(crate) flavour: PatuiStepTransformStreamFlavour,
@@ -252,9 +235,8 @@ pub(crate) struct PatuiStepEditable {
     pub(crate) details: PatuiStepDetailsEditable,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) enum PatuiStepDetailsEditable {
-    TransformStream(PatuiStepTransformStreamEditable),
     Read(PatuiStepReadEditable),
     Write(PatuiStepWriteEditable),
     Assertion(PatuiStepAssertionEditable),
@@ -262,34 +244,34 @@ pub(crate) enum PatuiStepDetailsEditable {
     Plugin(PatuiStepPluginEditable),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepReadEditable {
     pub(crate) r#in: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepWriteEditable {
     pub(crate) out: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepAssertionEditable {
     pub(crate) expr: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepSenderEditable {
     pub(crate) expr: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepPluginEditable {
     pub(crate) path: String, // TODO: Find a better solution when we're publishing plugins
     pub(crate) config: Option<HashMap<String, String>>,
     pub(crate) r#in: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepTransformStreamEditable {
     pub(crate) r#in: String,
     pub(crate) flavour: PatuiStepTransformStreamFlavour,
@@ -308,12 +290,6 @@ impl TryFrom<&PatuiStepEditable> for PatuiStep {
                 .map(|x| x.iter().map(|x| x.try_into()).collect())
                 .unwrap_or_else(|| Ok(Vec::new()))?,
             details: match &value.details {
-                PatuiStepDetailsEditable::TransformStream(stream) => {
-                    PatuiStepDetails::TransformStream(PatuiStepTransformStream {
-                        r#in: (&stream.r#in[..]).try_into()?,
-                        flavour: stream.flavour.clone(),
-                    })
-                }
                 PatuiStepDetailsEditable::Assertion(assertion) => {
                     PatuiStepDetails::Assertion(PatuiStepAssertion {
                         expr: (&assertion.expr[..]).try_into()?,
@@ -371,12 +347,6 @@ impl From<&PatuiStep> for PatuiStepEditable {
             when: Some(value.when.clone()),
             depends_on: Some(value.depends_on.iter().map(|x| x.into()).collect()),
             details: match &value.details {
-                PatuiStepDetails::TransformStream(stream) => {
-                    PatuiStepDetailsEditable::TransformStream(PatuiStepTransformStreamEditable {
-                        r#in: stream.r#in.clone().into(),
-                        flavour: stream.flavour.clone(),
-                    })
-                }
                 PatuiStepDetails::Assertion(assertion) => {
                     PatuiStepDetailsEditable::Assertion(PatuiStepAssertionEditable {
                         expr: (&assertion.expr).into(),
