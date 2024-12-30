@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use strum_macros::Display;
 use thiserror::Error;
 
 use super::ast::Expr;
@@ -24,7 +25,7 @@ pub enum PatuiData {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Display)]
 pub enum PatuiDataInner {
     Null,
     Bool(bool),

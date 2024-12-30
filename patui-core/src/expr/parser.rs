@@ -81,6 +81,9 @@ fn parse_expr(
             | Token::LeftCurlyBrace => {
                 expr = Some(parse_term(input, lexer, token)?);
             }
+            Token::LeftBracket => {
+                expr = Some(parse_bracket_ordering(input, lexer)?);
+            }
             Token::Minus => {
                 expr = match expr.take() {
                     None => Some(parse_un_op(input, lexer, UnOp::Neg, parse_until.clone())?),
@@ -929,4 +932,355 @@ mod tests {
             assert_that!(res.unwrap()).is_equal_to(expected);
         }
     }
+
+    #[traced_test]
+    #[test]
+    fn comparison() {
+        for (expr_string, expected) in &[
+            (
+                "1 == 2",
+                Expr::BinOp(
+                    BinOp::Equal,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                ),
+            ),
+            (
+                "1 != 2",
+                Expr::BinOp(
+                    BinOp::NotEqual,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                ),
+            ),
+            (
+                "1 < 2",
+                Expr::BinOp(
+                    BinOp::LessThan,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                ),
+            ),
+            (
+                "1 <= 2",
+                Expr::BinOp(
+                    BinOp::LessThanEqual,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                ),
+            ),
+            (
+                "1 > 2",
+                Expr::BinOp(
+                    BinOp::GreaterThan,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                ),
+            ),
+            (
+                "1 >= 2",
+                Expr::BinOp(
+                    BinOp::GreaterThanEqual,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                ),
+            ),
+        ] {
+            let res = parse(expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn boolean_logic() {
+        for (expr_string, expected) in &[
+            (
+                "true && false",
+                Expr::BinOp(
+                    BinOp::And,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                ),
+            ),
+            (
+                "true || false",
+                Expr::BinOp(
+                    BinOp::Or,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                ),
+            ),
+            (
+                "true && false || 1 == 2",
+                Expr::BinOp(
+                    BinOp::And,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::BinOp(
+                        BinOp::Or,
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                        Box::new(Expr::BinOp(
+                            BinOp::Equal,
+                            Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                            Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                        )),
+                    )),
+                ),
+            ),
+            (
+                "!true",
+                Expr::UnOp(
+                    UnOp::Not,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                ),
+            ),
+        ] {
+            let res = parse(expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn functions() {
+        for (expr_string, expected) in &[
+            (
+                "foo.bar()",
+                Expr::Term(vec![
+                    TermPart::Ident("foo".to_string()),
+                    TermPart::Call("bar".to_string(), vec![]),
+                ]),
+            ),
+            (
+                "foo.bar(\"a\", 1)",
+                Expr::Term(vec![
+                    TermPart::Ident("foo".to_string()),
+                    TermPart::Call(
+                        "bar".to_string(),
+                        vec![
+                            Expr::Term(vec![TermPart::Lit(Lit::String("a".to_string()))]),
+                            Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))]),
+                        ],
+                    ),
+                ]),
+            ),
+            (
+                "foo.bar(foo.baz(), foo.boo())",
+                Expr::Term(vec![
+                    TermPart::Ident("foo".to_string()),
+                    TermPart::Call(
+                        "bar".to_string(),
+                        vec![
+                            Expr::Term(vec![
+                                TermPart::Ident("foo".to_string()),
+                                TermPart::Call("baz".to_string(), vec![]),
+                            ]),
+                            Expr::Term(vec![
+                                TermPart::Ident("foo".to_string()),
+                                TermPart::Call("boo".to_string(), vec![]),
+                            ]),
+                        ],
+                    ),
+                ]),
+            ),
+            (
+                "foo.bar(1  ,   2   ,  bar.baz( 3, 4, 5)  )",
+                Expr::Term(vec![
+                    TermPart::Ident("foo".to_string()),
+                    TermPart::Call(
+                        "bar".to_string(),
+                        vec![
+                            Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))]),
+                            Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))]),
+                            Expr::Term(vec![
+                                TermPart::Ident("bar".to_string()),
+                                TermPart::Call(
+                                    "baz".to_string(),
+                                    vec![
+                                        Expr::Term(vec![TermPart::Lit(Lit::Integer(3.into()))]),
+                                        Expr::Term(vec![TermPart::Lit(Lit::Integer(4.into()))]),
+                                        Expr::Term(vec![TermPart::Lit(Lit::Integer(5.into()))]),
+                                    ],
+                                ),
+                            ]),
+                        ],
+                    ),
+                ]),
+            ),
+        ] {
+            let res = parse(expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn brackets() {
+        for (expr_string, expected) in &[
+            (
+                "(true && false) || true",
+                Expr::BinOp(
+                    BinOp::Or,
+                    Box::new(Expr::BinOp(
+                        BinOp::And,
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                    )),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                ),
+            ),
+            (
+                "true && (false || true)",
+                Expr::BinOp(
+                    BinOp::And,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::BinOp(
+                        BinOp::Or,
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    )),
+                ),
+            ),
+        ] {
+            let res = parse(expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn complex() {
+        for (expr_string, expected) in &[(
+            "((foo.bar[2].baz(1, 2, 3) + 5) == 123) && foobar[\"abc\"]",
+            Expr::BinOp(
+                BinOp::And,
+                Box::new(Expr::BinOp(
+                    BinOp::Equal,
+                    Box::new(Expr::BinOp(
+                        BinOp::Add,
+                        Box::new(Expr::Term(vec![
+                            TermPart::Ident("foo".to_string()),
+                            TermPart::Ident("bar".to_string()),
+                            TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                                2.into()
+                            ))]))),
+                            TermPart::Call(
+                                "baz".to_string(),
+                                vec![
+                                    Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))]),
+                                    Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))]),
+                                    Expr::Term(vec![TermPart::Lit(Lit::Integer(3.into()))]),
+                                ],
+                            ),
+                        ])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(5.into()))])),
+                    )),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(123.into()))])),
+                )),
+                Box::new(Expr::Term(vec![
+                    TermPart::Ident("foobar".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::String(
+                        "abc".to_string()
+                    ))]))),
+                ])),
+            ),
+        ), (
+            "(1 == (2 + 3)) && (true || (foo.bar[1] == (bar[foo.baz()]))) || (\"123\" == 123) || ([1,2,3] == {\"a\": 1}) || !true",
+            Expr::BinOp(
+                BinOp::And,
+                Box::new(Expr::BinOp(
+                    BinOp::Equal,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))]),),
+                    Box::new(Expr::BinOp(
+                        BinOp::Add,
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(3.into()))])),
+                    ))
+                )),
+                Box::new(Expr::BinOp(
+                    BinOp::Or,
+                    Box::new(Expr::BinOp(
+                        BinOp::Or,
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                        Box::new(Expr::BinOp(
+                            BinOp::Equal,
+                            Box::new(Expr::Term(vec![
+                                TermPart::Ident("foo".to_string()),
+                                TermPart::Ident("bar".to_string()),
+                                TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))]))),
+                            ])),
+                            Box::new(Expr::Term(vec![
+                                TermPart::Ident("bar".to_string()),
+                                TermPart::Index(Box::new(
+                                    Expr::Term(vec![
+                                        TermPart::Ident("foo".to_string()),
+                                        TermPart::Call("baz".to_string(), vec![]),
+                                    ])
+                                ))
+                            ]))
+                        ))
+                    )),
+                    Box::new(Expr::BinOp(
+                        BinOp::Or,
+                        Box::new(Expr::BinOp(
+                            BinOp::Equal,
+                            Box::new(Expr::Term(vec![
+                                TermPart::Lit(Lit::String("123".to_string()))
+                            ])),
+                            Box::new(Expr::Term(vec![
+                                TermPart::Lit(Lit::Integer(123.into()))
+                            ])),
+                        )),
+                        Box::new(Expr::BinOp(
+                            BinOp::Or,
+                            Box::new(Expr::BinOp(
+                                BinOp::Equal,
+                                Box::new(Expr::Term(vec![
+                                    TermPart::Lit(Lit::List(vec![
+                                        Expr::Term(vec![
+                                            TermPart::Lit(Lit::Integer(1.into())),
+                                        ]),
+                                        Expr::Term(vec![
+                                            TermPart::Lit(Lit::Integer(2.into())),
+                                        ]),
+                                        Expr::Term(vec![
+                                            TermPart::Lit(Lit::Integer(3.into())),
+                                        ]),
+                                    ])),
+                                ])),
+                                Box::new(Expr::Term(
+                                    vec![TermPart::Lit(
+                                        Lit::Map(vec![
+                                            (
+                                                "a".to_string(),
+                                                Expr::Term(vec![
+                                                    TermPart::Lit(Lit::Integer(1.into()))
+                                                ]),
+                                            ),
+                                        ])
+                                    )]
+                                ))
+                            )),
+                            Box::new(Expr::UnOp(
+                                UnOp::Not,
+                                Box::new(Expr::Term(vec![
+                                    TermPart::Lit(Lit::Bool(true))
+                                ]))
+                            )),
+                        ))
+                    ))
+                )
+            ))
+        )] {
+            let res = parse(expr_string);
+            assert_that!(res).is_ok();
+            assert_that!(res.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    // TODO: Precedence
 }

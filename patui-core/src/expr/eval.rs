@@ -37,6 +37,8 @@ pub enum EvalError {
     DataNotFound,
     #[error("Invalid data {0}")]
     InvalidDataInner(#[from] PatuiDataError),
+    #[error("Invalid data type {0} when we expected {1}")]
+    InvalidDataType(String, String),
 }
 
 /// Evaluate the expression against some known results.
@@ -47,7 +49,7 @@ pub fn eval(expr: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
     match expr {
         Expr::Term(term_parts) => eval_term(term_parts, results),
         Expr::UnOp(_, _) => todo!(),
-        Expr::BinOp(_, _, _) => todo!(),
+        Expr::BinOp(op, lhs, rhs) => eval_binop(op, lhs, rhs, results),
         Expr::If(_, _, _) => todo!(),
     }
 }
@@ -106,6 +108,88 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
     }
 
     data.ok_or(EvalError::InvalidTerm)
+}
+
+fn eval_binop(
+    op: &BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    results: &PatuiData,
+) -> Result<PatuiData, EvalError> {
+    let lhs = eval(lhs, results)?;
+    let rhs = eval(rhs, results)?;
+
+    let mut known = true;
+    let lhs_inner = match lhs {
+        PatuiData::Known(inner) => inner,
+        PatuiData::Pending(inner) => {
+            known = false;
+            inner
+        }
+        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    };
+    let rhs_inner = match rhs {
+        PatuiData::Known(inner) => inner,
+        PatuiData::Pending(inner) => {
+            known = false;
+            inner
+        }
+        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    };
+
+    match op {
+        BinOp::Add => todo!(),
+        BinOp::Subtract => todo!(),
+        BinOp::Multiply => todo!(),
+        BinOp::Divide => todo!(),
+        BinOp::Modulo => todo!(),
+        BinOp::And | BinOp::Or => {
+            let PatuiDataInner::Bool(lhs_bool) = lhs_inner else {
+                return Err(EvalError::InvalidDataType(
+                    format!("{}", lhs_inner),
+                    "Bool".to_string(),
+                ));
+            };
+
+            let PatuiDataInner::Bool(rhs_bool) = rhs_inner else {
+                return Err(EvalError::InvalidDataType(
+                    format!("{}", rhs_inner),
+                    "Bool".to_string(),
+                ));
+            };
+
+            let res = if op == &BinOp::And {
+                lhs_bool && rhs_bool
+            } else {
+                lhs_bool || rhs_bool
+            };
+
+            Ok(if known {
+                PatuiData::Known(PatuiDataInner::Bool(res))
+            } else {
+                PatuiData::Pending(PatuiDataInner::Bool(res))
+            })
+        }
+        BinOp::Equal | BinOp::NotEqual => {
+            let res = if op == &BinOp::Equal {
+                lhs_inner == rhs_inner
+            } else {
+                lhs_inner != rhs_inner
+            };
+
+            Ok(if known {
+                PatuiData::Known(PatuiDataInner::Bool(res))
+            } else {
+                PatuiData::Pending(PatuiDataInner::Bool(res))
+            })
+        }
+        BinOp::LessThan => todo!(),
+        BinOp::LessThanEqual => todo!(),
+        BinOp::GreaterThan => todo!(),
+        BinOp::GreaterThanEqual => todo!(),
+        BinOp::Contains => todo!(),
+        BinOp::NotContains => todo!(),
+    }
 }
 
 fn eval_lit(lit: &Lit, results: &PatuiData) -> Result<PatuiData, EvalError> {
@@ -1112,6 +1196,68 @@ mod tests {
             let result = eval(&eval_data, &lookup);
             assert_that!(result).is_err();
             assert_that!(result.unwrap_err()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn simple_comparison() {
+        for (eval_data, expected) in [
+            (
+                Expr::BinOp(
+                    BinOp::Equal,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                ),
+                PatuiData::Known(PatuiDataInner::Bool(true)),
+            ),
+            (
+                Expr::BinOp(
+                    BinOp::NotEqual,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                ),
+                PatuiData::Known(PatuiDataInner::Bool(false)),
+            ),
+            (
+                Expr::BinOp(
+                    BinOp::And,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                ),
+                PatuiData::Known(PatuiDataInner::Bool(true)),
+            ),
+            (
+                Expr::BinOp(
+                    BinOp::And,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                ),
+                PatuiData::Known(PatuiDataInner::Bool(false)),
+            ),
+            (
+                Expr::BinOp(
+                    BinOp::Or,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                ),
+                PatuiData::Known(PatuiDataInner::Bool(true)),
+            ),
+            (
+                Expr::BinOp(
+                    BinOp::Or,
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                    Box::new(Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
+                ),
+                PatuiData::Known(PatuiDataInner::Bool(false)),
+            ),
+        ] {
+            let result = eval(
+                &eval_data,
+                &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
+            );
+            assert_that!(result).is_ok();
+            assert_that!(result.unwrap()).is_equal_to(expected);
         }
     }
 }
