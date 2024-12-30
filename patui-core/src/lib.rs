@@ -4,7 +4,7 @@
 #![deny(missing_docs)]
 
 mod expr;
-// mod runner;   Concentrating on expressions first, suppress these warnings for now
+mod runner;
 mod templates;
 mod utils;
 

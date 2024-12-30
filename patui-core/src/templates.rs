@@ -5,7 +5,6 @@ use strum_macros::{EnumDiscriminants, IntoStaticStr, VariantNames};
 use thiserror::Error;
 
 use crate::expr::{PatuiExpr, PatuiExprError};
-use crate::utils::get_current_time_string;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PatuiTestError {
@@ -41,8 +40,6 @@ pub struct PatuiTest {
 
 impl Default for PatuiTest {
     fn default() -> Self {
-        let now = get_current_time_string();
-
         PatuiTest {
             name: "Default".to_string(),
             description: Some("Default template".to_string()),
@@ -72,8 +69,6 @@ impl PatuiTest {
     /// This function is used to convert a YAML string into a `PatuiTest` struct.
     pub fn from_yaml_str(yaml: &str) -> Result<Self, PatuiTestError> {
         let yaml_test = serde_yaml::from_str::<PatuiTestEditable>(yaml)?;
-
-        let now = get_current_time_string();
 
         let test = PatuiTest {
             name: yaml_test.name,

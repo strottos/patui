@@ -197,7 +197,7 @@ impl<'a> LexerPeekable<'a> {
                         return true;
                     }
                 }
-                Err(e) => panic!("TODO: Handle: {:?}", e),
+                Err(e) => tracing::error!("Error matching next token, assuming no match: {:?}", e),
             }
         }
 

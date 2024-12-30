@@ -403,6 +403,14 @@ fn parse_term(
             }
 
             ident_parts.push(TermPart::Call(function_name, args));
+        } else if matches!(lexer.peek(), Some(Ok(Token::String(_)))) {
+            let Some(Ok(tok)) = lexer.next() else {
+                unreachable!();
+            };
+            return Err(ExprParseError::UnexpectedToken(
+                "parsing term".to_string(),
+                tok,
+            ));
         } else {
             break;
         }
@@ -436,7 +444,7 @@ fn parse_bytes(lexer: &mut LexerPeekable<'_>) -> Result<Lit, ExprParseError> {
                     tok,
                 ))
             }
-            Err(e) => panic!("Error parsing token: {:?}", e),
+            Err(e) => return Err(e.into()),
         }
     }
 
@@ -730,23 +738,29 @@ mod tests {
         for (expr_string, expected) in &[
             (
                 "123,",
-                ExprParseError::UnexpectedToken("parsing term".to_string(), Token::Comma),
+                ExprParseError::UnexpectedToken(
+                    "parsing general expression".to_string(),
+                    Token::Comma,
+                ),
             ),
             (
                 "\"abc",
-                ExprParseError::UnexpectedToken("parsing term".to_string(), Token::Comma),
+                ExprParseError::TokenParseError(LexingError::BadString("\"abc".to_string())),
             ),
             (
                 "\"abc\"\"",
-                ExprParseError::UnexpectedToken("parsing term".to_string(), Token::Comma),
+                ExprParseError::TokenParseError(LexingError::BadString("\"".to_string())),
             ),
             (
                 "a\"abc\"",
-                ExprParseError::UnexpectedToken("parsing term".to_string(), Token::Comma),
+                ExprParseError::UnexpectedToken(
+                    "parsing term".to_string(),
+                    Token::String("abc".to_string()),
+                ),
             ),
             (
                 "b\"test",
-                ExprParseError::UnexpectedEnd("parsing bytes".to_string()),
+                ExprParseError::TokenParseError(LexingError::BadString("\"test".to_string())),
             ),
             (
                 "b[104, 0x65, 0x6c, 0x6C, 'o'",
