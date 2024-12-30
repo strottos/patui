@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use num::integer::mod_floor;
 use thiserror::Error;
 
@@ -12,40 +13,28 @@ use super::{
 #[derive(Debug, Error)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum EvalError {
-    #[error("Invalid type")]
-    InvalidType,
-    #[error("Invalid operation")]
-    InvalidOperation,
     #[error("Index is not a valid size, cannot convert to signed 64-bit integer")]
-    InvalidIndexSize,
+    BadIndexSize,
+    #[error("Indexing type '{0}' unsupported for type '{1}'")]
+    IndexUnsupported(String, String),
+    #[error("Indexing type '{0}' unsupported")]
+    IndexTypeUnsupported(String),
     #[error("Index in first part of term not valid")]
-    InvalidIndexNoLit,
-    #[error("Invalid key, nit found in map")]
-    InvalidKey,
-    #[error("Invalid range")]
-    InvalidRange,
-    #[error("Invalid call")]
-    InvalidCall,
-    #[error("Invalid ident")]
-    InvalidIdent,
-    #[error("Invalid lit")]
-    InvalidLit,
+    IndexNoLit,
+    #[error("Index range is not valid")]
+    BadIndexRange,
+    #[error("Invalid literal for evaluating {0}")]
+    LitEvalUnsupported(String),
     #[error("Invalid function call, no method supplied")]
-    InvalidCallNoMethod,
+    CallNoMethodFound,
     #[error("Invalid function call, method {0} not found on type '{1}'")]
-    InvalidCallMethod(String, String),
-    #[error("Invalid unop")]
-    InvalidUnOp,
-    #[error("Invalid binop")]
-    InvalidBinOp,
+    CallMethodNotFound(String, String),
     #[error("Invalid term")]
     InvalidTerm,
-    #[error("Invalid expr")]
-    InvalidExpr,
-    #[error("Invalid data")]
-    InvalidData,
-    #[error("Invalid results")]
-    InvalidResults,
+    #[error("Invalid results, must be a map")]
+    ResultsNotMap,
+    #[error("Data not found")]
+    DataNotFound,
     #[error("Invalid data {0}")]
     InvalidDataInner(#[from] PatuiDataError),
 }
@@ -57,9 +46,9 @@ pub fn eval(expr: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
 
     match expr {
         Expr::Term(term_parts) => eval_term(term_parts, results),
-        Expr::UnOp(op, expr) => todo!(),
-        Expr::BinOp(op, lhs, rhs) => todo!(),
-        Expr::If(cond, then, else_) => todo!(),
+        Expr::UnOp(_, _) => todo!(),
+        Expr::BinOp(_, _, _) => todo!(),
+        Expr::If(_, _, _) => todo!(),
     }
 }
 
@@ -67,23 +56,51 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
     let mut data = None;
 
     for term_part in term_parts {
+        tracing::trace!("Term Part: {:?}", term_part);
         match term_part {
             TermPart::Lit(lit) => data = Some(eval_lit(lit, results)?),
             TermPart::Ident(ident) => match results {
                 PatuiData::Known(PatuiDataInner::Map(hash_map)) => {
                     let key = ident.clone();
-                    let value = hash_map.get(&key).ok_or(EvalError::InvalidKey)?;
-                    data = Some(value.clone());
+                    tracing::trace!("Ident key: {:?}", key);
+                    match data.as_ref() {
+                        Some(existing) => {
+                            tracing::trace!("Existing ident lookup: {:?}", existing);
+                            let existing_inner = match existing {
+                                PatuiData::Known(inner) => inner,
+                                PatuiData::Pending(inner) => inner,
+                                PatuiData::Unknown => return Ok(PatuiData::Unknown),
+                            };
+                            let value = match existing_inner {
+                                PatuiDataInner::Null => todo!(),
+                                PatuiDataInner::Bool(_) => todo!(),
+                                PatuiDataInner::Bytes(_) => todo!(),
+                                PatuiDataInner::String(_) => todo!(),
+                                PatuiDataInner::Integer(_) => todo!(),
+                                PatuiDataInner::Decimal(_) => todo!(),
+                                PatuiDataInner::List(_) => todo!(),
+                                PatuiDataInner::Map(map) => {
+                                    map.get(&key).ok_or(EvalError::DataNotFound)?.clone()
+                                }
+                                PatuiDataInner::Set(_) => todo!(),
+                            };
+                            data = Some(value.clone());
+                        }
+                        None => {
+                            let value = hash_map.get(&key).ok_or(EvalError::DataNotFound)?;
+                            data = Some(value.clone());
+                        }
+                    }
                 }
-                _ => return Err(EvalError::InvalidResults),
+                _ => return Err(EvalError::ResultsNotMap),
             },
             TermPart::Index(index) => match data {
                 Some(existing) => data = Some(eval_index(&existing, index, results)?),
-                None => return Err(EvalError::InvalidIndexNoLit),
+                None => return Err(EvalError::IndexNoLit),
             },
             TermPart::Call(function_name, args) => match data {
                 Some(existing) => data = Some(eval_call(&existing, function_name, args, results)?),
-                None => return Err(EvalError::InvalidCallNoMethod),
+                None => return Err(EvalError::CallNoMethodFound),
             },
         }
     }
@@ -117,18 +134,17 @@ fn eval_lit(lit: &Lit, results: &PatuiData) -> Result<PatuiData, EvalError> {
                 .map(|lit| eval(lit, results))
                 .collect::<Result<Vec<_>, EvalError>>()?,
         ))),
-        Lit::Wildcard => todo!(),
-        Lit::Range(expr, expr1) => todo!(),
+        Lit::Wildcard => Err(EvalError::LitEvalUnsupported("Wildcard".to_string())),
+        Lit::Range(i1, i2) => Ok(PatuiData::Known(PatuiDataInner::List(vec![
+            eval(i1, results)?,
+            eval(i2, results)?,
+        ]))),
     }
 }
 
-fn eval_index(
-    existing: &PatuiData,
-    index: &Expr,
-    results: &PatuiData,
-) -> Result<PatuiData, EvalError> {
+fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
     tracing::trace!("Index: {:?}", index);
-    tracing::trace!("Existing: {:?}", existing);
+    tracing::trace!("Base: {:?}", base);
 
     let index = eval(index, results)?;
     let mut known = true;
@@ -142,7 +158,7 @@ fn eval_index(
         PatuiData::Unknown => return Ok(PatuiData::Unknown),
     };
 
-    let existing = match existing {
+    let base_inner = match base {
         PatuiData::Known(inner) => inner,
         PatuiData::Pending(inner) => {
             known = false;
@@ -151,52 +167,220 @@ fn eval_index(
         PatuiData::Unknown => return Ok(PatuiData::Unknown),
     };
 
+    tracing::trace!("Evaluated Index: {:?}", index);
+    tracing::trace!("Evaluated Base inner: {:?}", base_inner);
+
     match index {
-        PatuiDataInner::Null => todo!(),
-        PatuiDataInner::Bool(_) => todo!(),
-        PatuiDataInner::Bytes(bytes) => todo!(),
-        PatuiDataInner::String(s) => match existing {
-            PatuiDataInner::Null => todo!(),
-            PatuiDataInner::Bool(_) => todo!(),
-            PatuiDataInner::Bytes(bytes) => todo!(),
-            PatuiDataInner::String(_) => todo!(),
-            PatuiDataInner::Integer(integer) => todo!(),
-            PatuiDataInner::Decimal(float) => todo!(),
-            PatuiDataInner::List(vec) => todo!(),
+        PatuiDataInner::String(s) => match base_inner {
             PatuiDataInner::Map(hash_map) => {
                 let key = s.clone();
-                let value = hash_map.get(&key).ok_or(EvalError::InvalidKey)?;
+                let value = hash_map.get(&key).ok_or(EvalError::DataNotFound)?;
                 match value {
                     PatuiData::Known(inner) if !known => Ok(PatuiData::Pending(inner.clone())),
                     _ => Ok(value.clone()),
                 }
             }
-            PatuiDataInner::Set(vec) => todo!(),
+
+            PatuiDataInner::Null => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "Null".to_string(),
+            )),
+            PatuiDataInner::Bool(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "Bool".to_string(),
+            )),
+            PatuiDataInner::Bytes(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "Bytes".to_string(),
+            )),
+            PatuiDataInner::String(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "String".to_string(),
+            )),
+            PatuiDataInner::Integer(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "Integer".to_string(),
+            )),
+            PatuiDataInner::Decimal(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "Decimal".to_string(),
+            )),
+            PatuiDataInner::List(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "List".to_string(),
+            )),
+            PatuiDataInner::Set(_) => Err(EvalError::IndexUnsupported(
+                "String".to_string(),
+                "Set".to_string(),
+            )),
         },
         PatuiDataInner::Integer(integer) => {
-            let index = integer.to_isize().ok_or(EvalError::InvalidIndexSize)?;
-            match existing {
+            let index = integer.to_isize().ok_or(EvalError::BadIndexSize)?;
+            match base_inner {
                 PatuiDataInner::List(vec) => {
-                    if index > vec.len() as isize && !known {
-                        return Ok(PatuiData::Unknown);
+                    if index > vec.len() as isize {
+                        if !known {
+                            return Ok(PatuiData::Unknown);
+                        } else {
+                            return Err(EvalError::DataNotFound);
+                        }
                     }
+                    // mod_floor is used to handle negative indices, indices above the length are
+                    // handled above.
                     let index = mod_floor(index, vec.len() as isize) as usize;
                     Ok(vec[index].clone())
                 }
-                PatuiDataInner::Map(hash_map) => {
-                    todo!();
+                PatuiDataInner::Bytes(bytes) => {
+                    let index = mod_floor(index, bytes.len() as isize) as usize;
+                    Ok(if known {
+                        PatuiData::Known(PatuiDataInner::Integer(bytes[index].into()))
+                    } else {
+                        PatuiData::Pending(PatuiDataInner::Integer(bytes[index].into()))
+                    })
                 }
-                PatuiDataInner::Set(vec) => {
-                    let index = mod_floor(index, vec.len() as isize) as usize;
-                    Ok(vec[index].clone())
+                PatuiDataInner::String(s) => {
+                    let index = mod_floor(index, s.len() as isize) as usize;
+                    Ok(if known {
+                        PatuiData::Known(PatuiDataInner::String(
+                            s.chars().nth(index).unwrap().to_string(),
+                        ))
+                    } else {
+                        PatuiData::Pending(PatuiDataInner::String(
+                            s.chars().nth(index).unwrap().to_string(),
+                        ))
+                    })
                 }
-                _ => Err(EvalError::InvalidIndexNoLit),
+
+                PatuiDataInner::Map(_) => Err(EvalError::IndexUnsupported(
+                    "Integer".to_string(),
+                    "Map".to_string(),
+                )),
+                PatuiDataInner::Set(_) => Err(EvalError::IndexUnsupported(
+                    "Integer".to_string(),
+                    "Set".to_string(),
+                )),
+                PatuiDataInner::Null => Err(EvalError::IndexUnsupported(
+                    "Integer".to_string(),
+                    "Null".to_string(),
+                )),
+                PatuiDataInner::Bool(_) => Err(EvalError::IndexUnsupported(
+                    "Integer".to_string(),
+                    "Bool".to_string(),
+                )),
+                PatuiDataInner::Integer(_) => Err(EvalError::IndexUnsupported(
+                    "Integer".to_string(),
+                    "Integer".to_string(),
+                )),
+                PatuiDataInner::Decimal(_) => Err(EvalError::IndexUnsupported(
+                    "Integer".to_string(),
+                    "Decimal".to_string(),
+                )),
             }
         }
-        PatuiDataInner::Decimal(float) => todo!(),
-        PatuiDataInner::List(vec) => todo!(),
-        PatuiDataInner::Map(hash_map) => todo!(),
-        PatuiDataInner::Set(vec) => todo!(),
+        PatuiDataInner::List(vec) => {
+            tracing::trace!("Vec: {:?}", vec);
+            let Some(i1) = vec.first() else {
+                tracing::trace!("No first elements in list index");
+                return Err(EvalError::BadIndexRange);
+            };
+            let i1 = match i1 {
+                PatuiData::Known(inner) => inner,
+                PatuiData::Pending(inner) => {
+                    known = false;
+                    inner
+                }
+                PatuiData::Unknown => return Ok(PatuiData::Unknown),
+            };
+            let i1 = match i1 {
+                PatuiDataInner::Integer(i) => i.to_isize().ok_or(EvalError::BadIndexSize)?,
+                _ => return Err(EvalError::BadIndexRange),
+            };
+
+            let Some(i2) = vec.get(1) else {
+                tracing::trace!("No second elements in list index");
+                return Err(EvalError::BadIndexRange);
+            };
+            let i2 = match i2 {
+                PatuiData::Known(inner) => inner,
+                PatuiData::Pending(inner) => {
+                    known = false;
+                    inner
+                }
+                PatuiData::Unknown => return Ok(PatuiData::Unknown),
+            };
+            let i2 = match i2 {
+                PatuiDataInner::Integer(i) => i.to_isize().ok_or(EvalError::BadIndexSize)?,
+                _ => return Err(EvalError::BadIndexRange),
+            };
+
+            if vec.get(2).is_some() {
+                tracing::trace!("Got a third element in list index");
+                return Err(EvalError::BadIndexRange);
+            }
+
+            match base_inner {
+                PatuiDataInner::String(s) => {
+                    let i1 = mod_floor(i1, s.len() as isize) as usize;
+                    let i2 = mod_floor(i2, s.len() as isize) as usize;
+                    Ok(if known {
+                        PatuiData::Known(PatuiDataInner::String(s[i1..i2].to_string()))
+                    } else {
+                        PatuiData::Pending(PatuiDataInner::String(s[i1..i2].to_string()))
+                    })
+                }
+                PatuiDataInner::Bytes(bytes) => {
+                    let i1 = mod_floor(i1, bytes.len() as isize) as usize;
+                    let i2 = mod_floor(i2, bytes.len() as isize) as usize;
+                    let bytes = bytes[i1..i2].to_vec();
+                    Ok(if known {
+                        PatuiData::Known(PatuiDataInner::Bytes(Bytes::from(bytes)))
+                    } else {
+                        PatuiData::Pending(PatuiDataInner::Bytes(Bytes::from(bytes)))
+                    })
+                }
+                PatuiDataInner::List(vec) => {
+                    let i1 = mod_floor(i1, vec.len() as isize) as usize;
+                    let i2 = mod_floor(i2, vec.len() as isize) as usize;
+                    let vec = vec[i1..i2].to_vec();
+                    Ok(if known {
+                        PatuiData::Known(PatuiDataInner::List(vec))
+                    } else {
+                        PatuiData::Pending(PatuiDataInner::List(vec))
+                    })
+                }
+
+                PatuiDataInner::Null => Err(EvalError::IndexUnsupported(
+                    "List".to_string(),
+                    "Null".to_string(),
+                )),
+                PatuiDataInner::Bool(_) => Err(EvalError::IndexUnsupported(
+                    "List".to_string(),
+                    "Bool".to_string(),
+                )),
+                PatuiDataInner::Integer(_) => Err(EvalError::IndexUnsupported(
+                    "List".to_string(),
+                    "Integer".to_string(),
+                )),
+                PatuiDataInner::Decimal(_) => Err(EvalError::IndexUnsupported(
+                    "List".to_string(),
+                    "Decimal".to_string(),
+                )),
+                PatuiDataInner::Map(_) => Err(EvalError::IndexUnsupported(
+                    "List".to_string(),
+                    "Map".to_string(),
+                )),
+                PatuiDataInner::Set(_) => Err(EvalError::IndexUnsupported(
+                    "List".to_string(),
+                    "Set".to_string(),
+                )),
+            }
+        }
+        PatuiDataInner::Null => Err(EvalError::IndexTypeUnsupported("Null".to_string())),
+        PatuiDataInner::Bool(_) => Err(EvalError::IndexTypeUnsupported("Bool".to_string())),
+        PatuiDataInner::Bytes(_) => Err(EvalError::IndexTypeUnsupported("Bytes".to_string())),
+        PatuiDataInner::Decimal(_) => Err(EvalError::IndexTypeUnsupported("Decimal".to_string())),
+        PatuiDataInner::Map(_) => Err(EvalError::IndexTypeUnsupported("Map".to_string())),
+        PatuiDataInner::Set(_) => Err(EvalError::IndexTypeUnsupported("Set".to_string())),
     }
 }
 
@@ -235,7 +419,7 @@ fn eval_list_call(
     let list_functions = PatuiDataListMethods::new(vec, known);
     match function_name {
         "len" => Ok(list_functions.len(args)?),
-        _ => Err(EvalError::InvalidCallMethod(
+        _ => Err(EvalError::CallMethodNotFound(
             function_name.to_string(),
             "List".to_string(),
         )),
@@ -249,22 +433,6 @@ mod tests {
     use tracing_test::traced_test;
 
     use super::*;
-
-    #[traced_test]
-    #[test]
-    fn simple_errors() {
-        for (eval_data, expected) in [
-            (Expr::Term(vec![]), EvalError::InvalidTerm),
-            (Expr::Term(vec![]), EvalError::InvalidTerm),
-        ] {
-            let result = eval(
-                &eval_data,
-                &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
-            );
-            assert_that!(result).is_err();
-            assert_that!(result.unwrap_err()).is_equal_to(expected);
-        }
-    }
 
     #[traced_test]
     #[test]
@@ -381,6 +549,27 @@ mod tests {
 
     #[traced_test]
     #[test]
+    fn simple_errors() {
+        for (eval_data, expected) in [
+            (Expr::Term(vec![]), EvalError::InvalidTerm),
+            (
+                Expr::Term(vec![TermPart::Index(Box::new(Expr::Term(vec![
+                    TermPart::Lit(Lit::Integer(1.into())),
+                ])))]),
+                EvalError::IndexNoLit,
+            ),
+        ] {
+            let result = eval(
+                &eval_data,
+                &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
+            );
+            assert_that!(result).is_err();
+            assert_that!(result.unwrap_err()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
     fn known_results() {
         for (eval_data, lookup, expected) in [
             (
@@ -423,6 +612,17 @@ mod tests {
                 ]))),
                 PatuiData::Known(PatuiDataInner::Integer(4.into())),
             ),
+        ] {
+            let result = eval(&eval_data, &lookup);
+            assert_that!(result).is_ok();
+            assert_that!(result.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn known_results_indexing() {
+        for (eval_data, lookup, expected) in [
             (
                 Expr::Term(vec![
                     TermPart::Ident("abc".to_string()),
@@ -490,6 +690,37 @@ mod tests {
             (
                 Expr::Term(vec![
                     TermPart::Ident("abc".to_string()),
+                    TermPart::Ident("def".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![
+                        TermPart::Ident("def".to_string()),
+                        TermPart::Ident("abc".to_string()),
+                    ]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([
+                    (
+                        "abc".to_string(),
+                        PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                            "def".to_string(),
+                            PatuiData::Known(PatuiDataInner::List(vec![
+                                PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                                PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                                PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                            ])),
+                        )]))),
+                    ),
+                    (
+                        "def".to_string(),
+                        PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                            "abc".to_string(),
+                            PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                        )]))),
+                    ),
+                ]))),
+                PatuiData::Known(PatuiDataInner::Integer(2.into())),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
                     TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::String(
                         "def".to_string(),
                     ))]))),
@@ -507,6 +738,101 @@ mod tests {
                     )]))),
                 )]))),
                 PatuiData::Known(PatuiDataInner::Integer(3.into())),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::String("testing".into())),
+                )]))),
+                PatuiData::Known(PatuiDataInner::String("e".into())),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Range(
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(4.into()))])),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::String("testing".into())),
+                )]))),
+                PatuiData::Known(PatuiDataInner::String("est".into())),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Bytes(Bytes::from("testing"))),
+                )]))),
+                PatuiData::Known(PatuiDataInner::Integer(101.into())),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Range(
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(4.into()))])),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Bytes(Bytes::from("testing"))),
+                )]))),
+                PatuiData::Known(PatuiDataInner::Bytes(Bytes::from("est"))),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::List(vec![
+                        PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                    ])),
+                )]))),
+                PatuiData::Known(PatuiDataInner::Integer(2.into())),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Range(
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))])),
+                        Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(4.into()))])),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::List(vec![
+                        PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(4.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(5.into())),
+                    ])),
+                )]))),
+                PatuiData::Known(PatuiDataInner::List(vec![
+                    PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                    PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                    PatuiData::Known(PatuiDataInner::Integer(4.into())),
+                ])),
             ),
         ] {
             let result = eval(&eval_data, &lookup);
@@ -612,6 +938,180 @@ mod tests {
             let result = eval(&eval_data, &lookup);
             assert_that!(result).is_ok();
             assert_that!(result.unwrap()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn not_found_results() {
+        for (eval_data, lookup, expected) in [
+            (
+                Expr::Term(vec![TermPart::Ident("ghi".to_string())]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([
+                    (
+                        "abc".to_string(),
+                        PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                    ),
+                    (
+                        "def".to_string(),
+                        PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                    ),
+                ]))),
+                EvalError::DataNotFound,
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::String(
+                        "def".to_string(),
+                    ))]))),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        5.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                        "def".to_string(),
+                        PatuiData::Known(PatuiDataInner::List(vec![
+                            PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                            PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                            PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                        ])),
+                    )]))),
+                )]))),
+                EvalError::DataNotFound,
+            ),
+        ] {
+            let result = eval(&eval_data, &lookup);
+            assert_that!(result).is_err();
+            assert_that!(result.unwrap_err()).is_equal_to(expected);
+        }
+    }
+
+    #[traced_test]
+    #[test]
+    fn error_results_lookup() {
+        for (eval_data, lookup, expected) in [
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                        "abc".to_string(),
+                        PatuiData::Known(PatuiDataInner::List(vec![
+                            PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                            PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                            PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                        ])),
+                    )]))),
+                )]))),
+                EvalError::IndexUnsupported("Integer".to_string(), "Map".to_string()),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Set(vec![
+                        PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(2.into())),
+                        PatuiData::Known(PatuiDataInner::Integer(3.into())),
+                    ])),
+                )]))),
+                EvalError::IndexUnsupported("Integer".to_string(), "Set".to_string()),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Null),
+                )]))),
+                EvalError::IndexUnsupported("Integer".to_string(), "Null".to_string()),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Bool(true)),
+                )]))),
+                EvalError::IndexUnsupported("Integer".to_string(), "Bool".to_string()),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Integer(1.into())),
+                )]))),
+                EvalError::IndexUnsupported("Integer".to_string(), "Integer".to_string()),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        1.into(),
+                    ))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                )]))),
+                EvalError::IndexUnsupported("Integer".to_string(), "Decimal".to_string()),
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::List(vec![]))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                )]))),
+                EvalError::BadIndexRange,
+            ),
+            (
+                Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::List(vec![
+                        Expr::Term(vec![TermPart::Lit(Lit::Integer(1.into()))]),
+                        Expr::Term(vec![TermPart::Lit(Lit::Integer(2.into()))]),
+                        Expr::Term(vec![TermPart::Lit(Lit::String("3".to_string()))]),
+                    ]))]))),
+                ]),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "abc".to_string(),
+                    PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                )]))),
+                EvalError::BadIndexRange,
+            ),
+        ] {
+            let result = eval(&eval_data, &lookup);
+            assert_that!(result).is_err();
+            assert_that!(result.unwrap_err()).is_equal_to(expected);
         }
     }
 }
