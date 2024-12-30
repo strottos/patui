@@ -1,22 +1,21 @@
 [package]
-name = "test_patui_plugin"
+name = "patui-std"
 version = "0.1.0"
-edition = "2021"
 authors = ["Steven Trotter <stevetrot@gmail.com>"]
-description = "A TUI based powerful testing application built for portability and extensibility"
-license = "MIT"
-repository = "https://github.com/strottos/patui"
-homepage = "https://github.com/strottos/patui"
+edition = "2021"
+resolver = "2"
+
+[[bin]]
+name = "patui-std"
+path = "src/main.rs"
 
 [dependencies]
 async-stream = "0.3.6"
-better-panic = { git = "https://github.com/strottos/better-panic", branch = "upgrade-backtrace" } # Includes a fix that stops hanging on ARM Windows targets.
 bytes = { version = "1.9.0", features = ["serde"] }
+clap = { version = "4.5.23", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5.16", features = ["cargo", "derive", "unicode", "string", "wrap_help"] }
-color-eyre = { git = "https://github.com/eyre-rs/eyre/" }
-eyre = "0.6.12"
-libc = "0.2.158"
+miette = { version = "7.4.0", features = ["fancy"] }
+patui-core = { path = "../../patui-core" }
 prost = "0.13.4"
 rmp-serde = "1.3.0"
 serde = { version = "1.0.216", features = ["derive"] }
@@ -28,7 +27,9 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
+assert_cmd = "2.0.16"
 assertor = "0.0.3"
+escargot = "0.5.13"
 tracing-test = "0.2.5"
 
 [build-dependencies]

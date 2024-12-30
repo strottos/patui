@@ -31,11 +31,27 @@ pub struct PatuiExpr {
 }
 
 impl PatuiExpr {
+    pub(crate) fn raw(&self) -> &str {
+        &self.raw
+    }
+
+    pub(crate) fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
     fn try_from_str(value: &str) -> Result<Self, PatuiExprError> {
         Ok(PatuiExpr {
             raw: value.to_string(),
             expr: parse(value)?,
         })
+    }
+}
+
+impl TryFrom<&String> for PatuiExpr {
+    type Error = PatuiExprError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        PatuiExpr::try_from_str(value)
     }
 }
 

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use strum_macros::{EnumDiscriminants, IntoStaticStr, VariantNames};
 use thiserror::Error;
 
 use crate::expr::{PatuiExpr, PatuiExprError};
@@ -47,9 +46,10 @@ impl Default for PatuiTest {
                 name: "DefaultProcess".to_string(),
                 when: None,
                 depends_on: vec![],
-                details: PatuiStepDetails::Read(PatuiStepRead {
-                    r#in: "\"dir/file.txt\"".try_into().unwrap(),
-                }),
+                path: "default_plugin".to_string(),
+                config: HashMap::new(),
+                r#in: HashMap::new(),
+                run: "default".to_string(),
             }],
         }
     }
@@ -145,6 +145,9 @@ impl TryFrom<&PatuiTest> for String {
     }
 }
 
+// Steps
+
+/// Step Errors
 #[derive(Debug, Error)]
 pub enum PatuiStepError {
     #[error("Error converting step: {0}")]
@@ -158,118 +161,25 @@ pub enum PatuiStepError {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStep {
     pub(crate) name: String,
-    pub(crate) when: Option<String>,
-    pub(crate) depends_on: Vec<PatuiStep>,
-    pub(crate) details: PatuiStepDetails,
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Deserialize, Serialize, EnumDiscriminants, IntoStaticStr, VariantNames,
-)]
-#[strum(serialize_all = "snake_case")]
-pub(crate) enum PatuiStepDetails {
-    Read(PatuiStepRead),
-    Write(PatuiStepWrite),
-    Sender(PatuiStepSender),
-    Assertion(PatuiStepAssertion),
-    Plugin(PatuiStepPlugin),
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepRead {
-    pub(crate) r#in: PatuiExpr,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepWrite {
-    pub(crate) out: PatuiExpr,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepAssertion {
-    pub(crate) expr: PatuiExpr,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepSender {
-    pub(crate) expr: PatuiExpr,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepPlugin {
     pub(crate) path: String, // TODO: Find a better solution when we're publishing plugins
-    pub(crate) config: HashMap<String, PatuiExpr>,
+    pub(crate) when: Option<String>,
+    pub(crate) depends_on: Vec<String>,
+    pub(crate) config: HashMap<String, String>,
+    pub(crate) run: String,
     pub(crate) r#in: HashMap<String, PatuiExpr>,
 }
-
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiStepTransformStreamFlavour {
-    Utf8,
-    #[default]
-    Utf8Lines,
-    Json,
-    Yaml,
-    Toml,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepTransformStream {
-    pub(crate) r#in: PatuiExpr,
-    pub(crate) flavour: PatuiStepTransformStreamFlavour,
-}
-
-// Editable types
 
 /// PatuiStepEditable is to endable users ability to edit steps before they
 /// are saved to the database, similar to PatuiTestEditable.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepEditable {
     pub(crate) name: String,
-    pub(crate) when: Option<Option<String>>,
-    pub(crate) depends_on: Option<Vec<PatuiStepEditable>>,
-    pub(crate) details: PatuiStepDetailsEditable,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) enum PatuiStepDetailsEditable {
-    Read(PatuiStepReadEditable),
-    Write(PatuiStepWriteEditable),
-    Assertion(PatuiStepAssertionEditable),
-    Sender(PatuiStepSenderEditable),
-    Plugin(PatuiStepPluginEditable),
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepReadEditable {
-    pub(crate) r#in: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepWriteEditable {
-    pub(crate) out: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepAssertionEditable {
-    pub(crate) expr: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepSenderEditable {
-    pub(crate) expr: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepPluginEditable {
     pub(crate) path: String, // TODO: Find a better solution when we're publishing plugins
+    pub(crate) when: Option<Option<String>>,
+    pub(crate) depends_on: Option<Vec<String>>,
     pub(crate) config: Option<HashMap<String, String>>,
+    pub(crate) run: String,
     pub(crate) r#in: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatuiStepTransformStreamEditable {
-    pub(crate) r#in: String,
-    pub(crate) flavour: PatuiStepTransformStreamFlavour,
 }
 
 impl TryFrom<&PatuiStepEditable> for PatuiStep {
@@ -278,59 +188,23 @@ impl TryFrom<&PatuiStepEditable> for PatuiStep {
     fn try_from(value: &PatuiStepEditable) -> Result<Self, Self::Error> {
         Ok(PatuiStep {
             name: value.name.clone(),
+            path: value.path.clone(),
             when: value.when.clone().unwrap_or(None),
-            depends_on: value
-                .depends_on
+            depends_on: value.depends_on.clone().unwrap_or_default(),
+            config: value.config.clone().unwrap_or_default(),
+            run: value.run.clone(),
+            r#in: value
+                .r#in
                 .as_ref()
-                .map(|x| x.iter().map(|x| x.try_into()).collect())
-                .unwrap_or_else(|| Ok(Vec::new()))?,
-            details: match &value.details {
-                PatuiStepDetailsEditable::Assertion(assertion) => {
-                    PatuiStepDetails::Assertion(PatuiStepAssertion {
-                        expr: (&assertion.expr[..]).try_into()?,
-                    })
-                }
-                PatuiStepDetailsEditable::Read(patui_step_read_editable) => {
-                    PatuiStepDetails::Read(PatuiStepRead {
-                        r#in: (&patui_step_read_editable.r#in[..]).try_into()?,
-                    })
-                }
-                PatuiStepDetailsEditable::Write(patui_step_write_editable) => {
-                    PatuiStepDetails::Write(PatuiStepWrite {
-                        out: (&patui_step_write_editable.out[..]).try_into()?,
-                    })
-                }
-                PatuiStepDetailsEditable::Sender(patui_step_sender_editable) => {
-                    PatuiStepDetails::Sender(PatuiStepSender {
-                        expr: (&patui_step_sender_editable.expr[..]).try_into()?,
-                    })
-                }
-                PatuiStepDetailsEditable::Plugin(patui_step_plugin_editable) => {
-                    PatuiStepDetails::Plugin(PatuiStepPlugin {
-                        path: patui_step_plugin_editable.path.clone(),
-                        config: match &patui_step_plugin_editable.config {
-                            Some(config) => config
-                                .iter()
-                                .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
-                                    Ok(v) => Ok((k.clone(), v)),
-                                    Err(e) => Err(e),
-                                })
-                                .collect::<Result<_, _>>()?,
-                            None => HashMap::new(),
-                        },
-                        r#in: match &patui_step_plugin_editable.r#in {
-                            Some(r#in) => r#in
-                                .iter()
-                                .map(|(k, v)| match TryInto::<PatuiExpr>::try_into(&v[..]) {
-                                    Ok(v) => Ok((k.clone(), v)),
-                                    Err(e) => Err(e),
-                                })
-                                .collect::<Result<_, _>>()?,
-                            None => HashMap::new(),
-                        },
-                    })
-                }
-            },
+                .map(|x| {
+                    x.iter()
+                        .map(|(k, v)| match v.try_into() {
+                            Ok(v) => Ok((k.clone(), v)),
+                            Err(e) => Err(e),
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| Ok(HashMap::new()))?,
         })
     }
 }
@@ -339,49 +213,18 @@ impl From<&PatuiStep> for PatuiStepEditable {
     fn from(value: &PatuiStep) -> Self {
         PatuiStepEditable {
             name: value.name.clone(),
+            path: value.path.clone(),
             when: Some(value.when.clone()),
             depends_on: Some(value.depends_on.iter().map(|x| x.into()).collect()),
-            details: match &value.details {
-                PatuiStepDetails::Assertion(assertion) => {
-                    PatuiStepDetailsEditable::Assertion(PatuiStepAssertionEditable {
-                        expr: (&assertion.expr).into(),
-                    })
-                }
-                PatuiStepDetails::Read(patui_step_read) => {
-                    PatuiStepDetailsEditable::Read(PatuiStepReadEditable {
-                        r#in: (&patui_step_read.r#in).into(),
-                    })
-                }
-                PatuiStepDetails::Write(patui_step_write) => {
-                    PatuiStepDetailsEditable::Write(PatuiStepWriteEditable {
-                        out: (&patui_step_write.out).into(),
-                    })
-                }
-                PatuiStepDetails::Sender(patui_step_sender) => {
-                    PatuiStepDetailsEditable::Sender(PatuiStepSenderEditable {
-                        expr: (&patui_step_sender.expr).into(),
-                    })
-                }
-                PatuiStepDetails::Plugin(patui_step_plugin) => {
-                    PatuiStepDetailsEditable::Plugin(PatuiStepPluginEditable {
-                        path: patui_step_plugin.path.clone(),
-                        config: Some(
-                            patui_step_plugin
-                                .config
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.into()))
-                                .collect(),
-                        ),
-                        r#in: Some(
-                            patui_step_plugin
-                                .r#in
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.into()))
-                                .collect(),
-                        ),
-                    })
-                }
-            },
+            config: Some(value.config.clone()),
+            run: value.run.clone(),
+            r#in: Some(
+                value
+                    .r#in
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.into()))
+                    .collect(),
+            ),
         }
     }
 }
@@ -417,13 +260,18 @@ mod tests {
             description: test description
             steps:
               - name: foo
-                depends_on: []
-                details: !Read
-                  in: "\"dir/file.txt\""
+                path: foo
+                when: foobar == barfoo
+                run: foo
               - name: bar
-                depends_on: []
-                details: !Assertion
-                  expr: foo == "bar"
+                path: bar
+                depends_on:
+                  - foo
+                run: bar
+                config:
+                  foo: bar
+                in:
+                  foo: foo.bar
             "#,
         );
 
@@ -432,14 +280,24 @@ mod tests {
         assert_that!(details.name).is_equal_to("test name".to_string());
         assert_that!(details.description).is_equal_to(Some("test description".to_string()));
         assert_that!(details.steps).has_length(2);
-        assert_that!(details.steps[0].details).is_equal_to(PatuiStepDetails::Read(PatuiStepRead {
-            r#in: "\"dir/file.txt\"".try_into().unwrap(),
-        }));
-        assert_that!(details.steps[1].details).is_equal_to(PatuiStepDetails::Assertion(
-            PatuiStepAssertion {
-                expr: "foo == \"bar\"".try_into().unwrap(),
-            },
-        ));
+        assert_that!(details.steps[0]).is_equal_to(PatuiStep {
+            name: "foo".to_string(),
+            path: "foo".to_string(),
+            when: Some("foobar == barfoo".to_string()),
+            depends_on: vec![],
+            config: HashMap::new(),
+            run: "foo".to_string(),
+            r#in: HashMap::new(),
+        });
+        assert_that!(details.steps[1]).is_equal_to(PatuiStep {
+            name: "bar".to_string(),
+            path: "bar".to_string(),
+            when: None,
+            depends_on: vec!["foo".to_string()],
+            config: HashMap::from([("foo".to_string(), "bar".to_string())]),
+            run: "bar".to_string(),
+            r#in: HashMap::from([("foo".to_string(), "foo.bar".try_into().unwrap())]),
+        });
     }
 
     #[test]

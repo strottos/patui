@@ -7,6 +7,7 @@ message Diagnostic {
         ERROR = 0;
         WARNING = 1;
         INFO = 2;
+        DEBUG = 3;
     }
     Severity severity = 1;
     string summary = 2;
@@ -21,9 +22,8 @@ message StepRunner {
     repeated string subscriptions = 5;
 }
 
-// The `bytes` field contains the encoded information, encoded as a msgpack
-// message of the `PatuiStepData` type.
-message PatuiStepData {
+// The `bytes` field contains the encoded information encoded with MsgPack.
+message PatuiDataEncoding {
     bytes bytes = 1;
 }
 
@@ -47,15 +47,18 @@ message Init {
 
 message Run {
     message Request {
+        string function = 1;
     }
     message Response {
+        repeated Diagnostic diagnostics = 1;
     }
 }
 
 message Publish {
     message Request {
-        string        name = 1;
-        PatuiStepData data = 2;
+        string            function = 1;
+        string            name     = 2;
+        PatuiDataEncoding data     = 3;
     }
     message Response {
         repeated Diagnostic diagnostics = 1;
@@ -64,10 +67,11 @@ message Publish {
 
 message Subscribe {
     message Request {
-        string name = 1;
+        string function = 1;
+        string name     = 2;
     }
     message Response {
-        PatuiStepData       data = 1;
+        PatuiDataEncoding   data        = 1;
         repeated Diagnostic diagnostics = 2;
     }
 }
@@ -80,6 +84,13 @@ message Wait {
     }
 }
 
+message Shutdown {
+    message Request {
+    }
+    message Response {
+    }
+}
+
 service PluginService {
     rpc GetInfo(GetInfo.Request) returns (GetInfo.Response) {}
     rpc Init(Init.Request) returns (Init.Response) {}
@@ -87,4 +98,5 @@ service PluginService {
     rpc Publish(stream Publish.Request) returns (stream Publish.Response) {}
     rpc Subscribe(Subscribe.Request) returns (stream Subscribe.Response) {}
     rpc Wait(Wait.Request) returns (Wait.Response) {}
+    rpc Shutdown(Shutdown.Request) returns (Shutdown.Response) {}
 }

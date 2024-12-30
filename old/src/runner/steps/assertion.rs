@@ -233,6 +233,7 @@ mod tests {
     use crate::types::PatuiEventKind;
 
     use super::*;
+
     #[traced_test]
     #[tokio::test]
     async fn single_channel_read_and_eval_null() {

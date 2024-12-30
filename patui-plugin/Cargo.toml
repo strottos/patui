@@ -6,8 +6,14 @@ edition = "2021"
 resolver = "2"
 
 [lib]
-name = "patui_plugins"
+name = "ptplugin"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
 patui-core = { path = "../patui-core" }
+
+bytes = { version = "1.9.0", features = ["serde"] }
+prost = "0.13.4"
+tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros", "time"] }
+tonic = "0.12.3"
+tracing = "0.1.41"

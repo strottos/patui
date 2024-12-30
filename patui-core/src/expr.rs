@@ -20,5 +20,5 @@ mod lexer;
 mod parser;
 
 pub use ast::{PatuiExpr, PatuiExprError};
-pub use data::PatuiData;
+pub use data::{PatuiData, PatuiDataInner};
 pub use eval::eval;

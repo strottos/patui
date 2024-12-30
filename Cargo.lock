@@ -1233,7 +1233,38 @@ dependencies = [
 name = "patui-plugin"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "patui-core",
+ "prost",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "patui-std"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "assertor",
+ "async-stream",
+ "bytes",
+ "chrono",
+ "clap",
+ "escargot",
+ "miette",
+ "patui-core",
+ "prost",
+ "rmp-serde",
+ "serde",
+ "strip-ansi-escapes",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
 ]
 
 [[package]]
