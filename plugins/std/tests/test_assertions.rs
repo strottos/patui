@@ -29,13 +29,19 @@ async fn run_plugin(port: u16) -> Child {
         .unwrap()
 }
 
-async fn conect_plugin(port: u16) -> PluginServiceClient<Channel> {
-    std::thread::sleep(std::time::Duration::from_secs(1));
+async fn connect_plugin(port: u16) -> PluginServiceClient<Channel> {
+    for i in 0..50 {
+        let addr = format!("http://[::1]:{}", port);
+        let client = PluginServiceClient::connect(addr).await;
+        match client {
+            Ok(c) => return c,
+            Err(_) => {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        }
+    }
 
-    let addr = format!("http://[::1]:{}", port);
-    let client = PluginServiceClient::connect(addr).await.unwrap();
-
-    client
+    panic!("Failed to connect to the plugin");
 }
 
 pub(crate) fn get_unused_localhost_port() -> Result<u16, std::io::Error> {
@@ -49,26 +55,25 @@ async fn test_simple_assertion() {
 
     let mut child = run_plugin(port).await;
 
-    {
-        let mut client = conect_plugin(port).await;
+    let mut client = connect_plugin(port).await;
 
-        let res = client
-            .run(run::Request {
-                function: "assertion".to_string(),
-            })
-            .await;
+    let res = client
+        .run(run::Request {
+            function: "assertion".to_string(),
+        })
+        .await;
 
-        assert_that!(res).is_ok();
-        assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
+    assert_that!(res).is_ok();
+    assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
-        let res = client.wait(wait::Request {}).await;
+    let res = client.wait(wait::Request {}).await;
 
-        assert_that!(res).is_ok();
-        assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
+    assert_that!(res).is_ok();
+    assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
-        client.shutdown(shutdown::Request {}).await.unwrap();
-    }
+    client.shutdown(shutdown::Request {}).await.unwrap();
 
     // Wait for the server to shutdown
+    assert_that!(child.kill()).is_ok();
     assert_that!(child.wait()).is_ok();
 }
