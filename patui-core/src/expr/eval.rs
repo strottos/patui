@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use num::integer::mod_floor;
+use num::{integer::mod_floor, ToPrimitive};
 use thiserror::Error;
 
 use super::{
@@ -535,14 +535,12 @@ mod tests {
                 PatuiData::Known(PatuiDataInner::Bytes(Bytes::from("hello"))),
             ),
             (
-                Expr::Term(vec![TermPart::Lit(Lit::Integer(rug::Integer::from(42)))]),
-                PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                Expr::Term(vec![TermPart::Lit(Lit::Integer(42))]),
+                PatuiData::Known(PatuiDataInner::Integer(42)),
             ),
             (
-                Expr::Term(vec![TermPart::Lit(Lit::Decimal(rug::Float::with_val(
-                    53, 123.45,
-                )))]),
-                PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                Expr::Term(vec![TermPart::Lit(Lit::Decimal(123.45))]),
+                PatuiData::Known(PatuiDataInner::Decimal(123.45)),
             ),
             (
                 Expr::Term(vec![TermPart::Lit(Lit::String("hello".to_string()))]),
@@ -551,12 +549,12 @@ mod tests {
             (
                 Expr::Term(vec![TermPart::Lit(Lit::List(vec![
                     Expr::Term(vec![TermPart::Lit(Lit::String("hello".to_string()))]),
-                    Expr::Term(vec![TermPart::Lit(Lit::Integer(rug::Integer::from(42)))]),
+                    Expr::Term(vec![TermPart::Lit(Lit::Integer(42))]),
                     Expr::Term(vec![TermPart::Lit(Lit::String("hello".to_string()))]),
                 ]))]),
                 PatuiData::Known(PatuiDataInner::List(vec![
                     PatuiData::Known(PatuiDataInner::String("hello".to_string())),
-                    PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Known(PatuiDataInner::Integer(42)),
                     PatuiData::Known(PatuiDataInner::String("hello".to_string())),
                 ])),
             ),
@@ -1162,7 +1160,7 @@ mod tests {
                 ]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
                     "abc".to_string(),
-                    PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                    PatuiData::Known(PatuiDataInner::Decimal(123.45)),
                 )]))),
                 EvalError::IndexUnsupported("Integer".to_string(), "Decimal".to_string()),
             ),
@@ -1173,7 +1171,7 @@ mod tests {
                 ]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
                     "abc".to_string(),
-                    PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                    PatuiData::Known(PatuiDataInner::Decimal(123.45)),
                 )]))),
                 EvalError::BadIndexRange,
             ),
@@ -1188,7 +1186,7 @@ mod tests {
                 ]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
                     "abc".to_string(),
-                    PatuiData::Known(PatuiDataInner::Decimal(rug::Float::with_val(53, 123.45))),
+                    PatuiData::Known(PatuiDataInner::Decimal(123.45)),
                 )]))),
                 EvalError::BadIndexRange,
             ),

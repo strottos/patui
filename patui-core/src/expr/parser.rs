@@ -1,9 +1,14 @@
 //! The parser for Patui expressions, takes a string and converts it into an abstract syntax tree
 //! (AST), or specifically an `Expr` that can then be used in the `PatuiExpr`.
 
+use std::{
+    num::{ParseFloatError, ParseIntError},
+    str::FromStr,
+};
+
 use bytes::Bytes;
 use logos::{Logos, Span};
-use rug::{float::ParseFloatError, integer::ParseIntegerError, Complete, Float, Integer};
+use num::ToPrimitive;
 use thiserror::Error;
 
 use super::{
@@ -29,7 +34,7 @@ pub enum ExprParseError {
     #[error("String must by single character in bytes list")]
     ByteListStringBadCharacter,
     #[error("Error parsing integer: {0}")]
-    IntegerParseError(#[from] ParseIntegerError),
+    IntegerParseError(#[from] ParseIntError),
     #[error("Error parsing float: {0}")]
     FloatParseError(#[from] ParseFloatError),
     #[error("Parsed both set and map elements, must be either a set or a map")]
@@ -244,7 +249,7 @@ fn parse_term(
             ident_parts.push(TermPart::Lit(Lit::Integer(int)))
         }
         Token::Decimal(ref dec) => {
-            let dec = Float::with_val(53, Float::parse(dec)?);
+            let dec = f64::from_str(dec)?;
             ident_parts.push(TermPart::Lit(Lit::Decimal(dec)))
         }
         Token::String(ref s) => ident_parts.push(TermPart::Lit(Lit::String(s.clone()))),
@@ -419,12 +424,14 @@ fn parse_term(
     Ok(Expr::Term(ident_parts))
 }
 
-fn parse_integer(integer: &str) -> Result<Integer, ExprParseError> {
+fn parse_integer(integer: &str) -> Result<i64, ExprParseError> {
     tracing::trace!("Parsing integer: {}", integer);
     if let Some(integer) = integer.strip_prefix("0x") {
-        Ok(Integer::parse_radix(integer, 16)?.complete())
+        Ok(i64::from_str_radix(integer, 16)?)
+    } else if let Some(integer) = integer.strip_prefix("0b") {
+        Ok(i64::from_str_radix(integer, 2)?)
     } else {
-        Ok(Integer::parse(integer)?.complete())
+        Ok(i64::from_str(integer)?)
     }
 }
 
@@ -608,7 +615,6 @@ fn parse_bracket_ordering(
 mod tests {
     use assertor::*;
     use bytes::Bytes;
-    use rug::Float;
     use tracing_test::traced_test;
 
     use super::*;
@@ -623,9 +629,7 @@ mod tests {
             ),
             (
                 "123.45",
-                Expr::Term(vec![TermPart::Lit(Lit::Decimal(Float::with_val(
-                    53, 123.45,
-                )))]),
+                Expr::Term(vec![TermPart::Lit(Lit::Decimal(f64::from(123.45)))]),
             ),
             ("true", Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
             ("false", Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),

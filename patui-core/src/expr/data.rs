@@ -31,8 +31,8 @@ pub enum PatuiDataInner {
     Bool(bool),
     Bytes(Bytes),
     String(String),
-    Integer(rug::Integer),
-    Decimal(rug::Float),
+    Integer(i64),
+    Decimal(f64),
     List(Vec<PatuiData>),
     Map(HashMap<String, PatuiData>),
     Set(Vec<PatuiData>),
@@ -110,11 +110,11 @@ impl<'a> PatuiDataListMethods<'a> {
 
         if self.known {
             Ok(PatuiData::Known(PatuiDataInner::Integer(
-                rug::Integer::from(self.list.len()),
+                self.list.len() as i64, // TODO: Can we overflow on any platforms, what if we do?
             )))
         } else {
             Ok(PatuiData::Pending(PatuiDataInner::Integer(
-                rug::Integer::from(self.list.len()),
+                self.list.len() as i64
             )))
         }
     }
@@ -128,25 +128,21 @@ mod tests {
 
     #[test]
     fn test_patui_data() {
-        let data = PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42)));
+        let data = PatuiData::Pending(PatuiDataInner::Integer(42));
         assert_that!(data.is_known()).is_false();
         assert_that!(data.is_pending()).is_true();
         assert_that!(data.is_unknown()).is_false();
         let data = data.to_known();
         assert_that!(data).is_ok();
-        assert_that!(data.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(
-            rug::Integer::from(42),
-        )));
+        assert_that!(data.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(42)));
 
-        let data = PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42)));
+        let data = PatuiData::Known(PatuiDataInner::Integer(42));
         assert_that!(data.is_known()).is_true();
         assert_that!(data.is_pending()).is_false();
         assert_that!(data.is_unknown()).is_false();
         let data = data.to_known();
         assert_that!(data).is_ok();
-        assert_that!(data.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(
-            rug::Integer::from(42),
-        )));
+        assert_that!(data.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(42)));
 
         let data = PatuiData::Unknown;
         assert_that!(data.is_known()).is_false();
@@ -159,25 +155,25 @@ mod tests {
     #[test]
     fn test_patui_data_inner() {
         let data = PatuiDataInner::List(vec![
-            PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42))),
-            PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42))),
+            PatuiData::Pending(PatuiDataInner::Integer(42)),
+            PatuiData::Pending(PatuiDataInner::Integer(42)),
         ]);
         let data = data.to_known();
         assert_that!(data).is_ok();
         assert_that!(data.unwrap()).is_equal_to(PatuiDataInner::List(vec![
-            PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
-            PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+            PatuiData::Known(PatuiDataInner::Integer(42)),
+            PatuiData::Known(PatuiDataInner::Integer(42)),
         ]));
 
         let data = PatuiDataInner::Map(
             vec![
                 (
                     "key".to_string(),
-                    PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Pending(PatuiDataInner::Integer(42)),
                 ),
                 (
                     "key".to_string(),
-                    PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Pending(PatuiDataInner::Integer(42)),
                 ),
             ]
             .into_iter()
@@ -189,11 +185,11 @@ mod tests {
             vec![
                 (
                     "key".to_string(),
-                    PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Known(PatuiDataInner::Integer(42)),
                 ),
                 (
                     "key".to_string(),
-                    PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Known(PatuiDataInner::Integer(42)),
                 ),
             ]
             .into_iter()
@@ -204,7 +200,7 @@ mod tests {
             vec![
                 (
                     "key".to_string(),
-                    PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Known(PatuiDataInner::Integer(42)),
                 ),
                 (
                     "key".to_string(),
@@ -212,11 +208,11 @@ mod tests {
                         vec![
                             (
                                 "key".to_string(),
-                                PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                                PatuiData::Known(PatuiDataInner::Integer(42)),
                             ),
                             (
                                 "key".to_string(),
-                                PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42))),
+                                PatuiData::Pending(PatuiDataInner::Integer(42)),
                             ),
                         ]
                         .into_iter()
@@ -233,7 +229,7 @@ mod tests {
             vec![
                 (
                     "key".to_string(),
-                    PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                    PatuiData::Known(PatuiDataInner::Integer(42)),
                 ),
                 (
                     "key".to_string(),
@@ -241,11 +237,11 @@ mod tests {
                         vec![
                             (
                                 "key".to_string(),
-                                PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                                PatuiData::Known(PatuiDataInner::Integer(42)),
                             ),
                             (
                                 "key".to_string(),
-                                PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+                                PatuiData::Known(PatuiDataInner::Integer(42)),
                             ),
                         ]
                         .into_iter()
@@ -267,7 +263,7 @@ mod tests {
         let data = PatuiData::Pending(PatuiDataInner::Map(HashMap::from([
             (
                 "key1".to_string(),
-                PatuiData::Pending(PatuiDataInner::Integer(rug::Integer::from(42))),
+                PatuiData::Pending(PatuiDataInner::Integer(42)),
             ),
             ("key2".to_string(), PatuiData::Unknown),
         ])));
@@ -278,16 +274,14 @@ mod tests {
     #[test]
     fn patui_list_length() {
         let inner_list = vec![
-            PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
-            PatuiData::Known(PatuiDataInner::Integer(rug::Integer::from(42))),
+            PatuiData::Known(PatuiDataInner::Integer(42)),
+            PatuiData::Known(PatuiDataInner::Integer(42)),
         ];
 
         let patui_list_data_functions = PatuiDataListMethods::new(&inner_list, true);
         let len = patui_list_data_functions.len(&vec![]);
 
         assert_that!(len).is_ok();
-        assert_that!(len.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(
-            rug::Integer::from(2),
-        )));
+        assert_that!(len.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(2)));
     }
 }
