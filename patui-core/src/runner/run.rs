@@ -7,7 +7,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::PatuiTest;
 
-use super::{events::PatuiEventInner, steps::PatuiStepRunner};
+use super::{events::PatuiEvent, steps::PatuiStepRunner};
 
 #[derive(Debug, Error)]
 pub(crate) enum PatuiRunError {}
@@ -26,7 +26,7 @@ pub struct PatuiRun {
     pub(crate) start_time: String,
     pub(crate) end_time: Option<String>,
     pub(crate) status: PatuiRunStatus,
-    pub(crate) events: Vec<PatuiEventInner>,
+    pub(crate) events: Vec<PatuiEvent>,
     pub(crate) step_runners: IndexMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
 }
 

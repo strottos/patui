@@ -31,10 +31,6 @@ pub struct PatuiExpr {
 }
 
 impl PatuiExpr {
-    pub(crate) fn raw(&self) -> &str {
-        &self.raw
-    }
-
     pub(crate) fn expr(&self) -> &Expr {
         &self.expr
     }
@@ -44,6 +40,12 @@ impl PatuiExpr {
             raw: value.to_string(),
             expr: parse(value)?,
         })
+    }
+}
+
+impl Display for PatuiExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.raw)
     }
 }
 

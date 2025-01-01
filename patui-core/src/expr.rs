@@ -21,4 +21,11 @@ mod parser;
 
 pub use ast::{PatuiExpr, PatuiExprError};
 pub use data::{PatuiData, PatuiDataInner};
-pub use eval::eval;
+pub use eval::EvalError;
+
+/// Evaluate a PatuiExpr against a PatuiData.
+///
+/// The PatuiData must have an inner of type Map to be able to evaluate the expression.
+pub fn eval_patui_expr(expr: &PatuiExpr, data: &PatuiData) -> Result<PatuiData, EvalError> {
+    eval::eval(expr.expr(), data)
+}

@@ -22,8 +22,15 @@ message StepRunner {
     repeated string subscriptions = 5;
 }
 
-// The `bytes` field contains the encoded information encoded with MsgPack.
+// The `bytes` field contains the encoded information for a `PatuiData` struct
+// encoded with MsgPack.
 message PatuiDataEncoding {
+    bytes bytes = 1;
+}
+
+// The `bytes` field contains the encoded information for a `PatuiEvent` struct
+// encoded with MsgPack.
+message PatuiEventEncoding {
     bytes bytes = 1;
 }
 
@@ -45,15 +52,19 @@ message Init {
     }
 }
 
+// Run will send a stream of `PatuiEvent` messages encoded with MsgPack that are the result of the run.
 message Run {
     message Request {
-        string function = 1;
+        string              function = 1;
+        map<string, string> args     = 2;
     }
     message Response {
-        repeated Diagnostic diagnostics = 1;
+        PatuiEventEncoding  data        = 1;
+        repeated Diagnostic diagnostics = 2;
     }
 }
 
+// Publish will be sent a stream of `PatuiData` messages encoded with MsgPack which are the results from other steps as they are obtained.
 message Publish {
     message Request {
         string            function = 1;
@@ -62,17 +73,6 @@ message Publish {
     }
     message Response {
         repeated Diagnostic diagnostics = 1;
-    }
-}
-
-message Subscribe {
-    message Request {
-        string function = 1;
-        string name     = 2;
-    }
-    message Response {
-        PatuiDataEncoding   data        = 1;
-        repeated Diagnostic diagnostics = 2;
     }
 }
 
@@ -94,9 +94,8 @@ message Shutdown {
 service PluginService {
     rpc GetInfo(GetInfo.Request) returns (GetInfo.Response) {}
     rpc Init(Init.Request) returns (Init.Response) {}
-    rpc Run(Run.Request) returns (Run.Response) {}
+    rpc Run(Run.Request) returns (stream Run.Response) {}
     rpc Publish(stream Publish.Request) returns (stream Publish.Response) {}
-    rpc Subscribe(Subscribe.Request) returns (stream Subscribe.Response) {}
     rpc Wait(Wait.Request) returns (Wait.Response) {}
     rpc Shutdown(Shutdown.Request) returns (Shutdown.Response) {}
 }

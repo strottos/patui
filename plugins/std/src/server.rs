@@ -1,30 +1,45 @@
 //! The server module contains the gRPC server implementation for the plugin service.
 
-use std::{
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
-use tokio::sync::oneshot;
-use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
-use crate::ptplugin::{
-    get_info, init, plugin_service_server::PluginService, publish, run, shutdown, subscribe, wait,
-    StepRunner,
+use crate::functions::{AssertionFunction, FunctionService};
+use patui_core::{
+    ptplugin::{
+        get_info, init, plugin_service_server::PluginService, publish, run, shutdown, wait,
+        StepRunner,
+    },
+    PatuiData, PatuiDataInner,
 };
 
 #[derive(Debug)]
 pub(crate) struct StdPlugin {
     tasks: Arc<Mutex<Vec<oneshot::Receiver<()>>>>,
     shutdown_signal: Mutex<Option<oneshot::Sender<()>>>,
+
+    results: Arc<Mutex<PatuiData>>,
+
+    waker_tx: std::sync::Mutex<Option<mpsc::Sender<()>>>,
+    waker_rx: std::sync::Mutex<Option<mpsc::Receiver<()>>>,
 }
 
 impl StdPlugin {
     pub fn new(shutdown_signal: oneshot::Sender<()>) -> Self {
+        let (waker_tx, waker_rx) = mpsc::channel(1);
+
         Self {
             tasks: Arc::new(Mutex::new(Vec::new())),
             shutdown_signal: Mutex::new(Some(shutdown_signal)),
+
+            results: Arc::new(Mutex::new(PatuiData::Pending(PatuiDataInner::Map(
+                HashMap::new(),
+            )))),
+
+            waker_tx: std::sync::Mutex::new(Some(waker_tx)),
+            waker_rx: std::sync::Mutex::new(Some(waker_rx)),
         }
     }
 }
@@ -60,12 +75,40 @@ impl PluginService for StdPlugin {
         }))
     }
 
-    async fn run(&self, request: Request<run::Request>) -> Result<Response<run::Response>, Status> {
-        tracing::info!("Request run: {:?}", request.remote_addr());
+    type RunStream = ReceiverStream<Result<run::Response, Status>>;
 
-        Ok(Response::new(run::Response {
-            diagnostics: vec![],
-        }))
+    async fn run(
+        &self,
+        request: Request<run::Request>,
+    ) -> Result<Response<Self::RunStream>, Status> {
+        let request = request.into_inner();
+
+        tracing::info!("Request run {}", request.function);
+
+        let function_service = match request.function.as_str() {
+            "assertion" => AssertionFunction::new(),
+            _ => {
+                return Err(Status::unimplemented(
+                    "Subscription for function and name not implemented",
+                ))
+            }
+        };
+
+        tracing::info!("Running function: {}", request.function);
+
+        let (resp_tx, resp_rx) = mpsc::channel(32); // TODO: Configurable
+
+        let waker_rx = self.waker_rx.lock().unwrap().take().unwrap();
+
+        match function_service.run(request.args, resp_tx, self.results.clone(), waker_rx) {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("Error running function: {:?}", e);
+                return Err(Status::internal(format!("Error running function: {}", e)));
+            }
+        };
+
+        Ok(Response::new(ReceiverStream::new(resp_rx)))
     }
 
     type PublishStream =
@@ -75,16 +118,38 @@ impl PluginService for StdPlugin {
         &self,
         request: Request<Streaming<publish::Request>>,
     ) -> Result<Response<Self::PublishStream>, Status> {
-        todo!();
-    }
+        tracing::info!("Publish: {:?}", request.remote_addr());
+        let mut stream = request.into_inner();
+        let results = self.results.clone();
+        let waker_tx = self.waker_tx.lock().unwrap().as_ref().unwrap().clone();
 
-    type SubscribeStream = ReceiverStream<Result<subscribe::Response, Status>>;
+        let output = async_stream::try_stream! {
+            while let Some(Ok(message)) = stream.next().await {
+                tracing::info!("Message published: {:?}", message);
 
-    async fn subscribe(
-        &self,
-        request: Request<subscribe::Request>,
-    ) -> Result<Response<Self::SubscribeStream>, Status> {
-        todo!();
+                let data: PatuiData = message.data.unwrap().try_into().unwrap();
+
+                tracing::debug!("Data: {:?}", data);
+
+                let mut lock = results.lock().await;
+                *lock = data;
+                waker_tx.send(()).await.unwrap();
+
+                let result = publish::Response {
+                    diagnostics: vec![],
+                };
+
+                yield result.clone();
+            }
+
+            tracing::info!("Publish stream ended");
+
+            let mut lock = results.lock().await;
+            *lock = lock.clone().to_known().unwrap();
+            waker_tx.send(()).await.unwrap();
+        };
+
+        Ok(Response::new(Box::pin(output) as Self::PublishStream))
     }
 
     async fn wait(
@@ -96,7 +161,7 @@ impl PluginService for StdPlugin {
         let mut tasks = vec![];
 
         {
-            let mut lock = self.tasks.lock().unwrap();
+            let mut lock = self.tasks.lock().await;
             for task in lock.drain(..) {
                 tasks.push(task);
             }
@@ -120,7 +185,7 @@ impl PluginService for StdPlugin {
     ) -> Result<Response<shutdown::Response>, Status> {
         tracing::info!("Requesting shutdown: {:?}", request.remote_addr());
 
-        let shutdown_tx = self.shutdown_signal.lock().unwrap().take().unwrap();
+        let shutdown_tx = self.shutdown_signal.lock().await.take().unwrap();
         shutdown_tx.send(()).unwrap();
 
         Ok(Response::new(shutdown::Response {}))

@@ -8,10 +8,11 @@ mod runner;
 mod templates;
 mod utils;
 
-pub use expr::{
-    // TODO: Remove this later
-    eval,
-    PatuiExpr,
-    PatuiExprError,
-};
+#[allow(missing_docs)]
+pub mod ptplugin {
+    tonic::include_proto!("ptplugin");
+}
+
+pub use expr::{eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiExpr, PatuiExprError};
+pub use runner::{PatuiEvent, PatuiEventWithTimestamp};
 pub use templates::PatuiTest;

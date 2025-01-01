@@ -12,22 +12,19 @@
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 
+mod functions;
 mod server;
 
 use std::env;
 
 use clap::{command, Parser};
 use miette::{IntoDiagnostic, Result};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tonic::transport::Server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
-use crate::{ptplugin::plugin_service_server::PluginServiceServer, server::StdPlugin};
-
-#[allow(missing_docs)]
-pub mod ptplugin {
-    tonic::include_proto!("ptplugin");
-}
+use crate::server::StdPlugin;
+use patui_core::ptplugin::plugin_service_server::PluginServiceServer;
 
 #[derive(Parser, Debug)]
 #[command(author, version = version(), about)]
@@ -87,14 +84,14 @@ async fn do_main() -> Result<()> {
     let addr = format!("[::1]:{}", port);
     let addr = addr.parse().unwrap();
 
-    let (tx, rx) = oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    let plugin = StdPlugin::new(tx);
+    let plugin = StdPlugin::new(shutdown_tx);
 
     Server::builder()
         .add_service(PluginServiceServer::new(plugin))
         .serve_with_shutdown(addr, async {
-            rx.await.ok();
+            shutdown_rx.await.ok();
             tracing::info!("Shutting down");
         })
         .await

@@ -184,17 +184,13 @@ impl PluginService for MyPlugin {
     }
 
     type PublishStream = Pin<
-        Box<
-            dyn Stream<Item = std::result::Result<publish::Response, tonic::Status>>
-                + Send
-                + 'static,
-        >,
+        Box<dyn Stream<Item = std::result::Result<publish::Response, Status>> + Send + 'static>,
     >;
 
     async fn publish(
         &self,
         request: tonic::Request<tonic::Streaming<publish::Request>>,
-    ) -> std::result::Result<tonic::Response<Self::PublishStream>, tonic::Status> {
+    ) -> std::result::Result<tonic::Response<Self::PublishStream>, Status> {
         let mut stream = request.into_inner();
         let echo_tx = self.echo_tx.lock().unwrap().take().unwrap().clone();
 

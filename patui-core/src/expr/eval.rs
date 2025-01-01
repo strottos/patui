@@ -10,33 +10,47 @@ use super::{
     PatuiData,
 };
 
+/// Error evaluting an expression
 #[derive(Debug, Error)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum EvalError {
+    /// Index is not a valid integer
     #[error("Index is not a valid size, cannot convert to signed 64-bit integer")]
     BadIndexSize,
+    /// Index not supported
     #[error("Indexing type '{0}' unsupported for type '{1}'")]
     IndexUnsupported(String, String),
+    /// Index type not supported
     #[error("Indexing type '{0}' unsupported")]
     IndexTypeUnsupported(String),
+    /// Cannot index without something to index into
     #[error("Index in first part of term not valid")]
-    IndexNoLit,
+    IndexNoBase,
+    /// Index range is not valid
     #[error("Index range is not valid")]
     BadIndexRange,
+    /// Error evaluating a literal
     #[error("Invalid literal for evaluating {0}")]
     LitEvalUnsupported(String),
-    #[error("Invalid function call, no method supplied")]
+    /// Method call without a method
+    #[error("Invalid method call, no method supplied")]
     CallNoMethodFound,
-    #[error("Invalid function call, method {0} not found on type '{1}'")]
+    /// Method not found
+    #[error("Invalid method call, method {0} not found on type '{1}'")]
     CallMethodNotFound(String, String),
+    /// Error evaluating a term
     #[error("Invalid term")]
     InvalidTerm,
+    /// Results invalid, must be a map
     #[error("Invalid results, must be a map")]
     ResultsNotMap,
+    /// Data not found
     #[error("Data not found")]
     DataNotFound,
+    /// Error evaluating data
     #[error("Invalid data {0}")]
     InvalidDataInner(#[from] PatuiDataError),
+    /// Error evaluating a data type
     #[error("Invalid data type {0} when we expected {1}")]
     InvalidDataType(String, String),
 }
@@ -98,7 +112,7 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
             },
             TermPart::Index(index) => match data {
                 Some(existing) => data = Some(eval_index(&existing, index, results)?),
-                None => return Err(EvalError::IndexNoLit),
+                None => return Err(EvalError::IndexNoBase),
             },
             TermPart::Call(function_name, args) => match data {
                 Some(existing) => data = Some(eval_call(&existing, function_name, args, results)?),
@@ -638,7 +652,7 @@ mod tests {
                 Expr::Term(vec![TermPart::Index(Box::new(Expr::Term(vec![
                     TermPart::Lit(Lit::Integer(1.into())),
                 ])))]),
-                EvalError::IndexNoLit,
+                EvalError::IndexNoBase,
             ),
         ] {
             let result = eval(
