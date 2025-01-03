@@ -75,41 +75,43 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
         tracing::trace!("Term Part: {:?}", term_part);
         match term_part {
             TermPart::Lit(lit) => data = Some(eval_lit(lit, results)?),
-            TermPart::Ident(ident) => match results {
-                PatuiData::Known(PatuiDataInner::Map(hash_map)) => {
-                    let key = ident.clone();
-                    tracing::trace!("Ident key: {:?}", key);
-                    match data.as_ref() {
-                        Some(existing) => {
-                            tracing::trace!("Existing ident lookup: {:?}", existing);
-                            let existing_inner = match existing {
-                                PatuiData::Known(inner) => inner,
-                                PatuiData::Pending(inner) => inner,
-                                PatuiData::Unknown => return Ok(PatuiData::Unknown),
-                            };
-                            let value = match existing_inner {
-                                PatuiDataInner::Null => todo!(),
-                                PatuiDataInner::Bool(_) => todo!(),
-                                PatuiDataInner::Bytes(_) => todo!(),
-                                PatuiDataInner::String(_) => todo!(),
-                                PatuiDataInner::Integer(_) => todo!(),
-                                PatuiDataInner::Decimal(_) => todo!(),
-                                PatuiDataInner::List(_) => todo!(),
-                                PatuiDataInner::Map(map) => {
-                                    map.get(&key).ok_or(EvalError::DataNotFound)?.clone()
-                                }
-                                PatuiDataInner::Set(_) => todo!(),
-                            };
-                            data = Some(value.clone());
-                        }
-                        None => {
-                            let value = hash_map.get(&key).ok_or(EvalError::DataNotFound)?;
-                            data = Some(value.clone());
-                        }
+            TermPart::Ident(ident) => {
+                let hash_map = match results {
+                    PatuiData::Known(PatuiDataInner::Map(hash_map)) => hash_map,
+                    PatuiData::Pending(PatuiDataInner::Map(hash_map)) => hash_map,
+                    _ => return Err(EvalError::ResultsNotMap),
+                };
+                let key = ident.clone();
+                tracing::trace!("Ident key: {:?}", key);
+                match data.as_ref() {
+                    Some(existing) => {
+                        tracing::trace!("Existing ident lookup: {:?}", existing);
+                        let existing_inner = match existing {
+                            PatuiData::Known(inner) => inner,
+                            PatuiData::Pending(inner) => inner,
+                            PatuiData::Unknown => return Ok(PatuiData::Unknown),
+                        };
+                        let value = match existing_inner {
+                            PatuiDataInner::Null => todo!(),
+                            PatuiDataInner::Bool(_) => todo!(),
+                            PatuiDataInner::Bytes(_) => todo!(),
+                            PatuiDataInner::String(_) => todo!(),
+                            PatuiDataInner::Integer(_) => todo!(),
+                            PatuiDataInner::Decimal(_) => todo!(),
+                            PatuiDataInner::List(_) => todo!(),
+                            PatuiDataInner::Map(map) => {
+                                map.get(&key).ok_or(EvalError::DataNotFound)?.clone()
+                            }
+                            PatuiDataInner::Set(_) => todo!(),
+                        };
+                        data = Some(value.clone());
+                    }
+                    None => {
+                        let value = hash_map.get(&key).ok_or(EvalError::DataNotFound)?;
+                        data = Some(value.clone());
                     }
                 }
-                _ => return Err(EvalError::ResultsNotMap),
-            },
+            }
             TermPart::Index(index) => match data {
                 Some(existing) => data = Some(eval_index(&existing, index, results)?),
                 None => return Err(EvalError::IndexNoBase),
@@ -178,6 +180,12 @@ fn eval_binop(
                 lhs_bool || rhs_bool
             };
 
+            tracing::trace!(
+                "Binop {} result: {}",
+                if op == &BinOp::And { "and" } else { "or" },
+                res
+            );
+
             Ok(if known {
                 PatuiData::Known(PatuiDataInner::Bool(res))
             } else {
@@ -190,6 +198,8 @@ fn eval_binop(
             } else {
                 lhs_inner != rhs_inner
             };
+
+            tracing::trace!("Binop result: {}", res);
 
             Ok(if known {
                 PatuiData::Known(PatuiDataInner::Bool(res))
@@ -484,27 +494,37 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
 
 fn eval_call(
     existing: &PatuiData,
-    function_name: &str,
+    method_name: &str,
     args: &[Expr],
     results: &PatuiData,
 ) -> Result<PatuiData, EvalError> {
+    tracing::trace!(
+        "Evaluating method call {} with args: {:?}",
+        method_name,
+        args
+    );
+
     let (known, existing) = match existing {
         PatuiData::Known(inner) => (true, inner),
         PatuiData::Pending(inner) => (false, inner),
         PatuiData::Unknown => return Ok(PatuiData::Unknown),
     };
 
-    match existing {
+    let res = match existing {
         PatuiDataInner::Null => todo!(),
         PatuiDataInner::Bool(_) => todo!(),
         PatuiDataInner::Bytes(_) => todo!(),
         PatuiDataInner::String(_) => todo!(),
         PatuiDataInner::Integer(_) => todo!(),
         PatuiDataInner::Decimal(_) => todo!(),
-        PatuiDataInner::List(vec) => eval_list_call(known, vec, function_name, args, results),
+        PatuiDataInner::List(vec) => eval_list_call(known, vec, method_name, args, results),
         PatuiDataInner::Map(_) => todo!(),
         PatuiDataInner::Set(_) => todo!(),
-    }
+    };
+
+    tracing::trace!("Found method call result: {:?}", res);
+
+    res
 }
 
 fn eval_list_call(

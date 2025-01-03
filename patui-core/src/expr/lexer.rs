@@ -42,12 +42,11 @@ pub enum Token {
     #[regex(r"-?[1-9][0-9]*[a-zA-Z_][0-9a-zA-Z_]*|0[xX][0-9a-fA-F]+[g-zG-Z_][0-9a-zA-Z_]*|0[bB][01]+[2-9a-zA-Z_][0-9a-zA-Z_]*", priority = 7, callback = |lex| Err(LexingError::BadNumberOrIdent(lex.slice().to_string())))]
     BadNumberOrIdent(String),
 
-    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| lex.slice()[1..lex.slice().len() - 1].to_string())]
-    #[regex(r#"'([^'\\]|\\['\\bnfrt]|u[a-fA-F0-9]{4})*'"#, |lex| lex.slice()[1..lex.slice().len() - 1].to_string())]
+    // NB: Needs to be processed in parser to interpret quotes correctly
+    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| lex.slice()[..].to_string())]
     String(String),
 
-    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*"#, |lex| Err(LexingError::BadString(lex.slice()[0..lex.slice().len()].to_string())))]
-    #[regex(r#"'([^'\\]|\\['\\bnfrt]|u[a-fA-F0-9]{4})*"#, |lex| Err(LexingError::BadString(lex.slice()[0..lex.slice().len()].to_string())))]
+    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*"#, |lex| Err(LexingError::BadString(lex.slice()[..].to_string())))]
     BadString(String),
 
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", priority = 1, callback = |lex| lex.slice().to_string())]
@@ -333,19 +332,19 @@ mod tests {
     fn lex_string() {
         single_successful_lex(
             r#""foo bar boo""#,
-            Token::String("foo bar boo".to_string()),
+            Token::String(r#""foo bar boo""#.to_string()),
             0..13,
             r#""foo bar boo""#,
         );
         single_successful_lex(
             "\"foo\nbar\nboo\"",
-            Token::String("foo\nbar\nboo".to_string()),
+            Token::String("\"foo\nbar\nboo\"".to_string()),
             0..13,
             "\"foo\nbar\nboo\"",
         );
         single_successful_lex(
             r#""foo\"bar\"boo""#,
-            Token::String("foo\\\"bar\\\"boo".to_string()),
+            Token::String(r#""foo\"bar\"boo""#.to_string()),
             0..15,
             r#""foo\"bar\"boo""#,
         );
@@ -358,12 +357,6 @@ mod tests {
             LexingError::BadString(r#""foo bar boo"#.to_string()),
             0..12,
             r#""foo bar boo"#,
-        );
-        single_unsuccessful_lex(
-            r#"'foo bar boo""#,
-            LexingError::BadString(r#"'foo bar boo""#.to_string()),
-            0..13,
-            r#"'foo bar boo""#,
         );
     }
 

@@ -43,6 +43,8 @@ pub enum ExprParseError {
     ParsedMapNonStringKey,
     #[error("Expected left hand side of binary operation '{0}'")]
     ExpectedLhsForBinOp(BinOp),
+    #[error("Error parsing string: {0}")]
+    StringParsingError(String),
 }
 
 pub(crate) fn parse(input: &str) -> Result<Expr, ExprParseError> {
@@ -252,7 +254,9 @@ fn parse_term(
             let dec = f64::from_str(dec)?;
             ident_parts.push(TermPart::Lit(Lit::Decimal(dec)))
         }
-        Token::String(ref s) => ident_parts.push(TermPart::Lit(Lit::String(s.clone()))),
+        Token::String(ref s) => {
+            parse_string(s).map(|s| ident_parts.push(TermPart::Lit(Lit::String(s))))?
+        }
         Token::BytesPrefix => {
             ident_parts.push(TermPart::Lit(parse_bytes(lexer)?));
         }
@@ -317,6 +321,7 @@ fn parse_term(
                     let Some(Ok(Token::String(s))) = lexer.next() else {
                         unreachable!();
                     };
+                    let s = parse_string(&s)?;
                     ident_parts.push(TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(
                         Lit::String(s),
                     )]))));
@@ -424,6 +429,17 @@ fn parse_term(
     Ok(Expr::Term(ident_parts))
 }
 
+fn parse_string(string: &str) -> Result<String, ExprParseError> {
+    match serde_json::from_str(string) {
+        Ok(serde_json::Value::String(s)) => Ok(s.to_string()),
+        Ok(json) => Err(ExprParseError::UnexpectedToken(
+            "parsing term".to_string(),
+            Token::String(json.to_string()),
+        )),
+        Err(e) => Err(ExprParseError::StringParsingError(format!("{}", e))),
+    }
+}
+
 fn parse_integer(integer: &str) -> Result<i64, ExprParseError> {
     tracing::trace!("Parsing integer: {}", integer);
     if let Some(integer) = integer.strip_prefix("0x") {
@@ -439,6 +455,7 @@ fn parse_bytes(lexer: &mut LexerPeekable<'_>) -> Result<Lit, ExprParseError> {
     if let Some(token) = lexer.next() {
         match token {
             Ok(Token::String(s)) => {
+                let s = parse_string(&s)?;
                 return Ok(Lit::Bytes(Bytes::from(s)));
             }
             Ok(Token::LeftSquareBrace) => {
@@ -462,6 +479,7 @@ fn parse_bytes_list(lexer: &mut LexerPeekable<'_>) -> Result<Bytes, ExprParseErr
     let mut bytes = Vec::new();
 
     while let Some(token) = lexer.next() {
+        tracing::trace!("Parsing bytes from token: {:?}", token);
         match token {
             Ok(Token::Integer(int)) => {
                 let int = parse_integer(&int)?;
@@ -472,6 +490,9 @@ fn parse_bytes_list(lexer: &mut LexerPeekable<'_>) -> Result<Bytes, ExprParseErr
                 }
             }
             Ok(Token::String(s)) => {
+                tracing::trace!("Parsing bytes from string: {}", s);
+                let s = parse_string(&s)?;
+                tracing::trace!("Parsing bytes from string: {}", s);
                 if s.len() != 1 {
                     return Err(ExprParseError::ByteListStringBadCharacter);
                 }
@@ -629,13 +650,17 @@ mod tests {
             ),
             (
                 "123.45",
-                Expr::Term(vec![TermPart::Lit(Lit::Decimal(f64::from(123.45)))]),
+                Expr::Term(vec![TermPart::Lit(Lit::Decimal(123.45))]),
             ),
             ("true", Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
             ("false", Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
             (
                 "\"hello\"",
                 Expr::Term(vec![TermPart::Lit(Lit::String("hello".to_string()))]),
+            ),
+            (
+                "\"\\\"hello\\\"\"",
+                Expr::Term(vec![TermPart::Lit(Lit::String("\"hello\"".to_string()))]),
             ),
             (
                 "b\"hello\"",
@@ -658,7 +683,7 @@ mod tests {
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("l")))]),
             ),
             (
-                "b['o']",
+                "b[\"o\"]",
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("o")))]),
             ),
             (
@@ -666,19 +691,19 @@ mod tests {
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("O")))]),
             ),
             (
-                r#"b["h", "e", 108, 108, 'o']"#,
+                r#"b["h", "e", 108, 108, "o"]"#,
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("hello")))]),
             ),
             (
-                "b[104, 0x65, 0x6c, 0x6C, 'o']",
+                "b[104, 0x65, 0x6c, 0x6C, \"o\"]",
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("hello")))]),
             ),
             (
-                "b[104, 0x65, 0x6c, 0x6C, 'o',]",
+                "b[104, 0x65, 0x6c, 0x6C, \"o\",]",
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("hello")))]),
             ),
             (
-                "b[      104    , 0x65      , 0x6c  , 0x6C   , 'o'  , ]",
+                "b[      104    , 0x65      , 0x6c  , 0x6C   , \"o\"  , ]",
                 Expr::Term(vec![TermPart::Lit(Lit::Bytes(Bytes::from("hello")))]),
             ),
         ] {
@@ -759,7 +784,7 @@ mod tests {
                 "a\"abc\"",
                 ExprParseError::UnexpectedToken(
                     "parsing term".to_string(),
-                    Token::String("abc".to_string()),
+                    Token::String("\"abc\"".to_string()),
                 ),
             ),
             (
@@ -767,11 +792,11 @@ mod tests {
                 ExprParseError::TokenParseError(LexingError::BadString("\"test".to_string())),
             ),
             (
-                "b[104, 0x65, 0x6c, 0x6C, 'o'",
+                "b[104, 0x65, 0x6c, 0x6C, \"o\"",
                 ExprParseError::UnexpectedEnd("parsing bytes list".to_string()),
             ),
             (
-                "[104, 0x65, 0x6c, 0x6C, 'o'",
+                "[104, 0x65, 0x6c, 0x6C, \"o\"",
                 ExprParseError::UnexpectedEnd("parsing list".to_string()),
             ),
         ] {

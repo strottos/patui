@@ -1,62 +1,19 @@
-use std::{
-    collections::HashMap,
-    net::TcpListener,
-    process::{Child, Command},
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
-use escargot::CargoBuild;
-use patui_core::{
-    ptplugin::{plugin_service_client::PluginServiceClient, publish, run, shutdown, wait},
+use tokio::time::timeout;
+use tonic::Request;
+
+use patui_plugin_test::run_plugin;
+use ptplugin::{
+    async_stream,
+    plugin_server::{publish, run, shutdown, wait},
     PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp,
 };
-use tokio::time::timeout;
-use tonic::{transport::Channel, Request};
-
-async fn run_plugin(port: u16) -> Child {
-    let cli = CargoBuild::new()
-        .bin("patui-std")
-        .current_target()
-        .manifest_path("Cargo.toml")
-        .target_dir("./target/debug")
-        .run()
-        .unwrap();
-
-    let mut cmd = Command::new(cli.path());
-    cmd.args(["--port", &port.to_string()])
-        .env("PATUI_LOG", "debug")
-        .spawn()
-        .unwrap()
-}
-
-async fn connect_plugin(port: u16) -> PluginServiceClient<Channel> {
-    for _ in 0..50 {
-        let addr = format!("http://[::1]:{}", port);
-        let client = PluginServiceClient::connect(addr).await;
-        match client {
-            Ok(c) => return c,
-            Err(_) => {
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            }
-        }
-    }
-
-    panic!("Failed to connect to the plugin");
-}
-
-pub(crate) fn get_unused_localhost_port() -> Result<u16, std::io::Error> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
-}
 
 #[tokio::test]
-async fn simple_assertion() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+async fn assertion_simple() {
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
@@ -86,8 +43,10 @@ async fn simple_assertion() {
         PatuiData::Known(PatuiDataInner::Bool(true)),
     ));
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
@@ -99,12 +58,8 @@ async fn simple_assertion() {
 }
 
 #[tokio::test]
-async fn simple_assertion_failure() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+async fn assertion_simple_failure() {
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
@@ -134,8 +89,10 @@ async fn simple_assertion_failure() {
         "evaluated expr to false: [1,2,3][1] == 3".to_string(),
     ));
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
@@ -147,12 +104,8 @@ async fn simple_assertion_failure() {
 }
 
 #[tokio::test]
-async fn simple_assertion_error() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+async fn assertion_simple_error() {
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
@@ -181,8 +134,10 @@ async fn simple_assertion_error() {
         "Assertion error, evaluated to type Integer: [1,2,3][1]".to_string(),
     ));
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
@@ -195,18 +150,14 @@ async fn simple_assertion_error() {
 
 #[tokio::test]
 async fn assertion_with_idents_and_no_results() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
             function: "assertion".to_string(),
             args: HashMap::from([(
                 "expr".to_string(),
-                "my.foo.results.len() == 1 && my.foo.results[0] == 1".to_string(),
+                "(my.foo.results.len() == 1) && (my.foo.results[0] == 1)".to_string(),
             )]),
         })
         .await;
@@ -250,8 +201,10 @@ async fn assertion_with_idents_and_no_results() {
     let response = response.unwrap_err();
     assert_that!(response.code()).is_equal_to(tonic::Code::NotFound);
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
@@ -264,18 +217,14 @@ async fn assertion_with_idents_and_no_results() {
 
 #[tokio::test]
 async fn assertion_with_idents_and_not_enough_results() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
             function: "assertion".to_string(),
             args: HashMap::from([(
                 "expr".to_string(),
-                "my.foo.results.len() == 1 && my.foo.results[3] == 1".to_string(),
+                "(my.foo.results.len() == 1) && (my.foo.results[2] == 1)".to_string(),
             )]),
         })
         .await;
@@ -325,8 +274,10 @@ async fn assertion_with_idents_and_not_enough_results() {
     let response = response.unwrap_err();
     assert_that!(response.code()).is_equal_to(tonic::Code::NotFound);
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
@@ -339,11 +290,7 @@ async fn assertion_with_idents_and_not_enough_results() {
 
 #[tokio::test]
 async fn assertion_with_idents_and_correct_results() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
@@ -411,8 +358,10 @@ async fn assertion_with_idents_and_correct_results() {
         PatuiData::Known(PatuiDataInner::Bool(true)),
     ));
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 
@@ -425,11 +374,7 @@ async fn assertion_with_idents_and_correct_results() {
 
 #[tokio::test]
 async fn assertion_with_idents_and_incorrect_results() {
-    let port = get_unused_localhost_port().unwrap();
-
-    let mut child = run_plugin(port).await;
-
-    let mut client = connect_plugin(port).await;
+    let (mut child, mut client) = run_plugin("patui-std").await.unwrap();
 
     let res = client
         .run(run::Request {
@@ -503,8 +448,10 @@ async fn assertion_with_idents_and_incorrect_results() {
             .to_string(),
     ));
 
-    let res = client.wait(wait::Request {}).await;
+    let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
 
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
     assert_that!(res).is_ok();
     assert_that!(res.unwrap().into_inner().diagnostics).has_length(0);
 

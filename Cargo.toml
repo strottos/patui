@@ -3,6 +3,8 @@ members = [
   "patui-bin",
   "patui-core",
   "patui-plugin",
+  "patui-plugin-macros",
+  "patui-plugin-test",
   "patui-tests",
   "plugins/*",
 ]

@@ -49,6 +49,14 @@ impl Display for PatuiExpr {
     }
 }
 
+impl TryFrom<String> for PatuiExpr {
+    type Error = PatuiExprError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        PatuiExpr::try_from_str(&value)
+    }
+}
+
 impl TryFrom<&String> for PatuiExpr {
     type Error = PatuiExprError;
 

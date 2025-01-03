@@ -1,0 +1,15 @@
+[package]
+name = "patui-plugin-macros"
+version = "0.1.0"
+authors = ["Steven Trotter <stevetrot@gmail.com>"]
+edition = "2021"
+resolver = "2"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+convert_case = "0.6.0"
+proc-macro2 = "1.0.92"
+quote = "1.0.38"
+syn = { version = "2.0.94", features = ["full"] }

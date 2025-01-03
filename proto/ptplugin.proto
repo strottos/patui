@@ -59,8 +59,9 @@ message Run {
         map<string, string> args     = 2;
     }
     message Response {
-        PatuiEventEncoding  data        = 1;
-        repeated Diagnostic diagnostics = 2;
+        string              name        = 1;
+        PatuiEventEncoding  data        = 2;
+        repeated Diagnostic diagnostics = 3;
     }
 }
 

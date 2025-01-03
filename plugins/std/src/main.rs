@@ -13,96 +13,12 @@
 #![deny(missing_docs)]
 
 mod functions;
-mod server;
 
-use std::env;
-
-use clap::{command, Parser};
-use miette::{IntoDiagnostic, Result};
-use tokio::sync::{mpsc, oneshot};
-use tonic::transport::Server;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
-
-use crate::server::StdPlugin;
-use patui_core::ptplugin::plugin_service_server::PluginServiceServer;
-
-#[derive(Parser, Debug)]
-#[command(author, version = version(), about)]
-pub(crate) struct Cli {
-    #[clap(short, long)]
-    pub(crate) port: Option<String>,
-}
-
-const VERSION_MESSAGE: &str = concat!(
-    env!("CARGO_PKG_NAME"),
-    " ",
-    env!("CARGO_PKG_VERSION"),
-    " (",
-    env!("CARGO_PKG_DESCRIPTION"),
-    ")"
-);
-
-fn version() -> String {
-    let author = clap::crate_authors!();
-
-    format!(
-        "\
-{VERSION_MESSAGE}
-
-Authors: {author}"
-    )
-}
-
-fn initialise_logging() -> Result<()> {
-    let filter = match env::var("PATUI_LOG") {
-        Ok(log) => Some(log),
-        Err(_) => return Ok(()),
-    };
-    let var_name = EnvFilter::default();
-    let filter = filter.map_or(var_name, EnvFilter::new);
-
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_file(true)
-        .with_line_number(true)
-        .with_target(true)
-        .with_ansi(true);
-
-    Registry::default().with(filter).with(fmt_layer).init();
-
+#[ptplugin::main(StdPluginServer, build_struct = (
+    functions::Assertion,
+    functions::FileRead,
+    functions::StaticData,
+))]
+fn main() -> ptplugin::Result<()> {
     Ok(())
-}
-
-async fn do_main() -> Result<()> {
-    tracing::info!("Starting Patui Test Plugin");
-
-    let args = Cli::parse();
-
-    let Some(port) = args.port else {
-        tracing::error!("No port provided");
-        std::process::exit(-1);
-    };
-    let addr = format!("[::1]:{}", port);
-    let addr = addr.parse().unwrap();
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-    let plugin = StdPlugin::new(shutdown_tx);
-
-    Server::builder()
-        .add_service(PluginServiceServer::new(plugin))
-        .serve_with_shutdown(addr, async {
-            shutdown_rx.await.ok();
-            tracing::info!("Shutting down");
-        })
-        .await
-        .into_diagnostic()?;
-
-    Ok(())
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    initialise_logging()?;
-
-    do_main().await
 }

@@ -1,12 +1,12 @@
 [package]
-name = "patui-std"
+name = "patui-jq"
 version = "0.1.0"
 authors = ["Steven Trotter <stevetrot@gmail.com>"]
 edition = "2021"
 resolver = "2"
 
 [[bin]]
-name = "patui-std"
+name = "patui-jq"
 path = "src/main.rs"
 
 [dependencies]
@@ -14,10 +14,9 @@ eyre = "0.6.12"
 jaq-core = "2.0.0"
 patui-plugin = { path = "../../patui-plugin" }
 serde_json = "1.0.134"
-tonic = "0.12.3"
 tracing = "0.1.41"
-tokio = { version = "1.42.0", features = [ "macros", "rt-multi-thread", "time" ] }
 
 [dev-dependencies]
 assertor = "0.0.3"
 patui-plugin-test = { path = "../../patui-plugin-test" }
+tokio = { version = "1.42.0", features = [ "macros", "rt-multi-thread", "time" ] }
