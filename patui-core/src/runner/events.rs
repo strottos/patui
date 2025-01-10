@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{expr::PatuiData, ptplugin::PatuiEventEncoding, utils::get_current_timestamp};
+use crate::{
+    expr::PatuiData, ptplugin::PatuiEventEncoding, utils::get_current_timestamp, PatuiExpr,
+};
 
 #[derive(Debug, Error)]
 pub enum PatuiEventError {
@@ -12,24 +14,55 @@ pub enum PatuiEventError {
 /// An event that can be sent from a plugin to Patui.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum PatuiEvent {
-    /// We found some results for a step
-    Results(String, PatuiData),
-    /// We want to log an event
+    /// General step data that should be stored in the global data store for the step. This can be
+    /// anything and doesn't have to be appended to a list like a result.
+    ///
+    /// TODO: Is this useful? Just an idea currently to prevent having to do append in results.
+    /// Does this even work?
+    Data(PatuiData),
+    /// We received some results for a step and want to append them to the current steps results.
+    /// Each step keeps a list of results that are appended to.
+    ///
+    /// The PatuiExpr is the list to append results to. The PatuiData is the results.
+    Results(PatuiExpr, PatuiData),
+    /// We want to add a log message. Can be used for debugging, or to show the user what is
+    /// happening in the test.
     Log(String),
-    /// We failed a step
-    Failure(String, String),
-    /// An error occurred
+    /// We failed a step. This is a soft failure and will not stop the test but only mark it as a
+    /// failure.
+    Failure(PatuiExpr, String),
+    /// An error occurred. This is a hard failure and will stop the test.
     Error(String),
 }
 
 impl PatuiEvent {
     /// Get the results from the event
     #[cfg(test)]
-    pub fn as_result(&self) -> Result<&PatuiData, PatuiEventError> {
+    pub fn as_results(&self) -> Result<(&PatuiExpr, &PatuiData), PatuiEventError> {
         match self {
-            PatuiEvent::Results(_, patui_step_data) => Ok(&patui_step_data),
+            PatuiEvent::Results(expr, res) => Ok((&expr, &res)),
             _ => Err(PatuiEventError::NotResult),
         }
+    }
+
+    /// Check if the event is of type Results
+    pub fn is_results(&self) -> bool {
+        matches!(self, PatuiEvent::Results(_, _))
+    }
+
+    /// Check if the event is of type Log
+    pub fn is_log(&self) -> bool {
+        matches!(self, PatuiEvent::Log(_))
+    }
+
+    /// Check if the event is of type Failure
+    pub fn is_failure(&self) -> bool {
+        matches!(self, PatuiEvent::Failure(_, _))
+    }
+
+    /// Check if the event is of type Error
+    pub fn is_error(&self) -> bool {
+        matches!(self, PatuiEvent::Error(_))
     }
 }
 
@@ -37,7 +70,7 @@ impl PatuiEvent {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct PatuiEventWithTimestamp {
     timestamp: i64,
-    value: PatuiEvent,
+    pub(crate) value: PatuiEvent,
 }
 
 impl PatuiEventWithTimestamp {
@@ -65,6 +98,14 @@ impl TryFrom<PatuiEvent> for PatuiEventEncoding {
         Ok(PatuiEventEncoding {
             bytes: rmp_serde::to_vec(&value)?,
         })
+    }
+}
+
+impl TryFrom<PatuiEventEncoding> for PatuiEvent {
+    type Error = rmp_serde::decode::Error;
+
+    fn try_from(data: PatuiEventEncoding) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_read(data.bytes.as_slice())
     }
 }
 

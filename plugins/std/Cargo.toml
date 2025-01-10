@@ -14,10 +14,11 @@ eyre = "0.6.12"
 jaq-core = "2.0.0"
 patui-plugin = { path = "../../patui-plugin" }
 serde_json = "1.0.134"
-tonic = "0.12.3"
 tracing = "0.1.41"
-tokio = { version = "1.42.0", features = [ "macros", "rt-multi-thread", "time" ] }
 
 [dev-dependencies]
 assertor = "0.0.3"
-patui-plugin-test = { path = "../../patui-plugin-test" }
+patui-plugin = { path = "../../patui-plugin", features = ["macros", "test"] }
+tonic = "0.12.3"
+tokio = { version = "1.43.0", features = [ "macros", "rt-multi-thread", "time" ] }
+tracing-test = "0.2.5"

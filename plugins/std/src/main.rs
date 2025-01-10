@@ -14,11 +14,17 @@
 
 mod functions;
 
-#[ptplugin::main(StdPluginServer, build_struct = (
-    functions::Assertion,
-    functions::FileRead,
-    functions::StaticData,
-))]
+#[ptplugin::main(
+    StdPluginServer,
+    name = "std",
+    description = "The standard plugin for the `patui` CLI for commonly used utilities.",
+    r#type = "assertions",
+    build_struct = (
+        functions::Assertion,
+        functions::FileRead,
+        functions::StaticData,
+    )
+)]
 fn main() -> ptplugin::Result<()> {
     Ok(())
 }

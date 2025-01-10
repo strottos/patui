@@ -16,8 +16,12 @@ pub enum PatuiDataError {
     UnknownData,
     #[error("Type is unknown")]
     UnknownType,
+    #[error("Wrong Type, expected '{0}'")]
+    WrongType(String),
     #[error("Bad arguments for function {0}")]
     BadArgs(String),
+    #[error("Bad data merge: {0}")]
+    BadMerge(String),
 }
 
 /// Data type for the evaluation of expressions. Any evaluation of an expression must evaluate to
@@ -126,9 +130,117 @@ impl PatuiData {
 
         Ok(PatuiData::Known(inner.to_known()?))
     }
+
+    /// Get the inner data from the PatuiData
+    ///
+    /// Returns a boolean indicating if the data is known and a reference to the inner data.
+    pub fn get_inner(&self) -> Result<(bool, &PatuiDataInner), PatuiDataError> {
+        match self {
+            PatuiData::Known(inner) => Ok((true, inner)),
+            PatuiData::Pending(inner) => Ok((false, inner)),
+            PatuiData::Unknown => Err(PatuiDataError::UnknownData),
+        }
+    }
+
+    /// Get the inner data from the PatuiData
+    ///
+    /// Returns a boolean indicating if the data is known and a mutable reference to the inner
+    /// data.
+    pub fn get_inner_mut(&mut self) -> Result<(bool, &mut PatuiDataInner), PatuiDataError> {
+        match self {
+            PatuiData::Known(inner) => Ok((true, inner)),
+            PatuiData::Pending(inner) => Ok((false, inner)),
+            PatuiData::Unknown => Err(PatuiDataError::UnknownData),
+        }
+    }
+
+    /// Given a list of keys it recursively search through maps to find the keys until it finds a
+    /// list, it will then append `value` to that list. If it finds missing keys it will add them,
+    /// if it finds something existing with the wrong type it will error out.
+    ///
+    /// This is the one of the most common operation we perform on Patui results.
+    pub(crate) fn append_to_list(
+        &mut self,
+        keys: Vec<String>,
+        value: PatuiData,
+    ) -> Result<(), PatuiDataError> {
+        let (_, mut inner) = self.get_inner_mut()?;
+        for (i, key) in keys.iter().enumerate() {
+            inner = match inner {
+                PatuiDataInner::Map(hash_map) => {
+                    let entry = hash_map.entry(key.to_string()).or_insert_with(|| {
+                        if i == keys.len() - 1 {
+                            PatuiData::Pending(PatuiDataInner::List(vec![]))
+                        } else {
+                            PatuiData::Pending(PatuiDataInner::Map(HashMap::new()))
+                        }
+                    });
+                    entry.get_inner_mut()?.1
+                }
+                _ => return Err(PatuiDataError::WrongType("Map".to_string())),
+            };
+        }
+
+        tracing::trace!("Found data: {:?}", inner);
+
+        match inner {
+            PatuiDataInner::List(vec) => {
+                vec.push(value);
+            }
+            _ => return Err(PatuiDataError::WrongType("List".to_string())),
+        }
+
+        Ok(())
+    }
+
+    /// Merge the data from `other` into `self`. This is used when we have something to append to a
+    /// `results` data structure and we want to add the new data to the existing data.
+    ///
+    /// The rules for merging are as follows:
+    /// - If this data is known and the other data is known then they must be equal, if they are
+    ///   equal then we keep the data as known, if they are not equal then we error out.
+    /// - If this data is known and the other data is either pending or unknown then we must throw
+    ///   an error.
+    /// - If this data is pending and the other data is known or pending then we merge the new data
+    ///   into the existing data as known.
+    /// - If this data is pending and the other data is unknown then we throw an error. TODO: Any
+    ///   conceivable use case for this to not error?
+    /// - If this data is unknown then we merge the new data into the existing data trivially.
+    ///
+    /// If we find any new keys in maps we create them.
+    pub(crate) fn merge(&mut self, other: &PatuiData) -> Result<(), PatuiDataError> {
+        match self {
+            PatuiData::Known(patui_data_inner) => todo!(),
+            PatuiData::Pending(_) => {
+                if other.is_unknown() {
+                    return Err(PatuiDataError::BadMerge("TODO".to_string()));
+                }
+                *self = other.clone();
+            }
+            PatuiData::Unknown => {
+                if other.is_unknown() {
+                    return Ok(());
+                };
+                *self = other.clone();
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl PatuiDataInner {
+    /// Get the key specified from the data as a map. If the data is not a map we error out.
+    pub fn get_map_key(&self, key: &str) -> Result<&PatuiData, PatuiDataError> {
+        match self {
+            PatuiDataInner::Map(hash_map) => match hash_map.get(key) {
+                Some(data) => Ok(data),
+                None => Err(PatuiDataError::UnknownData),
+            },
+            _ => Err(PatuiDataError::WrongType("Map".to_string())),
+        }
+    }
+
     /// Return true if the data is all known.
     fn is_known(&self) -> bool {
         match self {
@@ -237,9 +349,11 @@ impl<'a> PatuiDataListMethods<'a> {
 #[cfg(test)]
 mod tests {
     use assertor::*;
+    use tracing_test::traced_test;
 
     use super::*;
 
+    #[traced_test]
     #[test]
     fn patui_data() {
         let data = PatuiData::Pending(PatuiDataInner::Integer(42));
@@ -266,6 +380,7 @@ mod tests {
         assert_that!(data).is_err();
     }
 
+    #[traced_test]
     #[test]
     fn patui_data_inner() {
         let data = PatuiDataInner::List(vec![
@@ -368,6 +483,7 @@ mod tests {
         ));
     }
 
+    #[traced_test]
     #[test]
     fn patui_data_to_known_with_unknown() {
         let data = PatuiData::Unknown;
@@ -385,6 +501,7 @@ mod tests {
         assert_that!(data).is_err();
     }
 
+    #[traced_test]
     #[test]
     fn patui_list_length() {
         let inner_list = vec![
@@ -399,6 +516,7 @@ mod tests {
         assert_that!(len.unwrap()).is_equal_to(PatuiData::Known(PatuiDataInner::Integer(2)));
     }
 
+    #[traced_test]
     #[test]
     fn data_is_known() {
         let data = PatuiData::Known(PatuiDataInner::Integer(42));
@@ -429,6 +547,7 @@ mod tests {
         assert_that!(data.is_known()).is_false();
     }
 
+    #[traced_test]
     #[test]
     fn data_is_unknown() {
         let data = PatuiData::Known(PatuiDataInner::Integer(42));
@@ -468,6 +587,7 @@ mod tests {
         assert_that!(data.is_unknown()).is_true();
     }
 
+    #[traced_test]
     #[test]
     fn data_is_pending() {
         let data = PatuiData::Known(PatuiDataInner::Integer(42));
@@ -505,5 +625,164 @@ mod tests {
             PatuiData::Known(PatuiDataInner::Integer(42)),
         ]));
         assert_that!(data.is_pending()).is_false();
+    }
+
+    #[traced_test]
+    #[test]
+    fn add_to_list() {
+        let mut data = PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+            "key1".to_string(),
+            PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                "key2".to_string(),
+                PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                    "key3".to_string(),
+                    PatuiData::Known(PatuiDataInner::List(vec![
+                        PatuiData::Known(PatuiDataInner::Integer(1)),
+                        PatuiData::Known(PatuiDataInner::Integer(2)),
+                    ])),
+                )]))),
+            )]))),
+        )])));
+
+        assert_that!(data.append_to_list(
+            vec!["key1".to_string(), "key2".to_string(), "key3".to_string()],
+            PatuiData::Known(PatuiDataInner::Integer(3)),
+        ))
+        .is_ok();
+        assert_that!(data.append_to_list(
+            vec!["not".to_string(), "exists".to_string()],
+            PatuiData::Known(PatuiDataInner::Integer(3)),
+        ))
+        .is_ok();
+
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, root_inner) = ret.unwrap();
+        assert_that!(known).is_true();
+
+        let ret = root_inner.get_map_key("key1");
+        assert_that!(ret).is_ok();
+        let data = ret.unwrap();
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_true();
+
+        let ret = inner.get_map_key("key2");
+        assert_that!(ret).is_ok();
+        let data = ret.unwrap();
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_true();
+
+        let ret = inner.get_map_key("key3");
+        assert_that!(ret).is_ok();
+        let data = ret.unwrap();
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_true();
+
+        assert_that!(inner).is_equal_to(&PatuiDataInner::List(vec![
+            PatuiData::Known(PatuiDataInner::Integer(1)),
+            PatuiData::Known(PatuiDataInner::Integer(2)),
+            PatuiData::Known(PatuiDataInner::Integer(3)),
+        ]));
+
+        let ret = root_inner.get_map_key("not");
+        assert_that!(ret).is_ok();
+        let data = ret.unwrap();
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_false();
+
+        let ret = inner.get_map_key("exists");
+        assert_that!(ret).is_ok();
+        let data = ret.unwrap();
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_false();
+
+        assert_that!(inner).is_equal_to(&PatuiDataInner::List(vec![PatuiData::Known(
+            PatuiDataInner::Integer(3),
+        )]));
+    }
+
+    #[traced_test]
+    #[test]
+    fn merge_to_unknown() {
+        let mut data = PatuiData::Unknown;
+
+        let other = PatuiData::Unknown;
+        assert_that!(data.merge(&other)).is_ok();
+
+        assert_that!(data).is_equal_to(&PatuiData::Unknown);
+
+        let other = PatuiData::Pending(PatuiDataInner::Integer(42));
+        assert_that!(data.merge(&other)).is_ok();
+
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_false();
+        assert_that!(inner).is_equal_to(&PatuiDataInner::Integer(42));
+
+        let mut data = PatuiData::Unknown;
+
+        let other = PatuiData::Known(PatuiDataInner::Integer(42));
+        assert_that!(data.merge(&other)).is_ok();
+
+        let ret = data.get_inner();
+        assert_that!(ret).is_ok();
+        let (known, inner) = ret.unwrap();
+        assert_that!(known).is_true();
+        assert_that!(inner).is_equal_to(&PatuiDataInner::Integer(42));
+    }
+
+    #[traced_test]
+    #[test]
+    fn merge_to_pending() {
+        let mut data = PatuiData::Pending(PatuiDataInner::Integer(42));
+
+        let other = PatuiData::Unknown;
+        let ret = data.merge(&other);
+
+        assert_that!(ret).is_err();
+        let error = ret.unwrap_err();
+        assert_that!(error).is_equal_to(PatuiDataError::BadMerge("TODO".to_string()));
+
+        let other = PatuiData::Pending(PatuiDataInner::Integer(43));
+        let ret = data.merge(&other);
+
+        assert_that!(ret).is_ok();
+        let inner = data.get_inner();
+        assert_that!(inner).is_ok();
+        let (known, inner) = inner.unwrap();
+        assert_that!(known).is_false();
+        assert_that!(inner).is_equal_to(&PatuiDataInner::Integer(43));
+    }
+
+    #[traced_test]
+    #[test]
+    fn merge_known_to_known_errors() {
+        let mut data = PatuiData::Known(PatuiDataInner::List(vec![
+            PatuiData::Known(PatuiDataInner::Integer(1)),
+            PatuiData::Known(PatuiDataInner::Integer(2)),
+        ]));
+
+        let other = PatuiData::Known(PatuiDataInner::List(vec![
+            PatuiData::Known(PatuiDataInner::Integer(1)),
+            PatuiData::Known(PatuiDataInner::Integer(2)),
+            PatuiData::Known(PatuiDataInner::Integer(3)),
+        ]));
+        assert_that!(data.merge(&other)).is_ok();
+
+        let ret = data.get_inner();
+        assert_that!(ret).is_err();
+        let error = ret.unwrap_err();
+        assert_that!(error).is_equal_to(PatuiDataError::BadMerge("TODO".to_string()));
     }
 }

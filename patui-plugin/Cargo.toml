@@ -13,20 +13,24 @@ crate-type = ["cdylib", "lib"]
 default = ["macros"]
 
 macros = ["patui-plugin-macros", "clap", "tracing-subscriber", "eyre"]
+test = ["assert_cmd", "assertor", "escargot", "insta", "tracing-test"]
 
 [dependencies]
 patui-core = { path = "../patui-core" }
 patui-plugin-macros = { path = "../patui-plugin-macros", optional = true }
 
 async-stream = "0.3.6"
-bytes = { version = "1.9.0", features = ["serde"] }
-chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5.23", features = ["cargo", "derive", "unicode", "string", "wrap_help"], optional = true }
 convert_case = "0.6.0"
 eyre = { version = "0.6.12", optional = true }
-strip-ansi-escapes = "0.2.0"
-tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "time"] }
 tokio-stream = "0.1.17"
 tonic = "0.12.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"], optional = true }
+
+assert_cmd = { version = "2.0.16", optional = true }
+assertor = { version = "0.0.3", optional = true }
+escargot = { version = "0.5.13", optional = true }
+insta = { version = "1.41.1", optional = true }
+tracing-test = { version = "0.2.5", optional = true }

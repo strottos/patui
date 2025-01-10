@@ -18,5 +18,5 @@ tracing = "0.1.41"
 
 [dev-dependencies]
 assertor = "0.0.3"
-patui-plugin-test = { path = "../../patui-plugin-test" }
-tokio = { version = "1.42.0", features = [ "macros", "rt-multi-thread", "time" ] }
+patui-plugin = { path = "../../patui-plugin", features = ["macros", "test"] }
+tokio = { version = "1.43.0", features = [ "macros", "rt-multi-thread", "time" ] }

@@ -35,6 +35,10 @@ impl PatuiExpr {
         &self.expr
     }
 
+    pub(crate) fn raw(&self) -> &str {
+        &self.raw
+    }
+
     fn try_from_str(value: &str) -> Result<Self, PatuiExprError> {
         Ok(PatuiExpr {
             raw: value.to_string(),

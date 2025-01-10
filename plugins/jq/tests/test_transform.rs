@@ -1,16 +1,20 @@
 use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
-use patui_plugin_test::run_plugin;
 use ptplugin::{
-    plugin_server::{run, shutdown, wait},
-    PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp,
+    plugin_server::{produce_results, run, shutdown, wait},
+    run_plugin, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp, PatuiExpr,
 };
 use tokio::time::timeout;
 
 #[tokio::test]
 async fn transform_expr_string() {
     let (mut child, mut client) = run_plugin("patui-jq").await.unwrap();
+
+    // Plugin will send us some results on this stream
+    let res = client.produce_results(produce_results::Init {}).await;
+    assert_that!(res).is_ok();
+    let mut subscription_rx = res.unwrap().into_inner();
 
     let res = client
         .run(run::Request {
@@ -23,7 +27,6 @@ async fn transform_expr_string() {
         .await;
 
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
     let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
     assert_that!(response).is_ok();
@@ -39,7 +42,7 @@ async fn transform_expr_string() {
     assert_that!(event).is_ok();
     let event = event.unwrap();
     assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
-        "out".to_string(),
+        PatuiExpr::try_from("out").unwrap(),
         PatuiData::Known(PatuiDataInner::Map(HashMap::from([
             (
                 "a".to_string(),

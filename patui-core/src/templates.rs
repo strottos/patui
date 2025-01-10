@@ -5,10 +5,12 @@ use thiserror::Error;
 
 use crate::expr::{PatuiExpr, PatuiExprError};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum PatuiTestError {
     #[error("YAML parsing error: {0}")]
     Yaml(#[from] serde_yaml::Error),
+    #[error("Plugin parsing error: {0}")]
+    Plugin(#[from] PatuiPluginError),
     #[error("Step parsing error: {0}")]
     Step(#[from] PatuiStepError),
 }
@@ -23,6 +25,7 @@ pub enum PatuiTestError {
 pub(crate) struct PatuiTestEditable {
     pub(crate) name: String,
     pub(crate) description: Option<Option<String>>,
+    pub(crate) plugins: Option<HashMap<String, PatuiPluginEditable>>,
     pub(crate) steps: Option<Vec<PatuiStepEditable>>,
 }
 
@@ -34,6 +37,7 @@ pub(crate) struct PatuiTestEditable {
 pub struct PatuiTest {
     pub(crate) name: String,
     pub(crate) description: Option<String>,
+    pub(crate) plugins: HashMap<String, PatuiPlugin>,
     pub(crate) steps: Vec<PatuiStep>,
 }
 
@@ -42,14 +46,14 @@ impl Default for PatuiTest {
         PatuiTest {
             name: "Default".to_string(),
             description: Some("Default template".to_string()),
+            plugins: HashMap::new(),
             steps: vec![PatuiStep {
                 name: "DefaultProcess".to_string(),
                 when: None,
                 depends_on: vec![],
-                path: "default_plugin".to_string(),
-                config: HashMap::new(),
-                r#in: HashMap::new(),
-                run: "default".to_string(),
+                plugin: "default_plugin".to_string(),
+                args: HashMap::new(),
+                function: "default".to_string(),
             }],
         }
     }
@@ -75,6 +79,18 @@ impl PatuiTest {
             description: yaml_test
                 .description
                 .unwrap_or_else(|| Some("".to_string())),
+            plugins: yaml_test
+                .plugins
+                .as_ref()
+                .map(|x| {
+                    x.iter()
+                        .map(|(k, v)| match v.try_into() {
+                            Ok(v) => Ok((k.clone(), v)),
+                            Err(e) => Err(e),
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| Ok(HashMap::new()))?,
             steps: yaml_test
                 .steps
                 .map(|steps| steps.iter().map(|s| s.try_into()).collect())
@@ -89,6 +105,12 @@ impl PatuiTest {
         let yaml_test = PatuiTestEditable {
             name: self.name.clone(),
             description: Some(self.description.clone()),
+            plugins: Some(
+                self.plugins
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.into()))
+                    .collect::<HashMap<String, PatuiPluginEditable>>(),
+            ),
             steps: Some(self.steps.iter().map(|step| step.into()).collect()),
         };
 
@@ -145,6 +167,53 @@ impl TryFrom<&PatuiTest> for String {
     }
 }
 
+// Plugins
+
+/// Plugin Errors
+#[derive(Debug, Error)]
+pub enum PatuiPluginError {
+    #[error("YAML parsing error: {0}")]
+    Yaml(#[from] serde_yaml::Error),
+}
+
+/// PatuiPlugin is the type used for configuring plugins. It is optional in a PatuiTest but can be
+/// used if the overrides to the default configuration are required.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiPlugin {
+    pub(crate) name: String,
+    pub(crate) path: Option<String>, // TODO: Find a better solution when we're publishing plugins
+    pub(crate) config: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct PatuiPluginEditable {
+    pub(crate) name: String,
+    pub(crate) path: Option<Option<String>>,
+    pub(crate) config: Option<HashMap<String, String>>,
+}
+
+impl TryFrom<&PatuiPluginEditable> for PatuiPlugin {
+    type Error = PatuiPluginError;
+
+    fn try_from(value: &PatuiPluginEditable) -> Result<Self, Self::Error> {
+        Ok(PatuiPlugin {
+            name: value.name.clone(),
+            path: value.path.clone().unwrap_or(None),
+            config: value.config.clone().unwrap_or_default(),
+        })
+    }
+}
+
+impl From<&PatuiPlugin> for PatuiPluginEditable {
+    fn from(value: &PatuiPlugin) -> Self {
+        PatuiPluginEditable {
+            name: value.name.clone(),
+            path: Some(value.path.clone()),
+            config: Some(value.config.clone()),
+        }
+    }
+}
+
 // Steps
 
 /// Step Errors
@@ -156,17 +225,15 @@ pub enum PatuiStepError {
     Yaml(#[from] serde_yaml::Error),
 }
 
-/// PatuiStep is the type used for steps after they have been saved to the
-/// database. This is used for running tests and displaying them to the user.
+/// PatuiStep is the type used for configuring steps.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStep {
     pub(crate) name: String,
-    pub(crate) path: String, // TODO: Find a better solution when we're publishing plugins
+    pub(crate) plugin: String,
+    pub(crate) function: String,
+    pub(crate) args: HashMap<String, PatuiExpr>,
     pub(crate) when: Option<String>,
     pub(crate) depends_on: Vec<String>,
-    pub(crate) config: HashMap<String, String>,
-    pub(crate) run: String,
-    pub(crate) r#in: HashMap<String, PatuiExpr>,
 }
 
 /// PatuiStepEditable is to endable users ability to edit steps before they
@@ -174,12 +241,11 @@ pub(crate) struct PatuiStep {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct PatuiStepEditable {
     pub(crate) name: String,
-    pub(crate) path: String, // TODO: Find a better solution when we're publishing plugins
+    pub(crate) plugin: String, // TODO: Find a better solution when we're publishing plugins
     pub(crate) when: Option<Option<String>>,
     pub(crate) depends_on: Option<Vec<String>>,
-    pub(crate) config: Option<HashMap<String, String>>,
     pub(crate) run: String,
-    pub(crate) r#in: Option<HashMap<String, String>>,
+    pub(crate) args: Option<HashMap<String, String>>,
 }
 
 impl TryFrom<&PatuiStepEditable> for PatuiStep {
@@ -188,13 +254,12 @@ impl TryFrom<&PatuiStepEditable> for PatuiStep {
     fn try_from(value: &PatuiStepEditable) -> Result<Self, Self::Error> {
         Ok(PatuiStep {
             name: value.name.clone(),
-            path: value.path.clone(),
+            plugin: value.plugin.clone(),
             when: value.when.clone().unwrap_or(None),
             depends_on: value.depends_on.clone().unwrap_or_default(),
-            config: value.config.clone().unwrap_or_default(),
-            run: value.run.clone(),
-            r#in: value
-                .r#in
+            function: value.run.clone(),
+            args: value
+                .args
                 .as_ref()
                 .map(|x| {
                     x.iter()
@@ -213,14 +278,13 @@ impl From<&PatuiStep> for PatuiStepEditable {
     fn from(value: &PatuiStep) -> Self {
         PatuiStepEditable {
             name: value.name.clone(),
-            path: value.path.clone(),
+            plugin: value.plugin.clone(),
             when: Some(value.when.clone()),
             depends_on: Some(value.depends_on.iter().map(|x| x.into()).collect()),
-            config: Some(value.config.clone()),
-            run: value.run.clone(),
-            r#in: Some(
+            run: value.function.clone(),
+            args: Some(
                 value
-                    .r#in
+                    .args
                     .iter()
                     .map(|(k, v)| (k.clone(), v.into()))
                     .collect(),
@@ -260,17 +324,15 @@ mod tests {
             description: test description
             steps:
               - name: foo
-                path: foo
+                plugin: foo
                 when: foobar == barfoo
                 run: foo
               - name: bar
-                path: bar
+                plugin: bar
                 depends_on:
                   - foo
                 run: bar
-                config:
-                  foo: bar
-                in:
+                args:
                   foo: foo.bar
             "#,
         );
@@ -282,21 +344,19 @@ mod tests {
         assert_that!(details.steps).has_length(2);
         assert_that!(details.steps[0]).is_equal_to(PatuiStep {
             name: "foo".to_string(),
-            path: "foo".to_string(),
+            plugin: "foo".to_string(),
             when: Some("foobar == barfoo".to_string()),
             depends_on: vec![],
-            config: HashMap::new(),
-            run: "foo".to_string(),
-            r#in: HashMap::new(),
+            function: "foo".to_string(),
+            args: HashMap::new(),
         });
         assert_that!(details.steps[1]).is_equal_to(PatuiStep {
             name: "bar".to_string(),
-            path: "bar".to_string(),
+            plugin: "bar".to_string(),
             when: None,
             depends_on: vec!["foo".to_string()],
-            config: HashMap::from([("foo".to_string(), "bar".to_string())]),
-            run: "bar".to_string(),
-            r#in: HashMap::from([("foo".to_string(), "foo.bar".try_into().unwrap())]),
+            function: "bar".to_string(),
+            args: HashMap::from([("foo".to_string(), "foo.bar".try_into().unwrap())]),
         });
     }
 

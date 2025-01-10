@@ -18,6 +18,8 @@ mod data;
 mod eval;
 mod lexer;
 mod parser;
+mod query;
+mod visitor;
 
 pub use ast::{PatuiExpr, PatuiExprError};
 pub use data::{PatuiData, PatuiDataInner};

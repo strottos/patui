@@ -11,7 +11,13 @@
 
 mod functions;
 
-#[ptplugin::main(JqPluginServer, build_struct = (functions::Transform))]
+#[ptplugin::main(
+    JqPluginServer,
+    name = "jq",
+    description = "Perform transforms on JSON data similar to the `jq` CLI tool.",
+    r#type = "transform",
+    build_struct = (functions::Transform),
+)]
 fn main() -> ptplugin::Result<()> {
     Ok(())
 }

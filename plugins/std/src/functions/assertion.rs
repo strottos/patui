@@ -1,12 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
-use eyre::Result;
-use tokio::sync::{mpsc, Mutex};
-use tonic::Status;
-
 use ptplugin::{
-    eval_patui_expr, plugin_server::run, EvalError, FunctionService, PatuiData, PatuiDataInner,
-    PatuiEvent, PatuiExpr,
+    eval_patui_expr,
+    tokio::{
+        self,
+        sync::{mpsc, Mutex},
+    },
+    EvalError, FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr, Result,
 };
 
 pub(crate) struct Assertion;
@@ -15,15 +15,18 @@ impl FunctionService for Assertion {
     fn run(
         &self,
         args: HashMap<String, String>,
-        tx: mpsc::Sender<std::result::Result<run::Response, Status>>,
+        tx: mpsc::Sender<(String, PatuiEvent)>,
         results: Arc<Mutex<PatuiData>>,
         mut waker_rx: mpsc::Receiver<()>,
     ) -> Result<tokio::task::JoinHandle<()>> {
         Ok(tokio::spawn(async move {
             let Some(expr) = &args.get("expr") else {
-                tx.send(Err(Status::invalid_argument("Missing expr argument")))
-                    .await
-                    .unwrap();
+                tx.send((
+                    "Err".to_string(),
+                    PatuiEvent::Error("Missing expr argument".to_string()),
+                ))
+                .await
+                .unwrap();
 
                 return;
             };
@@ -31,10 +34,10 @@ impl FunctionService for Assertion {
             let expr: PatuiExpr = match expr.as_str().try_into() {
                 Ok(expr) => expr,
                 Err(e) => {
-                    tx.send(Err(Status::invalid_argument(format!(
-                        "Invalid expr: {}",
-                        e
-                    ))))
+                    tx.send((
+                        "Err".to_string(),
+                        PatuiEvent::Error(format!("Invalid expr: {}", e)),
+                    ))
                     .await
                     .unwrap();
                     return;
@@ -62,12 +65,12 @@ impl FunctionService for Assertion {
                                     // We know the result, after it's sent we're done
                                     if b {
                                         PatuiEvent::Results(
-                                            "assertion".to_string(),
+                                            PatuiExpr::try_from("assertion").unwrap(),
                                             PatuiData::Known(PatuiDataInner::Bool(true)),
                                         )
                                     } else {
                                         PatuiEvent::Failure(
-                                            "assertion".to_string(),
+                                            PatuiExpr::try_from("assertion").unwrap(),
                                             format!("evaluated expr to false: {}", expr),
                                         )
                                     }
@@ -77,24 +80,27 @@ impl FunctionService for Assertion {
                                     inner, expr,
                                 )),
                             },
-                            PatuiData::Pending(inner) => todo!(),
-                            PatuiData::Unknown => todo!(),
+                            PatuiData::Pending(inner) => match inner {
+                                PatuiDataInner::Bool(b) => {
+                                    // We know the result, after it's sent we're done
+                                    if b {
+                                        PatuiEvent::Log("assertion expected to pass".to_string())
+                                    } else {
+                                        PatuiEvent::Log("assertion expected to faile".to_string())
+                                    }
+                                }
+                                _ => PatuiEvent::Error(format!(
+                                    "Assertion error, evaluated to type {}: {}",
+                                    inner, expr,
+                                )),
+                            },
+                            PatuiData::Unknown => PatuiEvent::Error("Data not found".to_string()),
                         };
 
-                        let res = match result.try_into() {
-                            Ok(r) => Ok(run::Response {
-                                name: "eval".to_string(),
-                                data: Some(r),
-                                diagnostics: vec![],
-                            }),
-                            Err(e) => {
-                                Err(Status::internal(format!("Error converting result: {}", e)))
-                            }
-                        };
-
-                        tx.send(res).await.unwrap();
+                        tx.send(("eval".to_string(), result)).await.unwrap();
 
                         if finished {
+                            tracing::trace!("Sent assertion response");
                             break;
                         }
                     }
@@ -104,9 +110,12 @@ impl FunctionService for Assertion {
                                 tracing::debug!(
                                     "Results are known, but data not found, failing and bailing"
                                 );
-                                tx.send(Err(Status::not_found("Data not found".to_string())))
-                                    .await
-                                    .unwrap();
+                                tx.send((
+                                    "Err".to_string(),
+                                    PatuiEvent::Error("Data not found".to_string()),
+                                ))
+                                .await
+                                .unwrap();
                                 break;
                             } else {
                                 tracing::debug!(

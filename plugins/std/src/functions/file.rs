@@ -1,14 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use eyre::Result;
-use tokio::{
-    fs::read_to_string,
-    sync::{mpsc, Mutex},
-};
-
 use ptplugin::{
-    eval_patui_expr, plugin_server::run, FunctionService, PatuiData, PatuiDataInner, PatuiEvent,
-    PatuiExpr,
+    eval_patui_expr,
+    tokio::{
+        self,
+        fs::read_to_string,
+        sync::{mpsc, Mutex},
+    },
+    FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr, Result,
 };
 
 pub(crate) struct FileRead;
@@ -17,17 +16,18 @@ impl FunctionService for FileRead {
     fn run(
         &self,
         args: HashMap<String, String>,
-        tx: mpsc::Sender<std::result::Result<run::Response, tonic::Status>>,
+        tx: mpsc::Sender<(String, PatuiEvent)>,
         _results: Arc<Mutex<PatuiData>>,
         _waker_rx: mpsc::Receiver<()>,
     ) -> Result<tokio::task::JoinHandle<()>> {
         let task = tokio::spawn(async move {
             let Some(path) = args.get("path") else {
-                let _ = tx
-                    .send(Err(tonic::Status::invalid_argument(
-                        "Missing required argument 'path'",
-                    )))
-                    .await;
+                tx.send((
+                    "Err".to_string(),
+                    PatuiEvent::Error("Missing required argument 'path'".to_string()),
+                ))
+                .await
+                .unwrap();
                 return;
             };
 
@@ -38,11 +38,14 @@ impl FunctionService for FileRead {
                     match path.try_into() {
                         Ok(path) => path,
                         Err(e2) => {
-                            let _ = tx
-                                .send(Err(tonic::Status::invalid_argument(format!(
-                                    "Invalid argument for 'path': {e1}, {e2}",
-                                ))))
-                                .await;
+                            tx.send((
+                                "Err".to_string(),
+                                PatuiEvent::Error(format!(
+                                    "Invalid argument for 'path': {e1}, {e2}"
+                                )),
+                            ))
+                            .await
+                            .unwrap();
                             return;
                         }
                     }
@@ -55,33 +58,43 @@ impl FunctionService for FileRead {
             ) {
                 Ok(path) => path,
                 Err(e) => {
-                    let _ = tx
-                        .send(Err(tonic::Status::invalid_argument(format!(
+                    tx.send((
+                        "Err".to_string(),
+                        PatuiEvent::Error(format!(
                             "Couldn't evaluate argument 'path' argument for reading file from: {}",
                             e
-                        ))))
-                        .await;
+                        )),
+                    ))
+                    .await
+                    .unwrap();
                     return;
                 }
             };
 
             if !path.is_known() {
-                let _ = tx
-                    .send(Err(tonic::Status::invalid_argument(
-                        "Invalid argument 'path', file read path must always be known data",
-                    )))
-                    .await;
+                tx.send((
+                    "Err".to_string(),
+                    PatuiEvent::Error(
+                        "Invalid argument 'path', file read path must always be known data"
+                            .to_string(),
+                    ),
+                ))
+                .await
+                .unwrap();
                 return;
             }
 
             let path = match path {
                 PatuiData::Known(PatuiDataInner::String(s)) => s,
                 _ => {
-                    let _ = tx
-                        .send(Err(tonic::Status::invalid_argument(
-                            "Invalid argument 'path', file read path must be a string",
-                        )))
-                        .await;
+                    tx.send((
+                        "Err".to_string(),
+                        PatuiEvent::Error(
+                            "Invalid argument 'path', file read path must be a string".to_string(),
+                        ),
+                    ))
+                    .await
+                    .unwrap();
                     return;
                 }
             };
@@ -89,41 +102,41 @@ impl FunctionService for FileRead {
             let data = match read_to_string(&path).await {
                 Ok(data) => data,
                 Err(e) => {
-                    let _ = tx
-                        .send(Err(tonic::Status::invalid_argument(format!(
+                    tx.send((
+                        "Err".to_string(),
+                        PatuiEvent::Error(format!(
                             "Couldn't read file from path '{}': {}",
                             path, e
-                        ))))
-                        .await;
+                        )),
+                    ))
+                    .await
+                    .unwrap();
                     return;
                 }
             };
 
             let event = PatuiEvent::Results(
-                "file_data".to_string(),
+                PatuiExpr::try_from("file_data").unwrap(),
                 PatuiData::Known(PatuiDataInner::String(data)),
             );
 
             let event = match event.try_into() {
                 Ok(event) => event,
                 Err(e) => {
-                    let _ = tx
-                        .send(Err(tonic::Status::invalid_argument(format!(
+                    tx.send((
+                        "Err".to_string(),
+                        PatuiEvent::Error(format!(
                             "Couldn't convert file read event to response: {}",
                             e
-                        ))))
-                        .await;
+                        )),
+                    ))
+                    .await
+                    .unwrap();
                     return;
                 }
             };
 
-            let _ = tx
-                .send(Ok(run::Response {
-                    name: "file_read".to_string(),
-                    diagnostics: vec![],
-                    data: Some(event),
-                }))
-                .await;
+            tx.send(("file_read".to_string(), event)).await.unwrap();
         });
 
         Ok(task)
