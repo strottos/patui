@@ -62,8 +62,8 @@ fn init_logging_function() -> TokenStream {
                 .with_file(false)
                 .with_line_number(false)
                 .with_target(true)
-                .with_ansi(false);
-                //.without_time();
+                .with_ansi(false)
+                .without_time();
 
             Registry::default().with(filter).with(fmt_layer).init();
 
@@ -133,8 +133,8 @@ fn init_server_structures(config: &Config) -> TokenStream {
             ),
 
             run_done_channel: (
-                std::sync::Mutex<Option<ptplugin::tokio::sync::broadcast::Sender<()>>>,
-                std::sync::Mutex<Option<ptplugin::tokio::sync::broadcast::Receiver<()>>>,
+                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
+                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Receiver<()>>>,
             ),
             produce_results_done_channel: (
                 std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
@@ -144,6 +144,8 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
                 std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Receiver<()>>>,
             ),
+            receive_results_cancel_tx:
+                std::sync::Mutex<Option<ptplugin::tokio::sync::broadcast::Sender<()>>>,
 
             expected_acks: std::sync::Arc<ptplugin::tokio::sync::Mutex<std::collections::HashMap<i64, ptplugin::tokio::sync::oneshot::Sender<()>>>>,
         }
@@ -154,9 +156,10 @@ fn init_server_structures(config: &Config) -> TokenStream {
 
                 let (produced_results_tx, produced_results_rx) = ptplugin::tokio::sync::mpsc::channel(1);
 
-                let (run_done_tx, run_done_rx) = ptplugin::tokio::sync::broadcast::channel(1);
+                let (run_done_oneshot_tx, run_done_oneshot_rx) = ptplugin::tokio::sync::oneshot::channel();
                 let (produce_results_done_tx, produce_results_done_rx) = ptplugin::tokio::sync::oneshot::channel();
                 let (receive_results_done_tx, receive_results_done_rx) = ptplugin::tokio::sync::oneshot::channel();
+                let (receive_results_cancel_tx, _) = ptplugin::tokio::sync::broadcast::channel(1);
 
                 Self {
                     shutdown_signal: ptplugin::tokio::sync::Mutex::new(Some(shutdown_signal)),
@@ -174,8 +177,8 @@ fn init_server_structures(config: &Config) -> TokenStream {
                     ),
 
                     run_done_channel: (
-                        std::sync::Mutex::new(Some(run_done_tx)),
-                        std::sync::Mutex::new(Some(run_done_rx)),
+                        std::sync::Mutex::new(Some(run_done_oneshot_tx)),
+                        std::sync::Mutex::new(Some(run_done_oneshot_rx)),
                     ),
                     produce_results_done_channel: (
                         std::sync::Mutex::new(Some(produce_results_done_tx)),
@@ -185,6 +188,8 @@ fn init_server_structures(config: &Config) -> TokenStream {
                         std::sync::Mutex::new(Some(receive_results_done_tx)),
                         std::sync::Mutex::new(Some(receive_results_done_rx)),
                     ),
+                    receive_results_cancel_tx:
+                        std::sync::Mutex::new(Some(receive_results_cancel_tx)),
 
                     expected_acks: std::sync::Arc::new(ptplugin::tokio::sync::Mutex::new(std::collections::HashMap::new())),
                 }
@@ -249,6 +254,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 match function_service.run(request.args.clone(), produced_results_tx, self.results.clone(), waker_rx) {
                     Ok(task) => {
                         let run_done_tx = self.run_done_channel.0.lock().unwrap().take().unwrap();
+                        let receive_results_cancel_tx = self.receive_results_cancel_tx.lock().unwrap().clone().unwrap();
                         ptplugin::tokio::spawn(async move {
                             ptplugin::tracing::trace!("Awaiting run task completion");
                             if let Err(e) = task.await {
@@ -256,8 +262,9 @@ fn init_server_structures(config: &Config) -> TokenStream {
                             }
                             ptplugin::tracing::trace!("Run task complete");
                             if let Err(e) = run_done_tx.send(()) {
-                                panic!("Error notifying run task done: {:?}", e);
+                                tracing::warn!("Error notifying run task done: {:?}", e);
                             }
+                            let _ = receive_results_cancel_tx.send(());
                             ptplugin::tracing::trace!("Run task done notified");
                         });
                     }
@@ -376,26 +383,43 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 let results = self.results.clone();
                 let waker_tx = self.waker_channel.0.lock().unwrap().take().unwrap();
                 let done_tx = self.receive_results_done_channel.0.lock().unwrap().take().unwrap();
+                let receive_results_cancel_tx = self.receive_results_cancel_tx.lock().unwrap().clone().unwrap();
 
                 let output = ptplugin::async_stream::try_stream! {
-                    while let Some(Ok(message)) = stream.next().await {
-                        ptplugin::tracing::info!("Results received: {:?}", message);
+                    loop {
+                        let mut receive_results_cancel_rx = receive_results_cancel_tx.subscribe();
+                        tracing::trace!("HELLO1");
+                        ptplugin::tokio::select! {
+                            message = stream.next() => {
+                                tracing::trace!("HELLO2");
+                                let message = match message {
+                                    Some(Ok(message)) => message,
+                                    _ => break,
+                                };
 
-                        let data: ptplugin::PatuiData = message.results.unwrap().try_into().unwrap();
+                                ptplugin::tracing::info!("Results received: {:?}", message);
 
-                        ptplugin::tracing::debug!("Results: {:?}", data);
+                                let data: ptplugin::PatuiData = message.results.unwrap().try_into().unwrap();
 
-                        let mut lock = results.lock().await;
-                        *lock = data;
-                        if let Err(e) = waker_tx.send(()).await {
-                            panic!("Error sending wakeup call: {:?}", e);
+                                ptplugin::tracing::debug!("Results: {:?}", data);
+
+                                let mut lock = results.lock().await;
+                                *lock = data;
+                                if let Err(e) = waker_tx.send(()).await {
+                                    panic!("Error sending wakeup call: {:?}", e);
+                                }
+
+                                let result = ptplugin::plugin_server::receive_results::Response {
+                                    diagnostics: vec![],
+                                };
+
+                                yield result.clone();
+                            }
+                            done = receive_results_cancel_rx.recv() => {
+                                tracing::trace!("HELLO3");
+                                break;
+                            }
                         }
-
-                        let result = ptplugin::plugin_server::receive_results::Response {
-                            diagnostics: vec![],
-                        };
-
-                        yield result.clone();
                     }
 
                     ptplugin::tracing::info!("Publish stream ended");
@@ -426,8 +450,6 @@ fn init_server_structures(config: &Config) -> TokenStream {
             ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::wait::Response>, ptplugin::tonic::Status> {
                 ptplugin::tracing::info!("Request wait: {:?}", request.remote_addr());
 
-                let mut run_done_rx = self.run_done_channel.1.lock().unwrap().take().unwrap();
-                let produce_results_done_rx = self.produce_results_done_channel.1.lock().unwrap().take().unwrap();
                 let receive_results_done_rx = self.receive_results_done_channel.1.lock().unwrap().take().unwrap();
 
                 if let Err(e) = receive_results_done_rx.await {
@@ -435,11 +457,15 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 }
                 ptplugin::tracing::trace!("Receive results notify received");
 
-                if let Err(e) = run_done_rx.recv().await {
+                let mut run_done_rx = self.run_done_channel.1.lock().unwrap().take().unwrap();
+                                tracing::trace!("HELLO4");
+                if let Err(e) = run_done_rx.await {
+                                tracing::trace!("HELLO5");
                     panic!("Error waiting for run done: {:?}", e);
                 }
                 ptplugin::tracing::trace!("Run done notify received");
 
+                let produce_results_done_rx = self.produce_results_done_channel.1.lock().unwrap().take().unwrap();
                 if let Err(e) = produce_results_done_rx.await {
                     panic!("Error waiting for produce results done: {:?}", e);
                 }

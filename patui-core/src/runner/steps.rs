@@ -8,7 +8,7 @@ use thiserror::Error;
 use tokio::{
     io::AsyncBufReadExt,
     process::{Child, Command},
-    sync::{broadcast, mpsc, oneshot, Mutex, RwLock},
+    sync::{broadcast, mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
 use tonic::{transport::Channel, Request};
@@ -21,7 +21,7 @@ use crate::{
     utils::get_unused_localhost_port,
 };
 
-use super::{PatuiEvent, PatuiEventWithTimestamp};
+use super::PatuiEventWithTimestamp;
 
 #[cfg(target_os = "windows")]
 const PATH_SEPARATOR: char = ';';
@@ -158,36 +158,42 @@ impl PatuiStepRunner {
                 let run_span = tracing::info_span!("run_stream");
                 let step_name = step.name.clone();
                 let function_name = step.function;
+                let client_socket_clone = client_socket.clone();
                 let run_task = tokio::spawn(
                     async move {
+                        let mut client_socket = client_socket_clone;
                         loop {
-                            let response = results_stream.message().await;
-                            let response = match response {
-                                Ok(Some(response)) => response,
+                            let result = results_stream.message().await;
+                            let result = match result {
+                                Ok(Some(result)) => result,
                                 _ => {
-                                    tracing::debug!("Stream ended: {:?}", response);
+                                    tracing::debug!("Stream ended: {:?}", result);
                                     break;
                                 }
                             };
-                            tracing::trace!("Got response from plugin: {:?}", response);
-                            let event = response.data.unwrap().try_into().unwrap();
-                            tracing::trace!("Got event message from plugin: {:?}", event);
-                            match tx
+                            tracing::trace!("Got response from plugin: {:?}", result);
+
+                            let request = Request::new(ptplugin::ack_result::Request {
+                                id: result.id,
+                                name: result.name.clone(),
+                            });
+                            let resp = client_socket
+                                .ack_result(request)
+                                .await
+                                .unwrap()
+                                .into_inner();
+                            tracing::trace!("Ack response: {:?}", resp);
+
+                            let event = result.data.unwrap().try_into().unwrap();
+                            if let Err(e) = tx
                                 .send((
-                                    vec![
-                                        step_name.clone(),
-                                        function_name.clone(),
-                                        response.name.clone(),
-                                    ],
+                                    vec![step_name.clone(), function_name.clone(), result.name],
                                     event,
                                 ))
                                 .await
                             {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    tracing::error!("Failed to send event: {}", e);
-                                    break;
-                                }
+                                tracing::error!("Failed to send event: {}", e);
+                                break;
                             }
                         }
                     }
@@ -196,39 +202,38 @@ impl PatuiStepRunner {
 
                 run_tx.send(()).unwrap();
 
-                // let step_name = step.name.clone();
+                // Plugin receiving results from Patui
+                let outbound = async_stream::stream! {
+                    loop {
+                        let results = waker_rx.recv().await;
+                        let Ok(results) = results else {
+                            tracing::trace!("Publishing problem: {:?}", results);
+                            break;
+                        };
+                        tracing::trace!("Woke up: {:?}", results);
 
-                // let outbound = async_stream::stream! {
-                //     loop {
-                //         let results = waker_rx.recv().await;
-                //         let Ok(results) = results else {
-                //             tracing::trace!("Publishing problem: {:?}", results);
-                //             break;
-                //         };
-                //         tracing::trace!("Woke up: {:?}", results);
+                        yield ptplugin::receive_results::Request {
+                            results: Some(results.try_into().unwrap()),
+                        }
+                    }
+                };
 
-                //         yield ptplugin::publish::Request {
-                //             results: Some(results.try_into().unwrap()),
-                //         }
-                //     }
-                // };
+                let mut response = client_socket
+                    .receive_results(Request::new(outbound))
+                    .await
+                    .unwrap()
+                    .into_inner();
 
-                // let mut response = client_socket
-                //     .publish(Request::new(outbound))
-                //     .await
-                //     .unwrap()
-                //     .into_inner();
-
-                // // TODO: Handle errors
-                // loop {
-                //     let msg = response.message().await;
-                //     if let Ok(Some(resp)) = msg {
-                //         tracing::trace!("Got message: {:?}", resp);
-                //     } else {
-                //         tracing::trace!("Stream problem: {:?}", msg);
-                //         break;
-                //     }
-                // }
+                // TODO: Handle errors
+                loop {
+                    let msg = response.message().await;
+                    if let Ok(Some(resp)) = msg {
+                        tracing::trace!("Got message: {:?}", resp);
+                    } else {
+                        tracing::trace!("Stream problem: {:?}", msg);
+                        break;
+                    }
+                }
 
                 tracing::trace!("Awaiting plugin run");
 
@@ -518,13 +523,18 @@ mod tests {
             ));
         }
 
-        assert_that!(res_rx.recv().await).is_none();
+        let res = timeout(Duration::from_secs(1), res_rx.recv()).await;
+        assert_that!(res).is_ok();
+        let res = res.unwrap();
+        assert_that!(res).is_none();
 
         drop(waker_tx);
         drop(res_rx);
 
-        assert_that!(task.await).is_ok();
-        panic!("LOGS");
+        let ret = timeout(Duration::from_secs(2), task).await;
+        assert_that!(ret).is_ok();
+        let ret = ret.unwrap();
+        assert_that!(ret).is_ok();
     }
 
     #[traced_test]
