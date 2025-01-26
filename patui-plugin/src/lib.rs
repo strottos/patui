@@ -22,7 +22,7 @@ pub use patui_plugin_macros::main;
 pub mod plugin_server {
     pub use patui_core::ptplugin::{
         ack_result, get_info, init, plugin_service_server::*, produce_results, receive_results,
-        run, shutdown, wait, StepRunner,
+        run, shutdown, wait, ResultType, StepRunner,
     };
 }
 

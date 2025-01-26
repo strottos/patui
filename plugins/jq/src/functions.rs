@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use ptplugin::{
     eval_patui_expr,
+    plugin_server::ResultType,
     tokio::{
         self,
         sync::{mpsc, Mutex},
@@ -89,8 +90,10 @@ impl FunctionService for Transform {
                                 return;
                             }
                         };
-                        let event = PatuiEvent::Results(
+                        PatuiEvent::Results(
                             PatuiExpr::try_from("out").unwrap(),
+                            true.into(),
+                            ResultType::Append.into(),
                             match try_convert_serde_json_to_patui_data(json) {
                                 Ok(json) => json,
                                 Err(e) => {
@@ -106,19 +109,7 @@ impl FunctionService for Transform {
                                     return;
                                 }
                             },
-                        );
-                        match event.try_into() {
-                            Ok(event) => event,
-                            Err(e) => {
-                                tx.send((
-                                    "Err".to_string(),
-                                    PatuiEvent::Error(format!("Data failed to evaluate: {}", e)),
-                                ))
-                                .await
-                                .unwrap();
-                                return;
-                            }
-                        }
+                        )
                     }
                     _ => {
                         tx.send(("Err".to_string(), PatuiEvent::Error(
@@ -155,7 +146,7 @@ fn try_convert_serde_json_to_patui_data(
         serde_json::Value::Array(value) => {
             let value = value
                 .into_iter()
-                .map(|x| try_convert_serde_json_to_patui_data(x))
+                .map(try_convert_serde_json_to_patui_data)
                 .collect::<Result<Vec<_>>>()?;
             Ok(PatuiData::Known(PatuiDataInner::List(value)))
         }

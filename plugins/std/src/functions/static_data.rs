@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use ptplugin::{
     eval_patui_expr,
+    plugin_server::ResultType,
     tokio::{
         self,
         sync::{mpsc, Mutex},
@@ -93,6 +94,8 @@ impl FunctionService for StaticData {
                         }
                         ret.push(PatuiEvent::Results(
                             PatuiExpr::try_from("data").unwrap(),
+                            true.into(),
+                            ResultType::Append.into(),
                             item,
                         ));
                     }
@@ -100,6 +103,8 @@ impl FunctionService for StaticData {
                 }
                 _ => vec![PatuiEvent::Results(
                     PatuiExpr::try_from("data").unwrap(),
+                    true.into(),
+                    ResultType::Append.into(),
                     data,
                 )],
             };

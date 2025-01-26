@@ -303,7 +303,6 @@ fn init_server_structures(config: &Config) -> TokenStream {
                             Ok(r) => {
                                 Ok(ptplugin::plugin_server::produce_results::Request {
                                     id,
-                                    name,
                                     data: Some(r),
                                     diagnostics: vec![],
                                 })
@@ -404,14 +403,20 @@ fn init_server_structures(config: &Config) -> TokenStream {
                                 ptplugin::tracing::debug!("Results: {:?}", data);
 
                                 let mut lock = results.lock().await;
+                        tracing::trace!("HELLO6");
+                                // TODO: Merge
                                 *lock = data;
+                        tracing::trace!("HELLO7");
                                 if let Err(e) = waker_tx.send(()).await {
+                        tracing::trace!("HELLO8");
                                     panic!("Error sending wakeup call: {:?}", e);
                                 }
+                        tracing::trace!("HELLO9");
 
                                 let result = ptplugin::plugin_server::receive_results::Response {
                                     diagnostics: vec![],
                                 };
+                        tracing::trace!("HELLO10");
 
                                 yield result.clone();
                             }

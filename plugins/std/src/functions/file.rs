@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use ptplugin::{
     eval_patui_expr,
+    plugin_server::ResultType,
     tokio::{
         self,
         fs::read_to_string,
@@ -117,6 +118,8 @@ impl FunctionService for FileRead {
 
             let event = PatuiEvent::Results(
                 PatuiExpr::try_from("file_data").unwrap(),
+                true.into(),
+                ResultType::Append.into(),
                 PatuiData::Known(PatuiDataInner::String(data)),
             );
 

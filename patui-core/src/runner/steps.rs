@@ -55,7 +55,12 @@ pub(crate) struct PatuiStepRunner {
     plugin_process: Option<Arc<Mutex<Child>>>,
     client_socket: Option<PluginServiceClient<Channel>>,
 
-    waker_rx: Option<broadcast::Receiver<PatuiData>>,
+    /// Type consists of:
+    ///   * String for the step name
+    ///   * String for the function name
+    ///   * String for the result name
+    ///   * The PatuiData to append to the list `steps.<step_name>.<function_name>.<result_name>`
+    waker_rx: Option<broadcast::Receiver<(String, String, String, PatuiData)>>,
 
     // Used for signaling the wait step the run has been triggered.
     run_tx: Option<oneshot::Sender<()>>,
@@ -63,7 +68,10 @@ pub(crate) struct PatuiStepRunner {
 }
 
 impl PatuiStepRunner {
-    pub(crate) fn new(step: &PatuiStep, waker_rx: broadcast::Receiver<PatuiData>) -> Self {
+    pub(crate) fn new(
+        step: &PatuiStep,
+        waker_rx: broadcast::Receiver<(String, String, String, PatuiData)>,
+    ) -> Self {
         let (run_tx, run_rx) = oneshot::channel();
 
         Self {
@@ -115,7 +123,7 @@ impl PatuiStepRunner {
 
     pub(crate) fn run(
         &mut self,
-        tx: mpsc::Sender<(Vec<String>, PatuiEventWithTimestamp)>,
+        tx: mpsc::Sender<(String, String, PatuiEventWithTimestamp)>,
     ) -> Result<(), PatuiStepRunnerError> {
         let span = tracing::info_span!(
             "run",
@@ -173,10 +181,8 @@ impl PatuiStepRunner {
                             };
                             tracing::trace!("Got response from plugin: {:?}", result);
 
-                            let request = Request::new(ptplugin::ack_result::Request {
-                                id: result.id,
-                                name: result.name.clone(),
-                            });
+                            let request =
+                                Request::new(ptplugin::ack_result::Request { id: result.id });
                             let resp = client_socket
                                 .ack_result(request)
                                 .await
@@ -186,10 +192,7 @@ impl PatuiStepRunner {
 
                             let event = result.data.unwrap().try_into().unwrap();
                             if let Err(e) = tx
-                                .send((
-                                    vec![step_name.clone(), function_name.clone(), result.name],
-                                    event,
-                                ))
+                                .send((step_name.clone(), function_name.clone(), event))
                                 .await
                             {
                                 tracing::error!("Failed to send event: {}", e);
@@ -206,13 +209,17 @@ impl PatuiStepRunner {
                 let outbound = async_stream::stream! {
                     loop {
                         let results = waker_rx.recv().await;
-                        let Ok(results) = results else {
+                        let Ok((step_name, function_name, result_name, results)) = results else {
                             tracing::trace!("Publishing problem: {:?}", results);
                             break;
                         };
                         tracing::trace!("Woke up: {:?}", results);
 
                         yield ptplugin::receive_results::Request {
+                            step_name,
+                            function_name,
+                            result_name,
+                            r#type: ptplugin::ResultType::Append.into(),
                             results: Some(results.try_into().unwrap()),
                         }
                     }
@@ -249,7 +256,7 @@ impl PatuiStepRunner {
 
     pub(crate) async fn wait(
         &mut self,
-        tx: mpsc::Sender<(Vec<String>, PatuiEventWithTimestamp)>,
+        tx: mpsc::Sender<(String, String, PatuiEventWithTimestamp)>,
     ) -> Result<(), PatuiStepRunnerError> {
         let span = tracing::info_span!("wait", step_name = self.step.name);
         let _guard = span.enter();
@@ -444,16 +451,18 @@ impl PatuiStepRunner {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc, time::Duration};
+    use std::{collections::HashMap, time::Duration};
 
     use assertor::*;
     use tokio::{
-        sync::{broadcast, mpsc, RwLock},
+        sync::{broadcast, mpsc},
         time::timeout,
     };
     use tracing_test::traced_test;
 
-    use crate::{templates::PatuiStep, PatuiData, PatuiDataInner, PatuiExpr};
+    use crate::{
+        runner::events::ResultType, templates::PatuiStep, PatuiData, PatuiDataInner, PatuiExpr,
+    };
 
     use super::PatuiStepRunner;
 
@@ -515,10 +524,12 @@ mod tests {
             assert_that!(recv).is_some();
             let recv = recv.unwrap();
 
-            let value = &recv.1.value;
+            let value = &recv.2.value;
             assert_that!(value.is_results()).is_true();
             assert_that!(value.as_results().unwrap()).is_equal_to((
                 &PatuiExpr::try_from("data").unwrap(),
+                &true.into(),
+                &ResultType::Append,
                 &PatuiData::Known(expected_recv),
             ));
         }
@@ -573,13 +584,18 @@ mod tests {
         });
 
         waker_tx
-            .send(PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+            .send((
+                "foo".to_string(),
+                "foo".to_string(),
                 "foo".to_string(),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
-                    "bar".to_string(),
-                    PatuiData::Known(PatuiDataInner::Integer(1)),
+                    "foo".to_string(),
+                    PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
+                        "bar".to_string(),
+                        PatuiData::Known(PatuiDataInner::Integer(1)),
+                    )]))),
                 )]))),
-            )]))))
+            ))
             .unwrap();
 
         let recv = timeout(Duration::from_secs(1), res_rx.recv()).await;
@@ -588,10 +604,12 @@ mod tests {
         assert_that!(recv).is_some();
         let recv = recv.unwrap();
 
-        let value = &recv.1.value;
+        let value = &recv.2.value;
         assert_that!(value.is_results()).is_true();
         assert_that!(value.as_results().unwrap()).is_equal_to((
             &PatuiExpr::try_from("assertion").unwrap(),
+            &true.into(),
+            &ResultType::Append,
             &PatuiData::Known(PatuiDataInner::Bool(true)),
         ));
 

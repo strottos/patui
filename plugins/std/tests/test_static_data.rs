@@ -7,7 +7,9 @@ use tracing_test::traced_test;
 
 use ptplugin::{
     async_stream,
-    plugin_server::{ack_result, produce_results, receive_results, run, shutdown, wait},
+    plugin_server::{
+        ack_result, produce_results, receive_results, run, shutdown, wait, ResultType,
+    },
     run_plugin, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp, PatuiExpr,
 };
 
@@ -47,6 +49,10 @@ async fn static_data_null() {
                 tracing::trace!("Got results from receiver: {:?}", results);
 
                 yield receive_results::Request {
+                    step_name: "static_data".to_string(),
+                    function_name: "static_data".to_string(),
+                    result_name: "data".to_string(),
+                    r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
                 }
             }
@@ -69,15 +75,13 @@ async fn static_data_null() {
     assert_that!(response).is_some();
     let response = response.unwrap();
     assert_that!(response.diagnostics).has_length(0);
-    assert_that!(response.name).is_equal_to("static_data".to_string());
     assert_that!(response.data).is_some();
     let id = response.id;
-    let name = response.name;
     let data = response.data;
 
     let response = timeout(
         Duration::from_secs(1),
-        client.ack_result(ack_result::Request { id, name }),
+        client.ack_result(ack_result::Request { id }),
     )
     .await;
     assert_that!(response).is_ok();
@@ -89,6 +93,8 @@ async fn static_data_null() {
     let event = event.unwrap();
     assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
         PatuiExpr::try_from("data").unwrap(),
+        true.into(),
+        ResultType::Append.into(),
         PatuiData::Known(PatuiDataInner::Null),
     ));
 
@@ -142,6 +148,10 @@ async fn static_data_list() {
                 tracing::trace!("Got results from receiver: {:?}", results);
 
                 yield receive_results::Request {
+                    step_name: "static_data".to_string(),
+                    function_name: "static_data".to_string(),
+                    result_name: "data".to_string(),
+                    r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
                 }
             }
@@ -165,15 +175,13 @@ async fn static_data_list() {
         assert_that!(response).is_some();
         let response = response.unwrap();
         assert_that!(response.diagnostics).has_length(0);
-        assert_that!(response.name).is_equal_to("static_data".to_string());
         assert_that!(response.data).is_some();
         let id = response.id;
-        let name = response.name;
         let data = response.data;
 
         let response = timeout(
             Duration::from_secs(1),
-            client.ack_result(ack_result::Request { id, name }),
+            client.ack_result(ack_result::Request { id }),
         )
         .await;
         assert_that!(response).is_ok();
@@ -185,6 +193,8 @@ async fn static_data_list() {
         let event = event.unwrap();
         assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
             PatuiExpr::try_from("data").unwrap(),
+            true.into(),
+            ResultType::Append.into(),
             PatuiData::Known(PatuiDataInner::Integer(i)),
         ));
     }

@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use ptplugin::{
     eval_patui_expr,
+    plugin_server::ResultType,
     tokio::{
         self,
         sync::{mpsc, Mutex},
@@ -61,20 +62,12 @@ impl FunctionService for Assertion {
                         );
                         let result = match result {
                             PatuiData::Known(inner) => match inner {
-                                PatuiDataInner::Bool(b) => {
-                                    // We know the result, after it's sent we're done
-                                    if b {
-                                        PatuiEvent::Results(
-                                            PatuiExpr::try_from("assertion").unwrap(),
-                                            PatuiData::Known(PatuiDataInner::Bool(true)),
-                                        )
-                                    } else {
-                                        PatuiEvent::Failure(
-                                            PatuiExpr::try_from("assertion").unwrap(),
-                                            format!("evaluated expr to false: {}", expr),
-                                        )
-                                    }
-                                }
+                                PatuiDataInner::Bool(b) => PatuiEvent::Results(
+                                    PatuiExpr::try_from("assertion").unwrap(),
+                                    b.into(),
+                                    ResultType::Append.into(),
+                                    PatuiData::Known(PatuiDataInner::Bool(b)),
+                                ),
                                 _ => PatuiEvent::Error(format!(
                                     "Assertion error, evaluated to type {}: {}",
                                     inner, expr,

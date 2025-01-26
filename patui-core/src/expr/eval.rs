@@ -68,6 +68,23 @@ pub fn eval(expr: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
     }
 }
 
+/// Evaluate the expression to it's minimal expression.
+/// TODO
+pub fn eval_ident(expr: &PatuiExpr, results: &PatuiData) -> Result<String, EvalError> {
+    match expr.expr() {
+        Expr::Term(vec) => {
+            if vec.len() != 1 {
+                todo!();
+            }
+            match &vec[0] {
+                TermPart::Ident(ident) => Ok(ident.to_string()),
+                _ => todo!(),
+            }
+        }
+        _ => todo!(),
+    }
+}
+
 fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, EvalError> {
     let mut data = None;
 

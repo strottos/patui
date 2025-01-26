@@ -1,14 +1,61 @@
+use std::ops::{Deref, Not};
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    expr::PatuiData, ptplugin::PatuiEventEncoding, utils::get_current_timestamp, PatuiExpr,
+    expr::PatuiData,
+    ptplugin::{PatuiEventEncoding, ResultType as ProtoResultType},
+    utils::get_current_timestamp,
+    PatuiExpr,
 };
 
 #[derive(Debug, Error)]
 pub enum PatuiEventError {
     #[error("Called as_result on non Result event kind")]
     NotResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ResultSuccess(bool);
+
+impl Deref for ResultSuccess {
+    type Target = bool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Not for ResultSuccess {
+    type Output = ResultSuccess;
+
+    fn not(self) -> Self::Output {
+        ResultSuccess(!self.0)
+    }
+}
+
+impl From<bool> for ResultSuccess {
+    fn from(value: bool) -> Self {
+        ResultSuccess(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum ResultType {
+    Append,
+    Set,
+    Confirm,
+}
+
+impl From<ProtoResultType> for ResultType {
+    fn from(value: ProtoResultType) -> Self {
+        match value {
+            ProtoResultType::Append => ResultType::Append,
+            ProtoResultType::Set => ResultType::Set,
+            ProtoResultType::Confirm => ResultType::Confirm,
+        }
+    }
 }
 
 /// An event that can be sent from a plugin to Patui.
@@ -23,14 +70,16 @@ pub enum PatuiEvent {
     /// We received some results for a step and want to append them to the current steps results.
     /// Each step keeps a list of results that are appended to.
     ///
-    /// The PatuiExpr is the list to append results to. The PatuiData is the results.
-    Results(PatuiExpr, PatuiData),
+    /// The PatuiExpr is the list to append/set results for. The PatuiData is the results.
+    /// ResultSuccess indicates whether we should consider this a failure, we recommend this to be
+    /// true except for clear cases to the contrary like assertions. The ResultType is generally
+    /// one of Append or Set depending on whether we're appending to a list or setting a value in a
+    /// dictionary.
+    Results(PatuiExpr, ResultSuccess, ResultType, PatuiData),
     /// We want to add a log message. Can be used for debugging, or to show the user what is
-    /// happening in the test.
+    /// happening in the test but cannot be checked in other steps, results should be used for
+    /// this.
     Log(String),
-    /// We failed a step. This is a soft failure and will not stop the test but only mark it as a
-    /// failure.
-    Failure(PatuiExpr, String),
     /// An error occurred. This is a hard failure and will stop the test.
     Error(String),
 }
@@ -38,16 +87,20 @@ pub enum PatuiEvent {
 impl PatuiEvent {
     /// Get the results from the event
     #[cfg(test)]
-    pub fn as_results(&self) -> Result<(&PatuiExpr, &PatuiData), PatuiEventError> {
+    pub fn as_results(
+        &self,
+    ) -> Result<(&PatuiExpr, &ResultSuccess, &ResultType, &PatuiData), PatuiEventError> {
         match self {
-            PatuiEvent::Results(expr, res) => Ok((&expr, &res)),
+            PatuiEvent::Results(expr, success, result_type, res) => {
+                Ok((expr, success, result_type, res))
+            }
             _ => Err(PatuiEventError::NotResult),
         }
     }
 
     /// Check if the event is of type Results
     pub fn is_results(&self) -> bool {
-        matches!(self, PatuiEvent::Results(_, _))
+        matches!(self, PatuiEvent::Results(_, _, _, _))
     }
 
     /// Check if the event is of type Log
@@ -57,7 +110,11 @@ impl PatuiEvent {
 
     /// Check if the event is of type Failure
     pub fn is_failure(&self) -> bool {
-        matches!(self, PatuiEvent::Failure(_, _))
+        if let PatuiEvent::Results(_, res, _, _) = self {
+            !**res
+        } else {
+            false
+        }
     }
 
     /// Check if the event is of type Error

@@ -31,3 +31,10 @@ pub use eval::EvalError;
 pub fn eval_patui_expr(expr: &PatuiExpr, data: &PatuiData) -> Result<PatuiData, EvalError> {
     eval::eval(expr.expr(), data)
 }
+
+/// Evaluate a PatuiExpr against a PatuiData returning the minimized PatuiExpr.
+///
+/// The PatuiData must have an inner of type Map to be able to evaluate the expression.
+pub fn eval_patui_expr_ident(expr: &PatuiExpr, data: &PatuiData) -> Result<String, EvalError> {
+    eval::eval_ident(expr, data)
+}

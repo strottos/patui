@@ -7,7 +7,9 @@ use tracing_test::traced_test;
 
 use ptplugin::{
     async_stream,
-    plugin_server::{ack_result, produce_results, receive_results, run, shutdown, wait},
+    plugin_server::{
+        ack_result, produce_results, receive_results, run, shutdown, wait, ResultType,
+    },
     run_plugin, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp, PatuiExpr,
 };
 
@@ -47,6 +49,10 @@ async fn assertion_simple() {
                 tracing::trace!("Got results from receiver: {:?}", results);
 
                 yield receive_results::Request {
+                    step_name: "assertion".to_string(),
+                    function_name: "assertion".to_string(),
+                    result_name: "eval".to_string(),
+                    r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
                 }
             }
@@ -69,15 +75,13 @@ async fn assertion_simple() {
     assert_that!(response).is_some();
     let response = response.unwrap();
     assert_that!(response.diagnostics).has_length(0);
-    assert_that!(response.name).is_equal_to("eval".to_string());
     assert_that!(response.data).is_some();
     let id = response.id;
-    let name = response.name;
     let data = response.data;
 
     let response = timeout(
         Duration::from_secs(1),
-        client.ack_result(ack_result::Request { id, name }),
+        client.ack_result(ack_result::Request { id }),
     )
     .await;
     assert_that!(response).is_ok();
@@ -89,6 +93,8 @@ async fn assertion_simple() {
     let event = event.unwrap();
     assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
         PatuiExpr::try_from("assertion").unwrap(),
+        true.into(),
+        ResultType::Append.into(),
         PatuiData::Known(PatuiDataInner::Bool(true)),
     ));
 
@@ -142,6 +148,10 @@ async fn assertion_simple_failure() {
                 tracing::trace!("Got results from receiver: {:?}", results);
 
                 yield receive_results::Request {
+                    step_name: "assertion".to_string(),
+                    function_name: "assertion".to_string(),
+                    result_name: "eval".to_string(),
+                    r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
                 }
             }
@@ -164,15 +174,13 @@ async fn assertion_simple_failure() {
     assert_that!(response).is_some();
     let response = response.unwrap();
     assert_that!(response.diagnostics).has_length(0);
-    assert_that!(response.name).is_equal_to("eval".to_string());
     assert_that!(response.data).is_some();
     let id = response.id;
-    let name = response.name;
     let data = response.data;
 
     let response = timeout(
         Duration::from_secs(1),
-        client.ack_result(ack_result::Request { id, name }),
+        client.ack_result(ack_result::Request { id }),
     )
     .await;
     assert_that!(response).is_ok();
@@ -182,9 +190,11 @@ async fn assertion_simple_failure() {
     let event = PatuiEventWithTimestamp::try_from(data.unwrap());
     assert_that!(event).is_ok();
     let event = event.unwrap();
-    assert_that!(event.value()).is_equal_to(&PatuiEvent::Failure(
+    assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
         PatuiExpr::try_from("assertion").unwrap(),
-        "evaluated expr to false: [1,2,3][1] == 3".to_string(),
+        false.into(),
+        ResultType::Append.into(),
+        PatuiData::Known(PatuiDataInner::Bool(false)),
     ));
 
     let res = timeout(Duration::from_secs(2), client.wait(wait::Request {})).await;
@@ -237,6 +247,10 @@ async fn assertion_simple_error() {
                 tracing::trace!("Got results from receiver: {:?}", results);
 
                 yield receive_results::Request {
+                    step_name: "assertion".to_string(),
+                    function_name: "assertion".to_string(),
+                    result_name: "eval".to_string(),
+                    r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
                 }
             }
@@ -258,15 +272,13 @@ async fn assertion_simple_error() {
     let response = response.unwrap();
     assert_that!(response).is_some();
     let response = response.unwrap();
-    assert_that!(response.name).is_equal_to("eval".to_string());
     assert_that!(response.data).is_some();
     let id = response.id;
-    let name = response.name;
     let data = response.data;
 
     let response = timeout(
         Duration::from_secs(1),
-        client.ack_result(ack_result::Request { id, name }),
+        client.ack_result(ack_result::Request { id }),
     )
     .await;
     assert_that!(response).is_ok();
@@ -332,6 +344,10 @@ async fn assertion_with_idents_and_no_results() {
                 tracing::trace!("Got results from receiver: {:?}", results);
 
                 yield receive_results::Request {
+                    step_name: "assertion".to_string(),
+                    function_name: "assertion".to_string(),
+                    result_name: "eval".to_string(),
+                    r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
                 }
             }
@@ -411,6 +427,10 @@ async fn assertion_with_idents_and_no_results() {
 //                 tracing::trace!("Got results from receiver: {:?}", results);
 //
 //                 yield receive_results::Request {
+//                     step_name: "assertion".to_string(),
+//                     function_name: "assertion".to_string(),
+//                     result_name: "eval".to_string(),
+//                     r#type: ResultType::Append.into(),
 //                     results: Some(results.try_into().unwrap()),
 //                 }
 //             }
@@ -494,6 +514,10 @@ async fn assertion_with_idents_and_no_results() {
 //                 tracing::trace!("Got results from receiver: {:?}", results);
 //
 //                 yield receive_results::Request {
+//                     step_name: "assertion".to_string(),
+//                     function_name: "assertion".to_string(),
+//                     result_name: "eval".to_string(),
+//                     r#type: ResultType::Append.into(),
 //                     results: Some(results.try_into().unwrap()),
 //                 }
 //             }
@@ -536,6 +560,8 @@ async fn assertion_with_idents_and_no_results() {
 //     let event = event.unwrap();
 //     assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
 //         PatuiExpr::try_from("assertion").unwrap(),
+//         true.into(),
+//         ResultType::Append.into(),
 //         PatuiData::Known(PatuiDataInner::Bool(true)),
 //     ));
 //
@@ -596,6 +622,10 @@ async fn assertion_with_idents_and_no_results() {
 //                 tracing::trace!("Got results from receiver: {:?}", results);
 //
 //                 yield receive_results::Request {
+//                     step_name: "assertion".to_string(),
+//                     function_name: "assertion".to_string(),
+//                     result_name: "eval".to_string(),
+//                     r#type: ResultType::Append.into(),
 //                     results: Some(results.try_into().unwrap()),
 //                 }
 //             }

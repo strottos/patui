@@ -1242,7 +1242,9 @@ dependencies = [
  "patui-plugin",
  "serde_json",
  "tokio",
+ "tonic",
  "tracing",
+ "tracing-test",
 ]
 
 [[package]]
