@@ -46,8 +46,7 @@ fn initialise_logging() -> Result<()> {
     }
     let log_file = std::fs::File::create(path).into_diagnostic()?;
 
-    let var_name = EnvFilter::default();
-    let filter = filter.map_or(var_name, EnvFilter::new);
+    let filter = filter.map_or_else(|| EnvFilter::default(), EnvFilter::new);
     let writer = BoxMakeWriter::new(Arc::new(log_file));
 
     let fmt_layer = tracing_subscriber::fmt::layer()

@@ -82,6 +82,9 @@ pub enum PatuiEvent {
     Log(String),
     /// An error occurred. This is a hard failure and will stop the test.
     Error(String),
+    /// The plugin is done, this must be the last event sent by the plugin, anything after this
+    /// will be ignored.
+    Done,
 }
 
 impl PatuiEvent {
@@ -148,12 +151,12 @@ impl From<PatuiEvent> for PatuiEventWithTimestamp {
     }
 }
 
-impl TryFrom<PatuiEvent> for PatuiEventEncoding {
+impl TryFrom<&PatuiEvent> for PatuiEventEncoding {
     type Error = rmp_serde::encode::Error;
 
-    fn try_from(value: PatuiEvent) -> Result<Self, Self::Error> {
+    fn try_from(value: &PatuiEvent) -> Result<Self, Self::Error> {
         Ok(PatuiEventEncoding {
-            bytes: rmp_serde::to_vec(&value)?,
+            bytes: rmp_serde::to_vec(value)?,
         })
     }
 }

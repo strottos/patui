@@ -60,7 +60,7 @@ pub(crate) struct PatuiStepRunner {
     ///   * String for the function name
     ///   * String for the result name
     ///   * The PatuiData to append to the list `steps.<step_name>.<function_name>.<result_name>`
-    waker_rx: Option<broadcast::Receiver<(String, String, String, PatuiData)>>,
+    results_rx: Option<broadcast::Receiver<(String, String, String, PatuiData)>>,
 
     // Used for signaling the wait step the run has been triggered.
     run_tx: Option<oneshot::Sender<()>>,
@@ -70,7 +70,7 @@ pub(crate) struct PatuiStepRunner {
 impl PatuiStepRunner {
     pub(crate) fn new(
         step: &PatuiStep,
-        waker_rx: broadcast::Receiver<(String, String, String, PatuiData)>,
+        results_rx: broadcast::Receiver<(String, String, String, PatuiData)>,
     ) -> Self {
         let (run_tx, run_rx) = oneshot::channel();
 
@@ -82,7 +82,7 @@ impl PatuiStepRunner {
             plugin_process: None,
             client_socket: None,
 
-            waker_rx: Some(waker_rx),
+            results_rx: Some(results_rx),
 
             run_rx: Some(run_rx),
             run_tx: Some(run_tx),
@@ -137,7 +137,7 @@ impl PatuiStepRunner {
         let run_tx = self.run_tx.take().unwrap();
         let step = self.step.clone();
         let client_socket = self.client_socket.as_ref().unwrap().clone();
-        let mut waker_rx = self.waker_rx.take().unwrap();
+        let mut results_rx = self.results_rx.take().unwrap();
 
         self.tasks.push(tokio::spawn(
             async move {
@@ -145,23 +145,14 @@ impl PatuiStepRunner {
 
                 let mut client_socket = client_socket.clone();
 
-                let request = Request::new(ptplugin::produce_results::Init {});
+                let request = Request::new(ptplugin::produce_results::Init { client_id: 1 });
                 let mut results_stream = client_socket
                     .produce_results(request)
                     .await
                     .unwrap()
                     .into_inner();
 
-                let request = Request::new(ptplugin::run::Request {
-                    function: step.function.clone(),
-                    args: step
-                        .args
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.raw().to_string()))
-                        .collect::<HashMap<_, _>>(),
-                });
-                let resp = client_socket.run(request).await.unwrap().into_inner();
-                tracing::trace!("Plugin run response: {:?}", resp);
+                let (setup_tx, setup_rx) = oneshot::channel();
 
                 let run_span = tracing::info_span!("run_stream");
                 let step_name = step.name.clone();
@@ -170,27 +161,45 @@ impl PatuiStepRunner {
                 let run_task = tokio::spawn(
                     async move {
                         let mut client_socket = client_socket_clone;
+
+                        let request = Request::new(ptplugin::run::Request {
+                            client_id: 1,
+                            function: function_name.clone(),
+                            args: step
+                                .args
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.raw().to_string()))
+                                .collect::<HashMap<_, _>>(),
+                        });
+                        setup_rx.await.unwrap();
+                        tracing::trace!("Sending run request");
+                        let resp = client_socket.run(request).await.unwrap().into_inner();
+                        tracing::trace!("Plugin run response: {:?}", resp);
+
                         loop {
                             let result = results_stream.message().await;
                             let result = match result {
                                 Ok(Some(result)) => result,
                                 _ => {
-                                    tracing::debug!("Stream ended: {:?}", result);
+                                    tracing::debug!("Results stream ended: {:?}", result);
                                     break;
                                 }
                             };
                             tracing::trace!("Got response from plugin: {:?}", result);
 
                             let request =
-                                Request::new(ptplugin::ack_result::Request { id: result.id });
-                            let resp = client_socket
-                                .ack_result(request)
-                                .await
-                                .unwrap()
-                                .into_inner();
+                                Request::new(ptplugin::ack_result::Request { client_id: 1, result_id: result.result_id });
+                            let resp = match client_socket.ack_result(request).await {
+                                Ok(resp) => resp.into_inner(),
+                                Err(e) => {
+                                    tracing::error!("Failed to ack result, quitting: {:?}", e);
+                                    break;
+                                }
+                            };
                             tracing::trace!("Ack response: {:?}", resp);
 
                             let event = result.data.unwrap().try_into().unwrap();
+                            tracing::trace!("Sending event: {:?}", event);
                             if let Err(e) = tx
                                 .send((step_name.clone(), function_name.clone(), event))
                                 .await
@@ -208,14 +217,15 @@ impl PatuiStepRunner {
                 // Plugin receiving results from Patui
                 let outbound = async_stream::stream! {
                     loop {
-                        let results = waker_rx.recv().await;
+                        let results = results_rx.recv().await;
                         let Ok((step_name, function_name, result_name, results)) = results else {
                             tracing::trace!("Publishing problem: {:?}", results);
                             break;
                         };
-                        tracing::trace!("Woke up: {:?}", results);
+                        tracing::trace!("Woke up: {}.{}.{} - {:?}", step_name, function_name, result_name, results);
 
                         yield ptplugin::receive_results::Request {
+                            client_id: 1,
                             step_name,
                             function_name,
                             result_name,
@@ -231,14 +241,21 @@ impl PatuiStepRunner {
                     .unwrap()
                     .into_inner();
 
+                setup_tx.send(()).unwrap();
+
                 // TODO: Handle errors
                 loop {
                     let msg = response.message().await;
-                    if let Ok(Some(resp)) = msg {
-                        tracing::trace!("Got message: {:?}", resp);
-                    } else {
-                        tracing::trace!("Stream problem: {:?}", msg);
-                        break;
+                    match msg {
+                        Ok(Some(resp)) => tracing::trace!("Got message: {:?}", resp),
+                        Ok(None) => {
+                            tracing::info!("Stream ended");
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::error!("Stream problem: {:?}", e);
+                            break;
+                        }
                     }
                 }
 
@@ -271,7 +288,7 @@ impl PatuiStepRunner {
 
         tracing::trace!("{} - Waiting", self.step.name);
 
-        let request = Request::new(ptplugin::wait::Request {});
+        let request = Request::new(ptplugin::wait::Request { client_id: 1 });
 
         let mut client_socket = self.client_socket.as_ref().unwrap().clone();
         let response = client_socket.wait(request).await?.into_inner();
@@ -359,17 +376,21 @@ impl PatuiStepRunner {
         Ok(())
     }
 
+    // We choose a low number to retry here as on fast systems these things can come up remarkably
+    // quickly.
     async fn connect_to_plugin(&mut self, port: u16) -> Result<(), PatuiStepRunnerError> {
-        for _ in 0..50 {
+        for _ in 0..1000 {
             let addr = format!("http://[::1]:{}", port);
             let client = PluginServiceClient::connect(addr).await;
             match client {
                 Ok(c) => {
+                    tracing::trace!("Connected");
                     self.client_socket = Some(c);
                     return Ok(());
                 }
                 Err(_) => {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    tracing::trace!("Failed to connect to plugin, retrying in 5ms...");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
                 }
             }
         }
@@ -469,7 +490,7 @@ mod tests {
     #[traced_test]
     #[tokio::test]
     async fn run_static_data_step() {
-        let (waker_tx, waker_rx) = broadcast::channel(1);
+        let (results_tx, results_rx) = broadcast::channel(1);
 
         let mut step_runner = PatuiStepRunner::new(
             &PatuiStep {
@@ -483,7 +504,7 @@ mod tests {
                 when: None,
                 depends_on: vec![],
             },
-            waker_rx,
+            results_rx,
         );
 
         let res = timeout(
@@ -539,7 +560,7 @@ mod tests {
         let res = res.unwrap();
         assert_that!(res).is_none();
 
-        drop(waker_tx);
+        drop(results_tx);
         drop(res_rx);
 
         let ret = timeout(Duration::from_secs(2), task).await;
@@ -551,7 +572,7 @@ mod tests {
     #[traced_test]
     #[tokio::test]
     async fn run_simple_known_true_assertion_step() {
-        let (waker_tx, waker_rx) = broadcast::channel(1);
+        let (results_tx, results_rx) = broadcast::channel(1);
 
         let mut step_runner = PatuiStepRunner::new(
             &PatuiStep {
@@ -562,7 +583,7 @@ mod tests {
                 when: None,
                 depends_on: vec![],
             },
-            waker_rx,
+            results_rx,
         );
 
         let res = timeout(
@@ -583,7 +604,7 @@ mod tests {
             assert_that!(res.unwrap()).is_ok();
         });
 
-        waker_tx
+        results_tx
             .send((
                 "foo".to_string(),
                 "foo".to_string(),

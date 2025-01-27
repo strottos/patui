@@ -47,32 +47,37 @@ message GetInfo {
 
 message Init {
   message Request {
-    string step_name = 1;
-    map<string, StepRunner> step_runners = 2;
-    map<string, string> config = 3;
+    uint64 client_id = 1;
+    string step_name = 2;
+    map<string, StepRunner> step_runners = 3;
+    map<string, string> config = 4;
   }
   message Response { repeated Diagnostic diagnostics = 1; }
 }
 
 message Run {
   message Request {
-    string function = 1;
-    map<string, string> args = 2;
+    uint64 client_id = 1;
+    string function = 2;
+    map<string, string> args = 3;
   }
   message Response { repeated Diagnostic diagnostics = 1; }
 }
 
 message ProduceResults {
-  message Init {}
+  message Init { uint64 client_id = 1; }
   message Request {
-    int64 id = 1;
-    PatuiEventEncoding data = 2;
-    repeated Diagnostic diagnostics = 3;
+    uint64 result_id = 2;
+    PatuiEventEncoding data = 3;
+    repeated Diagnostic diagnostics = 4;
   }
 }
 
 message AckResult {
-  message Request { int64 id = 1; }
+  message Request {
+    uint64 client_id = 1;
+    uint64 result_id = 2;
+  }
   message Response {}
 }
 
@@ -84,18 +89,19 @@ message ReceiveResults {
     // encode expr's too (which we've somehow gotten away with till now). On the
     // other hand can't think what we'd do with an expr here beyond this as
     // Patui controls this, see if something comes up.
-    string step_name = 1;
-    string function_name = 2;
-    string result_name = 3;
-    ResultType type = 4;
-    PatuiDataEncoding results = 5;
+    uint64 client_id = 1;
+    string step_name = 2;
+    string function_name = 3;
+    string result_name = 4;
+    ResultType type = 5;
+    PatuiDataEncoding results = 6;
   }
   message Response { repeated Diagnostic diagnostics = 1; }
 }
 
 message Wait {
-  message Request {}
-  message Response { repeated Diagnostic diagnostics = 2; }
+  message Request { uint64 client_id = 1; }
+  message Response { repeated Diagnostic diagnostics = 1; }
 }
 
 message Shutdown {

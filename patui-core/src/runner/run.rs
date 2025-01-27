@@ -46,7 +46,7 @@ pub struct PatuiRun {
     pub(crate) results: Arc<RwLock<PatuiData>>,
     pub(crate) step_runners: IndexMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
 
-    waker_tx: broadcast::Sender<(String, String, String, PatuiData)>,
+    results_tx: broadcast::Sender<(String, String, String, PatuiData)>,
 }
 
 impl PatuiRun {
@@ -56,7 +56,7 @@ impl PatuiRun {
     pub fn new(instance: PatuiTest) -> Self {
         let mut step_runners = IndexMap::new();
 
-        let (waker_tx, _) = broadcast::channel(32);
+        let (results_tx, _) = broadcast::channel(32);
 
         let results = Arc::new(RwLock::new(PatuiData::Pending(PatuiDataInner::Map(
             HashMap::from([(
@@ -70,7 +70,7 @@ impl PatuiRun {
             let entry = step_runners.entry(name).or_insert_with(Vec::new);
             entry.push(Arc::new(Mutex::new(PatuiStepRunner::new(
                 step,
-                waker_tx.subscribe(),
+                results_tx.subscribe(),
             ))));
         }
 
@@ -83,7 +83,7 @@ impl PatuiRun {
             results,
             step_runners,
 
-            waker_tx,
+            results_tx,
         }
     }
 
@@ -103,10 +103,10 @@ impl PatuiRun {
 
         self.init_test().await?;
 
-        let status = Arc::new(Mutex::new(PatuiRunStatus::Pending));
-        let status_clone = status.clone();
+        // let status = Arc::new(Mutex::new(PatuiRunStatus::Pending));
+        // let status_clone = status.clone();
 
-        for (step_name, step_collection) in self.step_runners.iter() {
+        for (_, step_collection) in self.step_runners.iter() {
             for step_runner in step_collection {
                 let mut lock = step_runner.lock().await;
                 lock.run(tx.clone())?;
@@ -115,10 +115,10 @@ impl PatuiRun {
 
         let events = self.events.clone();
         let results = self.results.clone();
-        let waker_tx = self.waker_tx.clone();
+        let results_tx = self.results_tx.clone();
 
         let receive_task = tokio::spawn(async move {
-            let status = status_clone;
+            // let status = status_clone;
             loop {
                 let (step_name, function_name, events_res) = match rx.recv().await {
                     Some((step_name, function_name, events_res)) => {
@@ -158,16 +158,19 @@ impl PatuiRun {
                     lock.append_to_list(keys, data.clone()).unwrap();
                     tracing::trace!("Results: {:#?}", *lock);
 
-                    waker_tx
-                        .send((step_name, function_name, result_name, data))
-                        .unwrap();
+                    if let Err(e) = results_tx.send((step_name, function_name, result_name, data)) {
+                        tracing::error!("Failed to send results, giving up: {}", e);
+                        break;
+                    }
                 }
             }
         });
 
         for (step_name, step_collection) in self.step_runners.iter() {
             for step in step_collection {
+                tracing::trace!("Waiting for step to finish - {}", step_name);
                 step.lock().await.wait(tx.clone()).await?;
+                tracing::trace!("Step finished - {}", step_name);
             }
         }
 

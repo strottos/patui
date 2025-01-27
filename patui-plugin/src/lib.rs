@@ -55,15 +55,15 @@ mod tests {
     pub async fn run_plugin(bin_name: &str) -> Result<(Child, PluginServiceClient<Channel>)> {
         let port = get_unused_localhost_port()?;
 
-        let cli = CargoBuild::new()
+        let plugin_binary = CargoBuild::new()
             .bin(bin_name)
             .current_target()
             .manifest_path("Cargo.toml")
-            .target_dir("./target/debug")
+            .target_dir("./target/test")
             .run()
             .unwrap();
 
-        let mut cmd = Command::new(cli.path());
+        let mut cmd = Command::new(plugin_binary.path());
         let child = cmd
             .args(["--port", &port.to_string()])
             .env("PATUI_LOG", env::var("PATUI_LOG").unwrap_or("".to_string()))

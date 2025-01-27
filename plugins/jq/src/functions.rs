@@ -18,7 +18,7 @@ impl FunctionService for Transform {
         args: HashMap<String, String>,
         tx: mpsc::Sender<(String, PatuiEvent)>,
         results: Arc<Mutex<PatuiData>>,
-        _waker_rx: mpsc::Receiver<()>,
+        mut waker_rx: mpsc::Receiver<()>,
     ) -> Result<tokio::task::JoinHandle<()>> {
         Ok(tokio::spawn(async move {
             let Some(r#in) = args.get("in") else {
@@ -46,36 +46,52 @@ impl FunctionService for Transform {
 
             tracing::debug!("Evaluating argument 'in' for static data: {:?}", r#in);
 
-            let results = results.lock().await.clone();
+            let mut first_run = true;
 
-            let data = match eval_patui_expr(&r#in, &results) {
-                Ok(data) => data,
-                Err(e) => {
+            loop {
+                if first_run {
+                    first_run = false;
+                } else {
+                    match waker_rx.recv().await {
+                        Some(_) => (),
+                        None => break,
+                    }
+                }
+
+                let results = results.lock().await.clone();
+
+                let data = match eval_patui_expr(&r#in, &results) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        match e {
+                            ptplugin::EvalError::DataNotFound => (),
+                            _ => {
+                                tx.send((
+                                    "Err".to_string(),
+                                    PatuiEvent::Error(format!(
+                                        "Couldn't evaluate argument 'in' for static data: {}",
+                                        e
+                                    )),
+                                ))
+                                .await
+                                .unwrap();
+                            }
+                        }
+                        continue;
+                    }
+                };
+
+                if !data.is_known() {
                     tx.send((
                         "Err".to_string(),
-                        PatuiEvent::Error(format!(
-                            "Couldn't evaluate argument 'in' for static data: {}",
-                            e
-                        )),
+                        PatuiEvent::Error("Data evaluated to be unknown data".to_string()),
                     ))
                     .await
                     .unwrap();
                     return;
                 }
-            };
 
-            if !data.is_known() {
-                tx.send((
-                    "Err".to_string(),
-                    PatuiEvent::Error("Data evaluated to be unknown data".to_string()),
-                ))
-                .await
-                .unwrap();
-                return;
-            }
-
-            let event =
-                match &data {
+                let event = match &data {
                     PatuiData::Known(PatuiDataInner::String(s)) => {
                         tracing::debug!("Evaluating JSON: {}", s);
                         let json: serde_json::Value = match serde_json::from_str(s) {
@@ -113,16 +129,17 @@ impl FunctionService for Transform {
                     }
                     _ => {
                         tx.send(("Err".to_string(), PatuiEvent::Error(
-                        "Data evaluated to non-string static data must always be known data"
-                            .to_string(),
-                    )))
-                    .await
-                    .unwrap();
+                            "Data evaluated to non-string static data must always be known data"
+                                .to_string(),
+                        )))
+                        .await
+                        .unwrap();
                         return;
                     }
                 };
 
-            tx.send(("out".to_string(), event)).await.unwrap();
+                tx.send(("out".to_string(), event)).await.unwrap();
+            }
         }))
     }
 }

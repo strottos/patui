@@ -156,7 +156,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
 
                 let (produced_results_tx, produced_results_rx) = ptplugin::tokio::sync::mpsc::channel(1);
 
-                let (run_done_oneshot_tx, run_done_oneshot_rx) = ptplugin::tokio::sync::oneshot::channel();
+                let (run_done_tx, run_done_rx) = ptplugin::tokio::sync::oneshot::channel();
                 let (produce_results_done_tx, produce_results_done_rx) = ptplugin::tokio::sync::oneshot::channel();
                 let (receive_results_done_tx, receive_results_done_rx) = ptplugin::tokio::sync::oneshot::channel();
                 let (receive_results_cancel_tx, _) = ptplugin::tokio::sync::broadcast::channel(1);
@@ -177,8 +177,8 @@ fn init_server_structures(config: &Config) -> TokenStream {
                     ),
 
                     run_done_channel: (
-                        std::sync::Mutex::new(Some(run_done_oneshot_tx)),
-                        std::sync::Mutex::new(Some(run_done_oneshot_rx)),
+                        std::sync::Mutex::new(Some(run_done_tx)),
+                        std::sync::Mutex::new(Some(run_done_rx)),
                     ),
                     produce_results_done_channel: (
                         std::sync::Mutex::new(Some(produce_results_done_tx)),
@@ -337,8 +337,16 @@ fn init_server_structures(config: &Config) -> TokenStream {
                     for task in tasks.drain(..) {
                         ptplugin::tracing::trace!("HERE5");
                         ptplugin::tracing::trace!("Waiting for ack");
-                        if let Err(e) = task.await {
-                            panic!("Error waiting for ack task: {:?}", e);
+                        ptplugin::tokio::select! {
+                            ret = task => {
+                                if let Err(e) = ret {
+                                    panic!("Error waiting for ack task: {:?}", e);
+                                }
+                            }
+                            // _ = run_done_rx.recv() => {
+                            //     tracing::warn!("Run done before all acks received, bailing");
+                            //     break;
+                            // }
                         }
                         ptplugin::tracing::trace!("HERE6");
                         ptplugin::tracing::trace!("Ack received");
@@ -387,7 +395,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 let output = ptplugin::async_stream::try_stream! {
                     loop {
                         let mut receive_results_cancel_rx = receive_results_cancel_tx.subscribe();
-                        tracing::trace!("HELLO1");
+                        tracing::trace!("Setup receive results streams");
                         ptplugin::tokio::select! {
                             message = stream.next() => {
                                 tracing::trace!("HELLO2");
@@ -472,6 +480,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
 
                 let produce_results_done_rx = self.produce_results_done_channel.1.lock().unwrap().take().unwrap();
                 if let Err(e) = produce_results_done_rx.await {
+                    tracing::trace!("HELLO11");
                     panic!("Error waiting for produce results done: {:?}", e);
                 }
                 ptplugin::tracing::trace!("Produce results done notify received");
