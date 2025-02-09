@@ -125,148 +125,148 @@ impl PatuiStepRunner {
         &mut self,
         tx: mpsc::Sender<(String, String, PatuiEventWithTimestamp)>,
     ) -> Result<(), PatuiStepRunnerError> {
-        let span = tracing::info_span!(
-            "run",
-            step_name = self.step.name,
-            plugin = self.step.plugin,
-            function = self.step.function
-        );
+        // let span = tracing::info_span!(
+        //     "run",
+        //     step_name = self.step.name,
+        //     plugin = self.step.plugin,
+        //     function = self.step.function
+        // );
 
-        tracing::trace!("Running step '{}'", self.step.name);
+        // tracing::trace!("Running step '{}'", self.step.name);
 
-        let run_tx = self.run_tx.take().unwrap();
-        let step = self.step.clone();
-        let client_socket = self.client_socket.as_ref().unwrap().clone();
-        let mut results_rx = self.results_rx.take().unwrap();
+        // let run_tx = self.run_tx.take().unwrap();
+        // let step = self.step.clone();
+        // let client_socket = self.client_socket.as_ref().unwrap().clone();
+        // let mut results_rx = self.results_rx.take().unwrap();
 
-        self.tasks.push(tokio::spawn(
-            async move {
-                tracing::info!("Running plugin request: {:?}", step.function);
+        // self.tasks.push(tokio::spawn(
+        //     async move {
+        //         tracing::info!("Running plugin request: {:?}", step.function);
 
-                let mut client_socket = client_socket.clone();
+        //         let mut client_socket = client_socket.clone();
 
-                let request = Request::new(ptplugin::produce_results::Init { client_id: 1 });
-                let mut results_stream = client_socket
-                    .produce_results(request)
-                    .await
-                    .unwrap()
-                    .into_inner();
+        //         let request = Request::new(ptplugin::produce_results::Init { client_id: 1 });
+        //         let mut results_stream = client_socket
+        //             .produce_results(request)
+        //             .await
+        //             .unwrap()
+        //             .into_inner();
 
-                let (setup_tx, setup_rx) = oneshot::channel();
+        //         let (setup_tx, setup_rx) = oneshot::channel();
 
-                let run_span = tracing::info_span!("run_stream");
-                let step_name = step.name.clone();
-                let function_name = step.function;
-                let client_socket_clone = client_socket.clone();
-                let run_task = tokio::spawn(
-                    async move {
-                        let mut client_socket = client_socket_clone;
+        //         let run_span = tracing::info_span!("run_stream");
+        //         let step_name = step.name.clone();
+        //         let function_name = step.function;
+        //         let client_socket_clone = client_socket.clone();
+        //         let run_task = tokio::spawn(
+        //             async move {
+        //                 let mut client_socket = client_socket_clone;
 
-                        let request = Request::new(ptplugin::run::Request {
-                            client_id: 1,
-                            function: function_name.clone(),
-                            args: step
-                                .args
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.raw().to_string()))
-                                .collect::<HashMap<_, _>>(),
-                        });
-                        setup_rx.await.unwrap();
-                        tracing::trace!("Sending run request");
-                        let resp = client_socket.run(request).await.unwrap().into_inner();
-                        tracing::trace!("Plugin run response: {:?}", resp);
+        //                 let request = Request::new(ptplugin::run::Request {
+        //                     client_id: 1,
+        //                     function: function_name.clone(),
+        //                     args: step
+        //                         .args
+        //                         .iter()
+        //                         .map(|(k, v)| (k.clone(), v.raw().to_string()))
+        //                         .collect::<HashMap<_, _>>(),
+        //                 });
+        //                 setup_rx.await.unwrap();
+        //                 tracing::trace!("Sending run request");
+        //                 let resp = client_socket.run(request).await.unwrap().into_inner();
+        //                 tracing::trace!("Plugin run response: {:?}", resp);
 
-                        loop {
-                            let result = results_stream.message().await;
-                            let result = match result {
-                                Ok(Some(result)) => result,
-                                _ => {
-                                    tracing::debug!("Results stream ended: {:?}", result);
-                                    break;
-                                }
-                            };
-                            tracing::trace!("Got response from plugin: {:?}", result);
+        //                 loop {
+        //                     let result = results_stream.message().await;
+        //                     let result = match result {
+        //                         Ok(Some(result)) => result,
+        //                         _ => {
+        //                             tracing::debug!("Results stream ended: {:?}", result);
+        //                             break;
+        //                         }
+        //                     };
+        //                     tracing::trace!("Got response from plugin: {:?}", result);
 
-                            let request =
-                                Request::new(ptplugin::ack_result::Request { client_id: 1, result_id: result.result_id });
-                            let resp = match client_socket.ack_result(request).await {
-                                Ok(resp) => resp.into_inner(),
-                                Err(e) => {
-                                    tracing::error!("Failed to ack result, quitting: {:?}", e);
-                                    break;
-                                }
-                            };
-                            tracing::trace!("Ack response: {:?}", resp);
+        //                     let request =
+        //                         Request::new(ptplugin::ack_result::Request { client_id: 1, result_id: result.result_id });
+        //                     let resp = match client_socket.ack_result(request).await {
+        //                         Ok(resp) => resp.into_inner(),
+        //                         Err(e) => {
+        //                             tracing::error!("Failed to ack result, quitting: {:?}", e);
+        //                             break;
+        //                         }
+        //                     };
+        //                     tracing::trace!("Ack response: {:?}", resp);
 
-                            let event = result.data.unwrap().try_into().unwrap();
-                            tracing::trace!("Sending event: {:?}", event);
-                            if let Err(e) = tx
-                                .send((step_name.clone(), function_name.clone(), event))
-                                .await
-                            {
-                                tracing::error!("Failed to send event: {}", e);
-                                break;
-                            }
-                        }
-                    }
-                    .instrument(run_span),
-                );
+        //                     let event = result.data.unwrap().try_into().unwrap();
+        //                     tracing::trace!("Sending event: {:?}", event);
+        //                     if let Err(e) = tx
+        //                         .send((step_name.clone(), function_name.clone(), event))
+        //                         .await
+        //                     {
+        //                         tracing::error!("Failed to send event: {}", e);
+        //                         break;
+        //                     }
+        //                 }
+        //             }
+        //             .instrument(run_span),
+        //         );
 
-                run_tx.send(()).unwrap();
+        //         run_tx.send(()).unwrap();
 
-                // Plugin receiving results from Patui
-                let outbound = async_stream::stream! {
-                    loop {
-                        let results = results_rx.recv().await;
-                        let Ok((step_name, function_name, result_name, results)) = results else {
-                            tracing::trace!("Publishing problem: {:?}", results);
-                            break;
-                        };
-                        tracing::trace!("Woke up: {}.{}.{} - {:?}", step_name, function_name, result_name, results);
+        //         // Plugin receiving results from Patui
+        //         let outbound = async_stream::stream! {
+        //             loop {
+        //                 let results = results_rx.recv().await;
+        //                 let Ok((step_name, function_name, result_name, results)) = results else {
+        //                     tracing::trace!("Publishing problem: {:?}", results);
+        //                     break;
+        //                 };
+        //                 tracing::trace!("Woke up: {}.{}.{} - {:?}", step_name, function_name, result_name, results);
 
-                        yield ptplugin::receive_results::Request {
-                            client_id: 1,
-                            step_name,
-                            function_name,
-                            result_name,
-                            r#type: ptplugin::ResultType::Append.into(),
-                            results: Some(results.try_into().unwrap()),
-                        }
-                    }
-                };
+        //                 yield ptplugin::receive_results::Request {
+        //                     client_id: 1,
+        //                     step_name,
+        //                     function_name,
+        //                     result_name,
+        //                     r#type: ptplugin::ResultType::Append.into(),
+        //                     results: Some(results.try_into().unwrap()),
+        //                 }
+        //             }
+        //         };
 
-                let mut response = client_socket
-                    .receive_results(Request::new(outbound))
-                    .await
-                    .unwrap()
-                    .into_inner();
+        //         let mut response = client_socket
+        //             .receive_results(Request::new(outbound))
+        //             .await
+        //             .unwrap()
+        //             .into_inner();
 
-                setup_tx.send(()).unwrap();
+        //         setup_tx.send(()).unwrap();
 
-                // TODO: Handle errors
-                loop {
-                    let msg = response.message().await;
-                    match msg {
-                        Ok(Some(resp)) => tracing::trace!("Got message: {:?}", resp),
-                        Ok(None) => {
-                            tracing::info!("Stream ended");
-                            break;
-                        }
-                        Err(e) => {
-                            tracing::error!("Stream problem: {:?}", e);
-                            break;
-                        }
-                    }
-                }
+        //         // TODO: Handle errors
+        //         loop {
+        //             let msg = response.message().await;
+        //             match msg {
+        //                 Ok(Some(resp)) => tracing::trace!("Got message: {:?}", resp),
+        //                 Ok(None) => {
+        //                     tracing::info!("Stream ended");
+        //                     break;
+        //                 }
+        //                 Err(e) => {
+        //                     tracing::error!("Stream problem: {:?}", e);
+        //                     break;
+        //                 }
+        //             }
+        //         }
 
-                tracing::trace!("Awaiting plugin run");
+        //         tracing::trace!("Awaiting plugin run");
 
-                run_task.await.unwrap();
+        //         run_task.await.unwrap();
 
-                tracing::info!("{} - Plugin run finished", step.name);
-            }
-            .instrument(span),
-        ));
+        //         tracing::info!("{} - Plugin run finished", step.name);
+        //     }
+        //     .instrument(span),
+        // ));
 
         Ok(())
     }
@@ -275,58 +275,58 @@ impl PatuiStepRunner {
         &mut self,
         tx: mpsc::Sender<(String, String, PatuiEventWithTimestamp)>,
     ) -> Result<(), PatuiStepRunnerError> {
-        let span = tracing::info_span!("wait", step_name = self.step.name);
-        let _guard = span.enter();
-        drop(tx);
+        // let span = tracing::info_span!("wait", step_name = self.step.name);
+        // let _guard = span.enter();
+        // drop(tx);
 
-        self.run_rx.take().unwrap().await.map_err(|e| {
-            PatuiStepRunnerError::InternalError(format!(
-                "Run step never finished to allow wait to proceed: {}",
-                e
-            ))
-        })?;
+        // self.run_rx.take().unwrap().await.map_err(|e| {
+        //     PatuiStepRunnerError::InternalError(format!(
+        //         "Run step never finished to allow wait to proceed: {}",
+        //         e
+        //     ))
+        // })?;
 
-        tracing::trace!("{} - Waiting", self.step.name);
+        // tracing::trace!("{} - Waiting", self.step.name);
 
-        let request = Request::new(ptplugin::wait::Request { client_id: 1 });
+        // let request = Request::new(ptplugin::wait::Request { client_id: 1 });
 
-        let mut client_socket = self.client_socket.as_ref().unwrap().clone();
-        let response = client_socket.wait(request).await?.into_inner();
-        tracing::trace!("{} - Plugin wait response: {:?}", self.step.name, response);
-        if !response.diagnostics.is_empty() {
-            tracing::error!(
-                "{} - Diagnostics: {:?}",
-                self.step.name,
-                response.diagnostics
-            );
-            todo!();
-        }
+        // let mut client_socket = self.client_socket.as_ref().unwrap().clone();
+        // let response = client_socket.wait(request).await?.into_inner();
+        // tracing::trace!("{} - Plugin wait response: {:?}", self.step.name, response);
+        // if !response.diagnostics.is_empty() {
+        //     tracing::error!(
+        //         "{} - Diagnostics: {:?}",
+        //         self.step.name,
+        //         response.diagnostics
+        //     );
+        //     todo!();
+        // }
 
-        let Some(plugin_process) = self.plugin_process.take() else {
-            return Err(PatuiStepRunnerError::InternalError(
-                "Plugin process not found".to_string(),
-            ));
-        };
+        // let Some(plugin_process) = self.plugin_process.take() else {
+        //     return Err(PatuiStepRunnerError::InternalError(
+        //         "Plugin process not found".to_string(),
+        //     ));
+        // };
 
-        plugin_process.lock().await.kill().await.unwrap();
+        // plugin_process.lock().await.kill().await.unwrap();
 
-        tracing::trace!("{} - Awaiting process completion", self.step.name);
-        plugin_process.lock().await.wait().await.unwrap();
-        tracing::trace!("{} - Process complete", self.step.name);
+        // tracing::trace!("{} - Awaiting process completion", self.step.name);
+        // plugin_process.lock().await.wait().await.unwrap();
+        // tracing::trace!("{} - Process complete", self.step.name);
 
-        drop(client_socket);
-        self.client_socket = None;
+        // drop(client_socket);
+        // self.client_socket = None;
 
-        for task in self.tasks.drain(..) {
-            task.await
-                .map_err(|e| PatuiStepRunnerError::InternalError(format!("Task failed: {}", e)))?;
-        }
+        // for task in self.tasks.drain(..) {
+        //     task.await
+        //         .map_err(|e| PatuiStepRunnerError::InternalError(format!("Task failed: {}", e)))?;
+        // }
 
-        tracing::debug!(
-            "Plugin '{}/{}' complete",
-            self.step.plugin,
-            self.step.function
-        );
+        // tracing::debug!(
+        //     "Plugin '{}/{}' complete",
+        //     self.step.plugin,
+        //     self.step.function
+        // );
 
         Ok(())
     }
@@ -482,7 +482,7 @@ mod tests {
     use tracing_test::traced_test;
 
     use crate::{
-        runner::events::ResultType, templates::PatuiStep, PatuiData, PatuiDataInner, PatuiExpr,
+        runner::events::PatuiResultType, templates::PatuiStep, PatuiData, PatuiDataInner, PatuiExpr,
     };
 
     use super::PatuiStepRunner;
@@ -550,7 +550,7 @@ mod tests {
             assert_that!(value.as_results().unwrap()).is_equal_to((
                 &PatuiExpr::try_from("data").unwrap(),
                 &true.into(),
-                &ResultType::Append,
+                &PatuiResultType::Append,
                 &PatuiData::Known(expected_recv),
             ));
         }
@@ -630,7 +630,7 @@ mod tests {
         assert_that!(value.as_results().unwrap()).is_equal_to((
             &PatuiExpr::try_from("assertion").unwrap(),
             &true.into(),
-            &ResultType::Append,
+            &PatuiResultType::Append,
             &PatuiData::Known(PatuiDataInner::Bool(true)),
         ));
 

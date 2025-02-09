@@ -4,36 +4,48 @@ use std::{collections::HashMap, sync::Arc};
 pub use async_stream;
 pub use clap;
 pub use convert_case;
-pub use eyre::{eyre, Result};
 pub use tokio;
 pub use tokio_stream;
 pub use tonic;
+use tonic::Status;
 pub use tracing;
 pub use tracing_subscriber;
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{
+    broadcast,
+    mpsc::{self, Receiver},
+    Mutex, RwLock,
+};
 
 pub use patui_core::{
     eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp,
-    PatuiExpr,
+    PatuiExpr, PatuiResultSuccess, PatuiResultType,
 };
 pub use patui_plugin_macros::main;
 
 pub mod plugin_server {
     pub use patui_core::ptplugin::{
-        ack_result, get_info, init, plugin_service_server::*, produce_results, receive_results,
-        run, shutdown, wait, ResultType, StepRunner,
+        get_info, init, plugin_service_server::*, receive_results, run, shutdown, ResultType,
+        StepRunner,
     };
+}
+
+#[derive(Clone, Debug)]
+pub enum WakerType {
+    Results,
+    Done,
 }
 
 pub trait FunctionService {
     fn run(
-        &self,
+        step_name: String,
         args: HashMap<String, String>,
-        tx: mpsc::Sender<(String, PatuiEvent)>,
-        results: Arc<Mutex<PatuiData>>,
-        waker_rx: mpsc::Receiver<()>,
-    ) -> Result<tokio::task::JoinHandle<()>>;
+        results: Arc<RwLock<PatuiData>>,
+        waker_rx: broadcast::Receiver<WakerType>,
+    ) -> (
+        Receiver<Result<PatuiEvent, Status>>,
+        Option<tokio::task::JoinHandle<()>>,
+    );
 }
 
 #[cfg(feature = "test")]

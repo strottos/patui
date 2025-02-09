@@ -159,7 +159,7 @@ impl PatuiData {
     /// if it finds something existing with the wrong type it will error out.
     ///
     /// This is the one of the most common operation we perform on Patui results.
-    pub(crate) fn append_to_list(
+    pub fn append_to_list(
         &mut self,
         keys: Vec<String>,
         value: PatuiData,
