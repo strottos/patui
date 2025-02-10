@@ -38,6 +38,7 @@ pub enum WakerType {
 
 pub trait FunctionService {
     fn run(
+        &self,
         step_name: String,
         args: HashMap<String, String>,
         results: Arc<RwLock<PatuiData>>,
@@ -49,7 +50,7 @@ pub trait FunctionService {
 }
 
 #[cfg(feature = "test")]
-pub use tests::run_plugin;
+pub use tests::{run_plugin, shutdown_plugin};
 
 #[cfg(feature = "test")]
 mod tests {
@@ -57,11 +58,14 @@ mod tests {
         env,
         net::TcpListener,
         process::{Child, Command},
+        time::Duration,
     };
 
+    use assertor::*;
     use escargot::CargoBuild;
     use eyre::Result;
-    use patui_core::ptplugin::plugin_service_client::PluginServiceClient;
+    use patui_core::ptplugin::{plugin_service_client::PluginServiceClient, shutdown};
+    use tokio::time::timeout;
     use tonic::transport::Channel;
 
     pub async fn run_plugin(bin_name: &str) -> Result<(Child, PluginServiceClient<Channel>)> {
@@ -78,13 +82,15 @@ mod tests {
         let mut cmd = Command::new(plugin_binary.path());
         let child = cmd
             .args(["--port", &port.to_string()])
-            .env("PATUI_LOG", env::var("PATUI_LOG").unwrap_or("".to_string()))
+            .env("PATUI_LOG", "trace,h2=info")
             .env(
                 "RUST_BACKTRACE",
                 env::var("RUST_BACKTRACE").unwrap_or("".to_string()),
             )
             .spawn()
             .unwrap();
+
+        assert_that!(child.id()).is_not_equal_to(0);
 
         let client = connect_plugin(port).await;
 
@@ -109,5 +115,30 @@ mod tests {
     fn get_unused_localhost_port() -> Result<u16> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         Ok(listener.local_addr()?.port())
+    }
+
+    pub async fn shutdown_plugin(mut child: Child, mut client: PluginServiceClient<Channel>) {
+        let res = timeout(
+            Duration::from_secs(1),
+            client.shutdown(shutdown::Request {}),
+        )
+        .await;
+        assert_that!(res).is_ok();
+        let res = res.unwrap();
+        assert_that!(res).is_ok();
+
+        for _ in 0..50 {
+            let status = child.try_wait();
+            if status.is_ok() {
+                let status = status.unwrap();
+                if status.is_some() {
+                    return;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        child.kill().unwrap();
+        panic!("Failed to shutdown the plugin");
     }
 }

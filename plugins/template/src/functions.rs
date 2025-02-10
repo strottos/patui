@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use ptplugin::{
     eval_patui_expr,
@@ -8,10 +11,21 @@ use ptplugin::{
 use tokio::sync::{broadcast, mpsc::Receiver, RwLock};
 use tonic::Status;
 
-pub(crate) struct Echo;
+pub(crate) struct Echo {
+    results_fully_recieved: Arc<AtomicBool>,
+}
+
+impl Echo {
+    pub fn new(results_fully_recieved: Arc<AtomicBool>) -> Self {
+        Self {
+            results_fully_recieved,
+        }
+    }
+}
 
 impl FunctionService for Echo {
     fn run(
+        &self,
         step_name: String,
         args: HashMap<String, String>,
         results: Arc<RwLock<PatuiData>>,
@@ -21,6 +35,8 @@ impl FunctionService for Echo {
         Option<tokio::task::JoinHandle<()>>,
     ) {
         let (produce_results_tx, produce_results_rx) = mpsc::channel(16);
+
+        let results_fully_recieved = self.results_fully_recieved.clone();
 
         let task = tokio::spawn(async move {
             let Some(r#in) = args.get("in") else {
@@ -92,6 +108,10 @@ impl FunctionService for Echo {
                             tracing::warn!("Error evaluating argument 'in': {:?}", e);
                         }
                     };
+                }
+
+                if results_fully_recieved.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
                 }
 
                 match results_waker_rx.recv().await {

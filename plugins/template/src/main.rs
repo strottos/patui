@@ -6,13 +6,17 @@
 
 mod functions;
 
-use std::{collections::HashMap, pin::Pin, result::Result as StdResult, sync::Arc};
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    result::Result as StdResult,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use clap::{arg, value_parser, ArgMatches};
 use eyre::{eyre, Result};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
-use tonic::Status;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 use ptplugin::{
@@ -22,6 +26,8 @@ use ptplugin::{
 
 pub(crate) struct Plugin {
     shutdown_signal: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+
+    results_fully_recieved: Arc<AtomicBool>,
 
     results: std::sync::Arc<tokio::sync::RwLock<PatuiData>>,
     produced_results: Arc<tokio::sync::RwLock<Vec<PatuiEvent>>>,
@@ -33,6 +39,8 @@ impl Plugin {
     pub fn new(shutdown_signal: tokio::sync::oneshot::Sender<()>) -> Self {
         Self {
             shutdown_signal: tokio::sync::Mutex::new(Some(shutdown_signal)),
+
+            results_fully_recieved: Arc::new(AtomicBool::new(false)),
 
             results: std::sync::Arc::new(tokio::sync::RwLock::new(ptplugin::PatuiData::Pending(
                 PatuiDataInner::Map(HashMap::new()),
@@ -130,12 +138,14 @@ impl plugin_server::PluginService for Plugin {
             .0
             .subscribe();
 
-        let (produce_results_rx, run_task) = match request.function.as_str() {
+        // TODO: Assert that run_task finishes
+        let (produce_results_rx, _run_task) = match request.function.as_str() {
             "echo" => {
                 let args = request.args;
                 let args = args.into_iter().collect::<HashMap<_, _>>();
 
-                functions::Echo::run(request.step_name, args, results, produced_results_waker_rx)
+                let obj = functions::Echo::new(self.results_fully_recieved.clone());
+                obj.run(request.step_name, args, results, produced_results_waker_rx)
             }
             s => {
                 return Err(tonic::Status::invalid_argument(format!(
@@ -203,6 +213,7 @@ impl plugin_server::PluginService for Plugin {
             .clone();
         let mut stream = request.into_inner();
         let results = self.results.clone();
+        let results_fully_recieved = self.results_fully_recieved.clone();
 
         let output = ptplugin::async_stream::try_stream! {
             tracing::trace!("Setup receive results streams");
@@ -241,6 +252,7 @@ impl plugin_server::PluginService for Plugin {
                 yield result.clone();
             }
             tracing::trace!("Finished receive results streams");
+            results_fully_recieved.store(true, std::sync::atomic::Ordering::SeqCst);
             produced_results_waker_tx.send(WakerType::Done).unwrap();
         };
 
