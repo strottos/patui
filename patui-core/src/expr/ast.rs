@@ -31,6 +31,14 @@ pub struct PatuiExpr {
 }
 
 impl PatuiExpr {
+    /// Append a string to the expression. This will parse the new string and create a new
+    /// expression
+    pub fn new_expr_append(&self, value: &str) -> Result<PatuiExpr, PatuiExprError> {
+        let mut new_expr = self.raw.clone();
+        new_expr.push_str(value);
+        new_expr.try_into()
+    }
+
     pub(crate) fn expr(&self) -> &Expr {
         &self.expr
     }

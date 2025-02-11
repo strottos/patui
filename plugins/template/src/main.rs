@@ -231,18 +231,22 @@ impl plugin_server::PluginService for Plugin {
                 let data: ptplugin::PatuiData = request.results.unwrap().try_into().unwrap();
                 ptplugin::tracing::debug!("Received data: {:?}", data);
                 {
+                    tracing::trace!("Locking write results");
                     let mut lock = results.write().await;
+                    tracing::trace!("Locked write results: {:?}", results);
                     match request.r#type.try_into() {
                         Ok(ResultType::Append) => {
                             lock.append_to_list(vec!["steps".to_string(), request.step_name, request.function_name, request.result_name], data).unwrap();
                         }
                         _ => todo!(),
                     }
-                    tracing::trace!("Results: {:?}", lock);
+                    tracing::trace!("New results: {:?}", lock);
 
                     // Important we send this before unlocking the results as otherwise we might
                     // get a race condition trying to lock the results stream.
                     produced_results_waker_tx.send(WakerType::Results).unwrap();
+
+                    tracing::trace!("Unlocking write results");
                 }
 
                 let result = ptplugin::plugin_server::receive_results::Response {

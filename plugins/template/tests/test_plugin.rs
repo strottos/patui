@@ -399,21 +399,17 @@ async fn produce_before_run() {
 
 #[traced_test]
 #[tokio::test]
+async fn multiple_different_runs() {}
+
+#[traced_test]
+#[tokio::test]
 async fn subscribe_after_run() {}
 
 #[traced_test]
 #[tokio::test]
 async fn much_sleeping() {}
 
-#[traced_test]
-#[tokio::test]
-async fn extensive_wait() {}
-
 // benches?
 #[traced_test]
 #[tokio::test]
 async fn load_test() {}
-
-#[traced_test]
-#[tokio::test]
-async fn send_results_after_done() {}

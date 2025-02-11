@@ -68,49 +68,75 @@ impl FunctionService for Echo {
             loop {
                 tracing::debug!("Evaluating argument 'in' for static data: {:?}", r#in);
 
-                {
-                    let results = results.read().await.clone();
+                tracing::trace!("Locking read results");
+                let results_clone = results.read().await.clone();
+                tracing::trace!("Unlocked and found read results: {:?}", results_clone);
 
-                    tracing::trace!("Results: {:?}", results);
+                match eval_patui_expr(&r#in, &results_clone) {
+                    Ok(eval) => match eval {
+                        PatuiData::Known(patui_data_inner)
+                        | PatuiData::Pending(patui_data_inner) => match patui_data_inner {
+                            ptplugin::PatuiDataInner::Null => todo!(),
+                            ptplugin::PatuiDataInner::Bool(_) => todo!(),
+                            ptplugin::PatuiDataInner::Bytes(_) => todo!(),
+                            ptplugin::PatuiDataInner::String(_) => todo!(),
+                            ptplugin::PatuiDataInner::Integer(_) => todo!(),
+                            ptplugin::PatuiDataInner::Decimal(_) => todo!(),
+                            ptplugin::PatuiDataInner::List(patui_list) => {
+                                for item in patui_list.iter().skip(num_results_sent) {
+                                    produce_results_tx
+                                        .send(Ok(PatuiEvent::Results(
+                                            format!("steps.{}.echo.out", step_name)
+                                                .try_into()
+                                                .unwrap(),
+                                            true.into(),
+                                            PatuiResultType::Append,
+                                            item.clone(),
+                                        )))
+                                        .await
+                                        .unwrap();
+                                    num_results_sent += 1;
+                                }
+                            }
+                            ptplugin::PatuiDataInner::Map(_) => todo!(),
+                            ptplugin::PatuiDataInner::Set(_) => todo!(),
+                        },
+                        PatuiData::Unknown => {}
+                    },
+                    Err(e) => {
+                        tracing::warn!("Error evaluating argument 'in': {:?}", e);
+                    }
+                };
 
-                    match eval_patui_expr(&r#in, &results) {
+                if results_fully_recieved.load(std::sync::atomic::Ordering::Relaxed) {
+                    tracing::debug!("Results fully received, checking if anything left");
+
+                    tracing::trace!("Locking read results for length check");
+                    let results_clone = results.read().await.clone();
+                    tracing::trace!(
+                        "Unlocked and found read results for length check: {:?}",
+                        results_clone
+                    );
+                    let expr = r#in.new_expr_append(".len()").unwrap();
+
+                    match eval_patui_expr(&expr, &results_clone) {
                         Ok(eval) => match eval {
                             PatuiData::Known(patui_data_inner)
                             | PatuiData::Pending(patui_data_inner) => match patui_data_inner {
-                                ptplugin::PatuiDataInner::Null => todo!(),
-                                ptplugin::PatuiDataInner::Bool(_) => todo!(),
-                                ptplugin::PatuiDataInner::Bytes(_) => todo!(),
-                                ptplugin::PatuiDataInner::String(_) => todo!(),
-                                ptplugin::PatuiDataInner::Integer(_) => todo!(),
-                                ptplugin::PatuiDataInner::Decimal(_) => todo!(),
-                                ptplugin::PatuiDataInner::List(patui_list) => {
-                                    for item in patui_list.iter().skip(num_results_sent) {
-                                        produce_results_tx
-                                            .send(Ok(PatuiEvent::Results(
-                                                format!("steps.{}.echo.out", step_name)
-                                                    .try_into()
-                                                    .unwrap(),
-                                                true.into(),
-                                                PatuiResultType::Append,
-                                                item.clone(),
-                                            )))
-                                            .await
-                                            .unwrap();
-                                        num_results_sent += 1;
+                                ptplugin::PatuiDataInner::Integer(len) => {
+                                    if len != num_results_sent as i64 {
+                                        continue;
                                     }
                                 }
-                                ptplugin::PatuiDataInner::Map(_) => todo!(),
-                                ptplugin::PatuiDataInner::Set(_) => todo!(),
+                                _ => todo!(),
                             },
-                            PatuiData::Unknown => {}
+                            PatuiData::Unknown => todo!(),
                         },
                         Err(e) => {
                             tracing::warn!("Error evaluating argument 'in': {:?}", e);
                         }
-                    };
-                }
+                    }
 
-                if results_fully_recieved.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
 
