@@ -82,7 +82,7 @@ mod tests {
         let mut cmd = Command::new(plugin_binary.path());
         let child = cmd
             .args(["--port", &port.to_string()])
-            .env("PATUI_LOG", "trace,h2=info")
+            .env("PATUI_LOG", env::var("PATUI_LOG").unwrap_or("".to_string()))
             .env(
                 "RUST_BACKTRACE",
                 env::var("RUST_BACKTRACE").unwrap_or("".to_string()),
