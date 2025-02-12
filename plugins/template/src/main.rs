@@ -8,6 +8,7 @@ mod functions;
 
 use std::{
     collections::HashMap,
+    path::Path,
     pin::Pin,
     result::Result as StdResult,
     sync::{atomic::AtomicBool, Arc},
@@ -17,7 +18,9 @@ use clap::{arg, value_parser, ArgMatches};
 use eyre::{eyre, Result};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
+use tracing_subscriber::{
+    fmt::writer::BoxMakeWriter, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry,
+};
 
 use ptplugin::{
     plugin_server::{self, PluginServiceServer, ResultType},
@@ -58,11 +61,31 @@ fn initialise_logging() -> Result<()> {
     };
     let filter = filter.map_or(EnvFilter::default(), EnvFilter::new);
 
+    let writer = match std::env::var("PATUI_LOG_FILE") {
+        Ok(path) => {
+            if !path.is_empty() {
+                let now = chrono::offset::Local::now();
+                let path = path
+                    .replace("${timestamp}", &now.timestamp().to_string())
+                    .replace("${datetime}", &now.format("%Y%m%d%H%M%S").to_string());
+                let path = Path::new(&path);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                BoxMakeWriter::new(Arc::new(std::fs::File::create(path)?))
+            } else {
+                BoxMakeWriter::new(std::io::stderr)
+            }
+        }
+        Err(_) => BoxMakeWriter::new(std::io::stderr),
+    };
+
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_file(false)
         .with_line_number(false)
         .with_target(true)
         .with_ansi(false)
+        .with_writer(writer)
         .without_time();
 
     Registry::default().with(filter).with(fmt_layer).init();
@@ -138,7 +161,7 @@ impl plugin_server::PluginService for Plugin {
             .0
             .subscribe();
 
-        // TODO: Assert that run_task finishes
+        // TODO: Assert that run_task finishes?
         let (produce_results_rx, _run_task) = match request.function.as_str() {
             "echo" => {
                 let args = request.args;
@@ -244,7 +267,7 @@ impl plugin_server::PluginService for Plugin {
 
                     // Important we send this before unlocking the results as otherwise we might
                     // get a race condition trying to lock the results stream.
-                    produced_results_waker_tx.send(WakerType::Results).unwrap();
+                    produced_results_waker_tx.send(ptplugin::WakerType::Results).unwrap();
 
                     tracing::trace!("Unlocking write results");
                 }
@@ -267,8 +290,11 @@ impl plugin_server::PluginService for Plugin {
 
     async fn shutdown(
         &self,
-        request: tonic::Request<plugin_server::shutdown::Request>,
-    ) -> StdResult<tonic::Response<plugin_server::shutdown::Response>, tonic::Status> {
+        request: tonic::Request<ptplugin::plugin_server::shutdown::Request>,
+    ) -> StdResult<
+        tonic::Response<ptplugin::plugin_server::shutdown::Response>,
+        ptplugin::tonic::Status,
+    > {
         tracing::info!("Requesting shutdown: {:?}", request.remote_addr());
 
         let shutdown_tx = self.shutdown_signal.lock().await.take().unwrap();

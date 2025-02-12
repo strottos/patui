@@ -1,80 +1,87 @@
-use std::{collections::HashMap, sync::Arc};
-
-use ptplugin::{
-    eval_patui_expr,
-    plugin_server::ResultType,
-    tokio::{
-        self,
-        sync::{mpsc, Mutex},
-    },
-    FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr, Result,
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicBool, Arc},
 };
 
-pub(crate) struct Transform;
+use ptplugin::{
+    eval_patui_expr, plugin_server::ResultType, tokio, FunctionService, PatuiData, PatuiDataInner,
+    PatuiEvent, PatuiExpr, PatuiResultType, Result, WakerType,
+};
+use tokio::sync::{broadcast, RwLock};
+use tonic::Status;
+
+pub(crate) struct Transform {
+    results_fully_recieved: Arc<AtomicBool>,
+}
+
+impl Transform {
+    pub fn new(results_fully_recieved: Arc<AtomicBool>) -> Self {
+        Self {
+            results_fully_recieved,
+        }
+    }
+}
 
 impl FunctionService for Transform {
     fn run(
         &self,
+        step_name: String,
         args: HashMap<String, String>,
-        tx: mpsc::Sender<(String, PatuiEvent)>,
-        results: Arc<Mutex<PatuiData>>,
-        mut waker_rx: mpsc::Receiver<()>,
-    ) -> Result<tokio::task::JoinHandle<()>> {
-        Ok(tokio::spawn(async move {
+        results: Arc<RwLock<PatuiData>>,
+        mut results_waker_rx: broadcast::Receiver<WakerType>,
+    ) -> (
+        tokio::sync::mpsc::Receiver<Result<PatuiEvent, Status>>,
+        Option<tokio::task::JoinHandle<()>>,
+    ) {
+        let (produce_results_tx, produce_results_rx) = tokio::sync::mpsc::channel(16);
+
+        let task = tokio::spawn(async move {
             let Some(r#in) = args.get("in") else {
-                tx.send((
-                    "Err".to_string(),
-                    PatuiEvent::Error("Missing required argument 'in'".to_string()),
-                ))
-                .await
-                .unwrap();
+                produce_results_tx
+                    .send(Err(Status::invalid_argument(
+                        "Missing required argument 'in'".to_string(),
+                    )))
+                    .await
+                    .unwrap();
                 return;
             };
 
             let r#in: PatuiExpr = match (r#in).try_into() {
                 Ok(r) => r,
                 Err(e) => {
-                    tx.send((
-                        "Err".to_string(),
-                        PatuiEvent::Error(format!("Invalid argument 'in': {}", e)),
-                    ))
-                    .await
-                    .unwrap();
+                    produce_results_tx
+                        .send(Err(Status::invalid_argument(format!(
+                            "Invalid argument 'in': {}",
+                            e
+                        ))))
+                        .await
+                        .unwrap();
                     return;
                 }
             };
 
             tracing::debug!("Evaluating argument 'in' for static data: {:?}", r#in);
 
-            let mut first_run = true;
-
             loop {
-                if first_run {
-                    first_run = false;
-                } else {
-                    match waker_rx.recv().await {
-                        Some(_) => (),
-                        None => break,
-                    }
-                }
+                tracing::debug!("Evaluating argument 'in' for static data: {:?}", r#in);
 
-                let results = results.lock().await.clone();
+                tracing::trace!("Locking read results");
+                let results_clone = results.read().await.clone();
+                tracing::trace!("Unlocked and found read results: {:?}", results_clone);
 
-                let data = match eval_patui_expr(&r#in, &results) {
+                let data = match eval_patui_expr(&r#in, &results_clone) {
                     Ok(data) => data,
                     Err(e) => {
                         match e {
                             ptplugin::EvalError::DataNotFound => (),
                             _ => {
-                                tx.send((
-                                    "Err".to_string(),
-                                    PatuiEvent::Error(format!(
+                                produce_results_tx
+                                    .send(Err(Status::internal(format!(
                                         "Couldn't evaluate argument 'in' for static data: {}",
                                         e
-                                    )),
-                                ))
-                                .await
-                                .unwrap();
+                                    ))))
+                                    .await
+                                    .unwrap();
                             }
                         }
                         continue;
@@ -82,12 +89,12 @@ impl FunctionService for Transform {
                 };
 
                 if !data.is_known() {
-                    tx.send((
-                        "Err".to_string(),
-                        PatuiEvent::Error("Data evaluated to be unknown data".to_string()),
-                    ))
-                    .await
-                    .unwrap();
+                    produce_results_tx
+                        .send(Err(Status::internal(
+                            "Data evaluated to be unknown data".to_string(),
+                        )))
+                        .await
+                        .unwrap();
                     return;
                 }
 
@@ -97,38 +104,37 @@ impl FunctionService for Transform {
                         let json: serde_json::Value = match serde_json::from_str(s) {
                             Ok(json) => json,
                             Err(e) => {
-                                tx.send((
-                                    "Err".to_string(),
-                                    PatuiEvent::Error(format!("Failed to parse JSON: {}", e)),
-                                ))
-                                .await
-                                .unwrap();
+                                produce_results_tx
+                                    .send(Err(Status::internal(format!(
+                                        "Failed to parse JSON: {}",
+                                        e
+                                    ))))
+                                    .await
+                                    .unwrap();
                                 return;
                             }
                         };
                         PatuiEvent::Results(
                             PatuiExpr::try_from("out").unwrap(),
                             true.into(),
-                            ResultType::Append.into(),
+                            PatuiResultType::Append,
                             match try_convert_serde_json_to_patui_data(json) {
                                 Ok(json) => json,
                                 Err(e) => {
-                                    tx.send((
-                                        "Err".to_string(),
-                                        PatuiEvent::Error(format!(
+                                    produce_results_tx
+                                        .send(Err(Status::internal(format!(
                                             "Failed to convert JSON to static data: {}",
                                             e
-                                        )),
-                                    ))
-                                    .await
-                                    .unwrap();
+                                        ))))
+                                        .await
+                                        .unwrap();
                                     return;
                                 }
                             },
                         )
                     }
                     _ => {
-                        tx.send(("Err".to_string(), PatuiEvent::Error(
+                        produce_results_tx.send(Err(Status::internal(
                             "Data evaluated to non-string static data must always be known data"
                                 .to_string(),
                         )))
@@ -138,9 +144,26 @@ impl FunctionService for Transform {
                     }
                 };
 
-                tx.send(("out".to_string(), event)).await.unwrap();
+                produce_results_tx.send(Ok(event)).await.unwrap();
+
+                match results_waker_rx.recv().await {
+                    Ok(waker_type) => match waker_type {
+                        WakerType::Results => {
+                            tracing::debug!("Received results waker to retry results");
+                        }
+                        WakerType::Done => {
+                            tracing::debug!("Done receiving results, quitting");
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        panic!("Error receiving waker: {:?}", e);
+                    }
+                }
             }
-        }))
+        });
+
+        (produce_results_rx, Some(task))
     }
 }
 

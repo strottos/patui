@@ -4,6 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 pub use async_stream;
 pub use clap;
 pub use convert_case;
+pub use eyre::{eyre, Result};
 pub use tokio;
 pub use tokio_stream;
 pub use tonic;
@@ -11,11 +12,7 @@ use tonic::Status;
 pub use tracing;
 pub use tracing_subscriber;
 
-use tokio::sync::{
-    broadcast,
-    mpsc::{self, Receiver},
-    Mutex, RwLock,
-};
+use tokio::sync::{broadcast, mpsc::Receiver, RwLock};
 
 pub use patui_core::{
     eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp,
@@ -25,8 +22,8 @@ pub use patui_plugin_macros::main;
 
 pub mod plugin_server {
     pub use patui_core::ptplugin::{
-        get_info, init, plugin_service_server::*, receive_results, run, shutdown, ResultType,
-        StepRunner,
+        get_info, init, plugin_service_client, plugin_service_server::*, receive_results, run,
+        shutdown, ResultType, StepRunner,
     };
 }
 
@@ -50,7 +47,7 @@ pub trait FunctionService {
 }
 
 #[cfg(feature = "test")]
-pub use tests::{run_plugin, shutdown_plugin};
+pub use tests::{connect_plugin, run_plugin, shutdown_plugin, spawn_plugin};
 
 #[cfg(feature = "test")]
 mod tests {
@@ -69,6 +66,14 @@ mod tests {
     use tonic::transport::Channel;
 
     pub async fn run_plugin(bin_name: &str) -> Result<(Child, PluginServiceClient<Channel>)> {
+        let (child, port) = spawn_plugin(bin_name).await?;
+
+        let client = connect_plugin(port).await;
+
+        Ok((child, client))
+    }
+
+    pub async fn spawn_plugin(bin_name: &str) -> Result<(Child, u16)> {
         let port = get_unused_localhost_port()?;
 
         let plugin_binary = CargoBuild::new()
@@ -84,6 +89,10 @@ mod tests {
             .args(["--port", &port.to_string()])
             .env("PATUI_LOG", env::var("PATUI_LOG").unwrap_or("".to_string()))
             .env(
+                "PATUI_LOG_FILE",
+                env::var("PATUI_LOG_FILE").unwrap_or("".to_string()),
+            )
+            .env(
                 "RUST_BACKTRACE",
                 env::var("RUST_BACKTRACE").unwrap_or("".to_string()),
             )
@@ -92,12 +101,10 @@ mod tests {
 
         assert_that!(child.id()).is_not_equal_to(0);
 
-        let client = connect_plugin(port).await;
-
-        Ok((child, client))
+        Ok((child, port))
     }
 
-    async fn connect_plugin(port: u16) -> PluginServiceClient<Channel> {
+    pub async fn connect_plugin(port: u16) -> PluginServiceClient<Channel> {
         for _ in 0..50 {
             let addr = format!("http://[::1]:{}", port);
             let client = PluginServiceClient::connect(addr).await;

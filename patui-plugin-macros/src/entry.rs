@@ -55,8 +55,7 @@ fn init_logging_function() -> TokenStream {
                 Ok(log) => Some(log),
                 Err(_) => return Ok(()),
             };
-            let var_name = EnvFilter::default();
-            let filter = filter.map_or(var_name, EnvFilter::new);
+            let filter = filter.map_or(EnvFilter::default(), EnvFilter::new);
 
             let fmt_layer = ptplugin::tracing_subscriber::fmt::layer()
                 .with_file(false)
@@ -111,7 +110,15 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 .ident
                 .to_string()
                 .to_case(convert_case::Case::Snake);
-            quote! { #name => Box::new(#path), }
+            quote! {
+                #name => {
+                    let args = request.args;
+                    let args = args.into_iter().collect::<std::collections::HashMap<_, _>>();
+
+                    let obj = #path::new(self.results_fully_recieved.clone());
+                    obj.run(request.step_name, args, results, produced_results_waker_rx)
+                },
+            }
         })
         .collect::<Vec<_>>();
 
@@ -120,78 +127,29 @@ fn init_server_structures(config: &Config) -> TokenStream {
         pub(crate) struct #plugin_server_struct_name {
             shutdown_signal: ptplugin::tokio::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
 
-            results: std::sync::Arc<ptplugin::tokio::sync::Mutex<ptplugin::PatuiData>>,
+            results_fully_recieved: std::sync::Arc<std::sync::atomic::AtomicBool>,
 
-            produced_results_channel: (
-                std::sync::Mutex<Option<ptplugin::tokio::sync::mpsc::Sender<(String, ptplugin::PatuiEvent)>>>,
-                std::sync::Mutex<Option<ptplugin::tokio::sync::mpsc::Receiver<(String, ptplugin::PatuiEvent)>>>,
-            ),
-
-            waker_channel: (
-                std::sync::Mutex<Option<ptplugin::tokio::sync::mpsc::Sender<()>>>,
-                std::sync::Mutex<Option<ptplugin::tokio::sync::mpsc::Receiver<()>>>,
-            ),
-
-            run_done_channel: (
-                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
-                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Receiver<()>>>,
-            ),
-            produce_results_done_channel: (
-                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
-                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Receiver<()>>>,
-            ),
-            receive_results_done_channel: (
-                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
-                std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Receiver<()>>>,
-            ),
-            receive_results_cancel_tx:
-                std::sync::Mutex<Option<ptplugin::tokio::sync::broadcast::Sender<()>>>,
-
-            expected_acks: std::sync::Arc<ptplugin::tokio::sync::Mutex<std::collections::HashMap<i64, ptplugin::tokio::sync::oneshot::Sender<()>>>>,
+            results: std::sync::Arc<ptplugin::tokio::sync::RwLock<ptplugin::PatuiData>>,
+            produced_results: std::sync::Arc<ptplugin::tokio::sync::RwLock<Vec<ptplugin::PatuiEvent>>>,
+            produced_results_waker:
+                ptplugin::tokio::sync::Mutex<Option<(
+                    ptplugin::tokio::sync::broadcast::Sender<ptplugin::WakerType>,
+                    ptplugin::tokio::sync::broadcast::Receiver<ptplugin::WakerType>
+                )>>,
         }
 
         impl #plugin_server_struct_name {
             pub fn new(shutdown_signal: ptplugin::tokio::sync::oneshot::Sender<()>) -> Self {
-                let (waker_tx, waker_rx) = ptplugin::tokio::sync::mpsc::channel(1);
-
-                let (produced_results_tx, produced_results_rx) = ptplugin::tokio::sync::mpsc::channel(1);
-
-                let (run_done_tx, run_done_rx) = ptplugin::tokio::sync::oneshot::channel();
-                let (produce_results_done_tx, produce_results_done_rx) = ptplugin::tokio::sync::oneshot::channel();
-                let (receive_results_done_tx, receive_results_done_rx) = ptplugin::tokio::sync::oneshot::channel();
-                let (receive_results_cancel_tx, _) = ptplugin::tokio::sync::broadcast::channel(1);
-
                 Self {
                     shutdown_signal: ptplugin::tokio::sync::Mutex::new(Some(shutdown_signal)),
 
-                    results: std::sync::Arc::new(ptplugin::tokio::sync::Mutex::new(ptplugin::PatuiData::Pending(ptplugin::PatuiDataInner::Map(std::collections::HashMap::new())))),
+                    results_fully_recieved: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
 
-                    produced_results_channel: (
-                        std::sync::Mutex::new(Some(produced_results_tx)),
-                        std::sync::Mutex::new(Some(produced_results_rx)),
-                    ),
-
-                    waker_channel: (
-                        std::sync::Mutex::new(Some(waker_tx)),
-                        std::sync::Mutex::new(Some(waker_rx)),
-                    ),
-
-                    run_done_channel: (
-                        std::sync::Mutex::new(Some(run_done_tx)),
-                        std::sync::Mutex::new(Some(run_done_rx)),
-                    ),
-                    produce_results_done_channel: (
-                        std::sync::Mutex::new(Some(produce_results_done_tx)),
-                        std::sync::Mutex::new(Some(produce_results_done_rx)),
-                    ),
-                    receive_results_done_channel: (
-                        std::sync::Mutex::new(Some(receive_results_done_tx)),
-                        std::sync::Mutex::new(Some(receive_results_done_rx)),
-                    ),
-                    receive_results_cancel_tx:
-                        std::sync::Mutex::new(Some(receive_results_cancel_tx)),
-
-                    expected_acks: std::sync::Arc::new(ptplugin::tokio::sync::Mutex::new(std::collections::HashMap::new())),
+                    results: std::sync::Arc::new(ptplugin::tokio::sync::RwLock::new(ptplugin::PatuiData::Pending(
+                        ptplugin::PatuiDataInner::Map(std::collections::HashMap::new()),
+                    ))),
+                    produced_results: std::sync::Arc::new(ptplugin::tokio::sync::RwLock::new(Vec::new())),
+                    produced_results_waker: ptplugin::tokio::sync::Mutex::new(Some(ptplugin::tokio::sync::broadcast::channel(16))),
                 }
             }
         }
@@ -229,266 +187,151 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 }))
             }
 
+            type RunStream = ptplugin::tokio_stream::wrappers::ReceiverStream<
+                std::result::Result<ptplugin::plugin_server::run::Response, ptplugin::tonic::Status>,
+            >;
+
             async fn run(
                 &self,
                 request: ptplugin::tonic::Request<ptplugin::plugin_server::run::Request>,
-            ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::run::Response>, ptplugin::tonic::Status> {
+            ) -> std::result::Result<ptplugin::tonic::Response<Self::RunStream>, ptplugin::tonic::Status> {
+                use ptplugin::FunctionService;
+
                 let request = request.into_inner();
 
                 ptplugin::tracing::info!("Request run {}", request.function);
 
-                let function_service: Box<dyn ptplugin::FunctionService> = match request.function.as_str() {
+                let (send_patui_results_tx, send_patui_results_rx) = ptplugin::tokio::sync::mpsc::channel(16);
+                let results = self.results.clone();
+
+                let produced_results_waker_rx = self
+                    .produced_results_waker
+                    .lock()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .subscribe();
+
+                // TODO: Assert that run_task finishes?
+                let (produce_results_rx, _run_task) = match request.function.as_str() {
                     #(#function_names)*
-                    _ => {
-                        return Err(ptplugin::tonic::Status::unimplemented(
-                            &format!("Function {} not implemented for running", request.function),
-                        ))
+                    s => {
+                        return Err(ptplugin::tonic::Status::invalid_argument(format!(
+                            "Unknown function '{}'",
+                            s
+                        )));
                     }
                 };
 
-                ptplugin::tracing::info!("Running function: {}", request.function);
-
-                let produced_results_tx = self.produced_results_channel.0.lock().unwrap().take().unwrap();
-                let waker_rx = self.waker_channel.1.lock().unwrap().take().unwrap();
-
-                match function_service.run(request.args.clone(), produced_results_tx, self.results.clone(), waker_rx) {
-                    Ok(task) => {
-                        let run_done_tx = self.run_done_channel.0.lock().unwrap().take().unwrap();
-                        let receive_results_cancel_tx = self.receive_results_cancel_tx.lock().unwrap().clone().unwrap();
-                        ptplugin::tokio::spawn(async move {
-                            ptplugin::tracing::trace!("Awaiting run task completion");
-                            if let Err(e) = task.await {
-                                panic!("Error waiting for run function: {:?}", e);
-                            }
-                            ptplugin::tracing::trace!("Run task complete");
-                            if let Err(e) = run_done_tx.send(()) {
-                                tracing::warn!("Error notifying run task done: {:?}", e);
-                            }
-                            let _ = receive_results_cancel_tx.send(());
-                            ptplugin::tracing::trace!("Run task done notified");
-                        });
-                    }
-                    Err(e) => {
-                        ptplugin::tracing::error!("Error running function: {:?}", e);
-                        return Err(ptplugin::tonic::Status::internal(format!("Error running function: {}", e)));
-                    }
-                };
-
-                Ok(ptplugin::tonic::Response::new(ptplugin::plugin_server::run::Response {
-                    diagnostics: vec![],
-                }))
-            }
-
-            type ProduceResultsStream = ptplugin::tokio_stream::wrappers::ReceiverStream<std::result::Result<ptplugin::plugin_server::produce_results::Request, ptplugin::tonic::Status>>;
-
-            async fn produce_results(
-                &self,
-                _request: ptplugin::tonic::Request<ptplugin::plugin_server::produce_results::Init>,
-            ) -> std::result::Result<ptplugin::tonic::Response<Self::ProduceResultsStream>, ptplugin::tonic::Status> {
-                let produced_results_rx = self.produced_results_channel.1.lock().unwrap().take().unwrap();
-
-                let (tx, rx) = ptplugin::tokio::sync::mpsc::channel(1);
-                let expected_acks = self.expected_acks.clone();
-                let done_tx = self.produce_results_done_channel.0.lock().unwrap().take().unwrap();
-                let counter = std::sync::atomic::AtomicI64::new(1);
-
+                // TODO: Assert this finishes after we get a Done event/in shutdown?
                 ptplugin::tokio::spawn(async move {
-                    let mut produced_results_rx = produced_results_rx;
-                    let mut tasks = vec![];
-                    while let Some((name, event)) = produced_results_rx.recv().await {
-                        let id = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        ptplugin::tracing::info!("Event to send - {}: {:?}", name, event);
-                        let result = event.try_into();
-                        let result = match result {
-                            Ok(r) => {
-                                Ok(ptplugin::plugin_server::produce_results::Request {
-                                    id,
-                                    data: Some(r),
-                                    diagnostics: vec![],
-                                })
-                            },
-                            Err(e) => {
-                                Err(ptplugin::tonic::Status::internal(format!("Error converting result: {}", e)))
-                            },
-                        };
-                        ptplugin::tracing::debug!("Sending event details: {:?}", result);
-                        let (ack_tx, ack_rx) = ptplugin::tokio::sync::oneshot::channel();
+                    let send_patui_results_tx = send_patui_results_tx;
+                    // let mut produced_results = self.produced_results.clone();
+                    let mut produce_results_rx = produce_results_rx;
 
-                        expected_acks.lock().await.insert(id, ack_tx);
+                    while let Some(event_res) = produce_results_rx.recv().await {
+                        {
+                            // TODO: Add results into self.produced_results/self.results?
+                            let result = match event_res {
+                                Ok(event) => Ok(ptplugin::plugin_server::run::Response {
+                                    data: Some(
+                                        (&event)
+                                            .try_into()
+                                            .expect("Should be able to encode any event"),
+                                    ),
+                                }),
+                                Err(e) => Err(ptplugin::tonic::Status::internal(format!("Error: {}", e))),
+                            };
 
-                        ptplugin::tracing::trace!("HERE1");
-                        if let Err(e) = tx.send(result).await {
-                            panic!("Error sending result: {:?}", e);
-                        };
-                        ptplugin::tracing::trace!("HERE2");
+                            ptplugin::tracing::debug!("Sending event details: {:?}", result);
 
-                        // Ensure we get an ack for the result, otherwise these tasks will fail or
-                        // timeout.
-                        tasks.push(ptplugin::tokio::spawn(async move {
-                        ptplugin::tracing::trace!("HERE3");
-                            if let Err(e) = ack_rx.await {
-                                panic!("Error waiting for ack: {:?}", e);
-
+                            if let Err(e) = send_patui_results_tx.send(result).await {
+                                ptplugin::tracing::error!("Error sending result: {:?}", e);
+                                break;
                             }
-                        ptplugin::tracing::trace!("HERE4");
-                        }));
-                    }
-
-                    for task in tasks.drain(..) {
-                        ptplugin::tracing::trace!("HERE5");
-                        ptplugin::tracing::trace!("Waiting for ack");
-                        ptplugin::tokio::select! {
-                            ret = task => {
-                                if let Err(e) = ret {
-                                    panic!("Error waiting for ack task: {:?}", e);
-                                }
-                            }
-                            // _ = run_done_rx.recv() => {
-                            //     tracing::warn!("Run done before all acks received, bailing");
-                            //     break;
-                            // }
                         }
-                        ptplugin::tracing::trace!("HERE6");
-                        ptplugin::tracing::trace!("Ack received");
                     }
-
-                        ptplugin::tracing::trace!("HERE7");
-                    if let Err(e) = done_tx.send(()) {
-                        panic!("Error sending produce results done: {:?}", e);
-                    }
-                        ptplugin::tracing::trace!("HERE8");
                 });
 
-                Ok(ptplugin::tonic::Response::new(ptplugin::tokio_stream::wrappers::ReceiverStream::new(rx)))
+                Ok(ptplugin::tonic::Response::new(
+                    ptplugin::tokio_stream::wrappers::ReceiverStream::new(send_patui_results_rx),
+                ))
             }
 
-            async fn ack_result(
-                &self,
-                request: ptplugin::tonic::Request<ptplugin::plugin_server::ack_result::Request>,
-            ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::ack_result::Response>, ptplugin::tonic::Status> {
-                let request = request.into_inner();
-
-
-                ptplugin::tracing::trace!("Ack result: {}", request.id);
-                if let Err(e) = self.expected_acks.lock().await.remove(&request.id).unwrap().send(()) {
-                    panic!("Error sending ack {}: {:?}", request.id, e);
-                }
-                ptplugin::tracing::trace!("Acked: {}", request.id);
-
-                Ok(ptplugin::tonic::Response::new(ptplugin::plugin_server::ack_result::Response {}))
-            }
-
-            type ReceiveResultsStream =
-                std::pin::Pin<Box<dyn ptplugin::tokio_stream::Stream<Item = std::result::Result<ptplugin::plugin_server::receive_results::Response, ptplugin::tonic::Status>> + Send + 'static>>;
+            type ReceiveResultsStream = std::pin::Pin<
+                Box<
+                    dyn ptplugin::tokio_stream::Stream<
+                            Item = std::result::Result<ptplugin::plugin_server::receive_results::Response, ptplugin::tonic::Status>,
+                        > + Send
+                        + 'static,
+                >,
+            >;
 
             async fn receive_results(
                 &self,
                 request: ptplugin::tonic::Request<ptplugin::tonic::Streaming<ptplugin::plugin_server::receive_results::Request>>,
             ) -> std::result::Result<ptplugin::tonic::Response<Self::ReceiveResultsStream>, ptplugin::tonic::Status> {
-                ptplugin::tracing::info!("Receive results: {:?}", request.remote_addr());
+                let produced_results_waker_tx = self
+                    .produced_results_waker
+                    .lock()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .clone();
                 let mut stream = request.into_inner();
                 let results = self.results.clone();
-                let waker_tx = self.waker_channel.0.lock().unwrap().take().unwrap();
-                let done_tx = self.receive_results_done_channel.0.lock().unwrap().take().unwrap();
-                let receive_results_cancel_tx = self.receive_results_cancel_tx.lock().unwrap().clone().unwrap();
+                let results_fully_recieved = self.results_fully_recieved.clone();
 
                 let output = ptplugin::async_stream::try_stream! {
+                    ptplugin::tracing::trace!("Setup receive results streams");
                     loop {
-                        let mut receive_results_cancel_rx = receive_results_cancel_tx.subscribe();
-                        tracing::trace!("Setup receive results streams");
-                        ptplugin::tokio::select! {
-                            message = stream.next() => {
-                                tracing::trace!("HELLO2");
-                                let message = match message {
-                                    Some(Ok(message)) => message,
-                                    _ => break,
-                                };
-
-                                ptplugin::tracing::info!("Results received: {:?}", message);
-
-                                let data: ptplugin::PatuiData = message.results.unwrap().try_into().unwrap();
-
-                                ptplugin::tracing::debug!("Results: {:?}", data);
-
-                                let mut lock = results.lock().await;
-                        tracing::trace!("HELLO6");
-                                // TODO: Merge
-                                *lock = data;
-                        tracing::trace!("HELLO7");
-                                if let Err(e) = waker_tx.send(()).await {
-                        tracing::trace!("HELLO8");
-                                    panic!("Error sending wakeup call: {:?}", e);
-                                }
-                        tracing::trace!("HELLO9");
-
-                                let result = ptplugin::plugin_server::receive_results::Response {
-                                    diagnostics: vec![],
-                                };
-                        tracing::trace!("HELLO10");
-
-                                yield result.clone();
-                            }
-                            done = receive_results_cancel_rx.recv() => {
-                                tracing::trace!("HELLO3");
+                        let request = match stream.next().await {
+                            Some(Ok(r)) => r,
+                            Some(Err(e)) => {
+                                ptplugin::tracing::error!("Error receiving results: {:?}", e);
                                 break;
                             }
+                            None => break,
+                        };
+                        ptplugin::tracing::trace!("Received results: {:?}", request);
+
+                        let data: ptplugin::PatuiData = request.results.unwrap().try_into().unwrap();
+                        ptplugin::tracing::debug!("Received data: {:?}", data);
+                        {
+                            ptplugin::tracing::trace!("Locking write results");
+                            let mut lock = results.write().await;
+                            ptplugin::tracing::trace!("Locked write results: {:?}", results);
+                            match request.r#type.try_into() {
+                                Ok(ptplugin::plugin_server::ResultType::Append) => {
+                                    lock.append_to_list(vec!["steps".to_string(), request.step_name, request.function_name, request.result_name], data).unwrap();
+                                }
+                                _ => todo!(),
+                            }
+                            ptplugin::tracing::trace!("New results: {:?}", lock);
+
+                            // Important we send this before unlocking the results as otherwise we might
+                            // get a race condition trying to lock the results stream.
+                            produced_results_waker_tx.send(ptplugin::WakerType::Results).unwrap();
+
+                            ptplugin::tracing::trace!("Unlocking write results");
                         }
+
+                        let result = ptplugin::plugin_server::receive_results::Response {
+                            diagnostics: vec![],
+                        };
+
+                        yield result.clone();
                     }
-
-                    ptplugin::tracing::info!("Publish stream ended");
-
-                    // TODO: possibly Patui should make this decision
-                    // let mut lock = results.lock().await;
-                    // *lock = match lock.clone().to_known() {
-                    //     Ok(res) => res,
-                    //     Err(e) => {
-                    //         panic!("Error converting results to known: {:?}", e);
-                    //     }
-                    // };
-                    // if let Err(e) = waker_tx.send(()).await {
-                    //     panic!("Error sending final wakeup call: {:?}", e);
-                    // }
-
-                    if let Err(e) = done_tx.send(()) {
-                        panic!("Error sending receive results done: {:?}", e);
-                    }
+                    ptplugin::tracing::trace!("Finished receive results streams");
+                    results_fully_recieved.store(true, std::sync::atomic::Ordering::SeqCst);
+                    produced_results_waker_tx.send(ptplugin::WakerType::Done).unwrap();
                 };
 
-                Ok(ptplugin::tonic::Response::new(Box::pin(output) as Self::ReceiveResultsStream))
-            }
-
-            async fn wait(
-                &self,
-                request: ptplugin::tonic::Request<ptplugin::plugin_server::wait::Request>,
-            ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::wait::Response>, ptplugin::tonic::Status> {
-                ptplugin::tracing::info!("Request wait: {:?}", request.remote_addr());
-
-                let receive_results_done_rx = self.receive_results_done_channel.1.lock().unwrap().take().unwrap();
-
-                if let Err(e) = receive_results_done_rx.await {
-                    panic!("Error waiting for receive results done: {:?}", e);
-                }
-                ptplugin::tracing::trace!("Receive results notify received");
-
-                let mut run_done_rx = self.run_done_channel.1.lock().unwrap().take().unwrap();
-                                tracing::trace!("HELLO4");
-                if let Err(e) = run_done_rx.await {
-                                tracing::trace!("HELLO5");
-                    panic!("Error waiting for run done: {:?}", e);
-                }
-                ptplugin::tracing::trace!("Run done notify received");
-
-                let produce_results_done_rx = self.produce_results_done_channel.1.lock().unwrap().take().unwrap();
-                if let Err(e) = produce_results_done_rx.await {
-                    tracing::trace!("HELLO11");
-                    panic!("Error waiting for produce results done: {:?}", e);
-                }
-                ptplugin::tracing::trace!("Produce results done notify received");
-                ptplugin::tracing::info!("Done waiting");
-
-                Ok(ptplugin::tonic::Response::new(ptplugin::plugin_server::wait::Response {
-                    diagnostics: vec![],
-                }))
+                Ok(ptplugin::tonic::Response::new(
+                    Box::pin(output) as Self::ReceiveResultsStream
+                ))
             }
 
             async fn shutdown(

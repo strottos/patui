@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
 use ptplugin::{
-    plugin_server::{receive_results, run, shutdown, ResultType},
+    plugin_server::{receive_results, run, ResultType},
     run_plugin, shutdown_plugin, PatuiData, PatuiDataInner, PatuiEvent, PatuiResultType,
 };
 use tokio::time::timeout;
@@ -400,10 +400,6 @@ async fn produce_before_run() {
 #[traced_test]
 #[tokio::test]
 async fn multiple_different_runs() {}
-
-#[traced_test]
-#[tokio::test]
-async fn subscribe_after_run() {}
 
 #[traced_test]
 #[tokio::test]
