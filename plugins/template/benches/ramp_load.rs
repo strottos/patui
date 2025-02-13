@@ -12,7 +12,7 @@ use ptplugin::{
 };
 use uuid::Uuid;
 
-async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>) {
+async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>, sleep: u64) {
     let uuid = Uuid::new_v4().to_string().replace("-", "_");
 
     let client_clone = client.clone();
@@ -40,7 +40,9 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>)
                     result_name: "results".to_string(),
                     r#type: ResultType::Append.into(),
                     results: Some(results.try_into().unwrap()),
-                }
+                };
+
+                tokio::time::sleep(Duration::from_millis(sleep)).await;
             }
         };
 
@@ -133,7 +135,42 @@ fn bench_ramp_load(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async move {
                 let client = connect_plugin(port).await;
-                test_plugin(client).await;
+                test_plugin(client, 0).await;
+            });
+        })
+    });
+
+    group.finish();
+
+    rt.block_on(async move {
+        shutdown_plugin(child, client).await;
+    });
+}
+
+fn bench_ramp_load_sleep(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ramp_load");
+    group.sample_size(50);
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(8)
+        .enable_time()
+        .enable_io()
+        .build()
+        .unwrap();
+
+    let (child, client, port) = rt.block_on(async move {
+        let (child, port) = spawn_plugin("patui-template").await.unwrap();
+        let client = connect_plugin(port).await;
+        (child, client, port)
+    });
+
+    eprintln!("Setup patui-template: {:?}", child);
+
+    group.bench_function("ramp_load_2", |b| {
+        b.iter(|| {
+            rt.block_on(async move {
+                let client = connect_plugin(port).await;
+                test_plugin(client, 20000).await;
             });
         })
     });
@@ -146,5 +183,6 @@ fn bench_ramp_load(c: &mut Criterion) {
 }
 
 criterion_group!(ramp_load, bench_ramp_load);
+criterion_group!(ramp_load_sleep, bench_ramp_load_sleep);
 
 criterion_main!(ramp_load);
