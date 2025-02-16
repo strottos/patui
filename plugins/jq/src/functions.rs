@@ -4,11 +4,15 @@ use std::{
 };
 
 use ptplugin::{
-    eval_patui_expr, plugin_server::ResultType, tokio, FunctionService, PatuiData, PatuiDataInner,
-    PatuiEvent, PatuiExpr, PatuiResultType, Result, WakerType,
+    eval_patui_expr,
+    tokio::{
+        self,
+        sync::{broadcast, mpsc, RwLock},
+    },
+    tonic::{self, Status},
+    tracing, FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr, PatuiResultType,
+    PatuiResultTypeConfirm, WakerType,
 };
-use tokio::sync::{broadcast, RwLock};
-use tonic::Status;
 
 pub(crate) struct Transform {
     results_fully_recieved: Arc<AtomicBool>,
@@ -30,10 +34,12 @@ impl FunctionService for Transform {
         results: Arc<RwLock<PatuiData>>,
         mut results_waker_rx: broadcast::Receiver<WakerType>,
     ) -> (
-        tokio::sync::mpsc::Receiver<Result<PatuiEvent, Status>>,
+        mpsc::Receiver<Result<PatuiEvent, Status>>,
         Option<tokio::task::JoinHandle<()>>,
     ) {
-        let (produce_results_tx, produce_results_rx) = tokio::sync::mpsc::channel(16);
+        let (produce_results_tx, produce_results_rx) = mpsc::channel(16);
+
+        let results_fully_recieved = self.results_fully_recieved.clone();
 
         let task = tokio::spawn(async move {
             let Some(r#in) = args.get("in") else {
@@ -59,6 +65,8 @@ impl FunctionService for Transform {
                     return;
                 }
             };
+
+            let mut num_results_sent = 0;
 
             tracing::debug!("Evaluating argument 'in' for static data: {:?}", r#in);
 
@@ -114,10 +122,10 @@ impl FunctionService for Transform {
                                 return;
                             }
                         };
-                        PatuiEvent::Results(
+                        PatuiEvent::Result(
                             PatuiExpr::try_from("out").unwrap(),
                             true.into(),
-                            PatuiResultType::Append,
+                            PatuiResultType::List(num_results_sent),
                             match try_convert_serde_json_to_patui_data(json) {
                                 Ok(json) => json,
                                 Err(e) => {
@@ -145,6 +153,7 @@ impl FunctionService for Transform {
                 };
 
                 produce_results_tx.send(Ok(event)).await.unwrap();
+                num_results_sent += 1;
 
                 match results_waker_rx.recv().await {
                     Ok(waker_type) => match waker_type {
@@ -161,6 +170,13 @@ impl FunctionService for Transform {
                     }
                 }
             }
+
+            produce_results_tx
+                .send(Ok(PatuiEvent::Done(PatuiResultTypeConfirm::List(
+                    num_results_sent,
+                ))))
+                .await
+                .unwrap();
         });
 
         (produce_results_rx, Some(task))
@@ -187,14 +203,14 @@ fn try_convert_serde_json_to_patui_data(
             let value = value
                 .into_iter()
                 .map(try_convert_serde_json_to_patui_data)
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>, eyre::Error>>()?;
             Ok(PatuiData::Known(PatuiDataInner::List(value)))
         }
         serde_json::Value::Object(value) => {
             let value = value
                 .into_iter()
                 .map(|(k, v)| Ok((k, try_convert_serde_json_to_patui_data(v)?)))
-                .collect::<Result<HashMap<_, _>>>()?;
+                .collect::<Result<HashMap<_, _>, eyre::Error>>()?;
             Ok(PatuiData::Known(PatuiDataInner::Map(value)))
         }
     }

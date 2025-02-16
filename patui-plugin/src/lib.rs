@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 // Re-export modules for use in the generated code.
 pub use async_stream;
+pub use chrono;
 pub use clap;
 pub use convert_case;
 pub use eyre::{eyre, Result};
@@ -16,14 +17,14 @@ use tokio::sync::{broadcast, mpsc::Receiver, RwLock};
 
 pub use patui_core::{
     eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp,
-    PatuiExpr, PatuiResultSuccess, PatuiResultType,
+    PatuiExpr, PatuiStepResult, PatuiStepResultInner, PatuiStepResultStatus,
 };
 pub use patui_plugin_macros::main;
 
 pub mod plugin_server {
     pub use patui_core::ptplugin::{
         get_info, init, plugin_service_client, plugin_service_server::*, receive_results, run,
-        shutdown, ResultType, StepRunner,
+        shutdown, StepRunner,
     };
 }
 
@@ -47,7 +48,7 @@ pub trait FunctionService {
 }
 
 #[cfg(feature = "test")]
-pub use tests::{connect_plugin, run_plugin, shutdown_plugin, spawn_plugin};
+pub use tests::{check_event_response, connect_plugin, run_plugin, shutdown_plugin, spawn_plugin};
 
 #[cfg(feature = "test")]
 mod tests {
@@ -61,7 +62,10 @@ mod tests {
     use assertor::*;
     use escargot::CargoBuild;
     use eyre::Result;
-    use patui_core::ptplugin::{plugin_service_client::PluginServiceClient, shutdown};
+    use patui_core::{
+        ptplugin::{plugin_service_client::PluginServiceClient, run, shutdown},
+        PatuiEvent,
+    };
     use tokio::time::timeout;
     use tonic::transport::Channel;
 
@@ -147,5 +151,22 @@ mod tests {
 
         child.kill().unwrap();
         panic!("Failed to shutdown the plugin");
+    }
+
+    pub async fn check_event_response(
+        response: Result<Result<Option<run::Response>, tonic::Status>, tokio::time::error::Elapsed>,
+    ) -> PatuiEvent {
+        assert_that!(response).is_ok();
+        let response = response.unwrap();
+        assert_that!(response).is_ok();
+        let response = response.unwrap();
+        assert_that!(response).is_some();
+        let response = response.unwrap();
+        assert_that!(response.data).is_some();
+        let data = response.data;
+        assert_that!(data).is_some();
+        let event = data.unwrap().try_into();
+        assert_that!(event).is_ok();
+        event.unwrap()
     }
 }

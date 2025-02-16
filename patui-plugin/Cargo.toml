@@ -34,3 +34,4 @@ assertor = { version = "0.0.3", optional = true }
 escargot = { version = "0.5.13", optional = true }
 insta = { version = "1.41.1", optional = true }
 tracing-test = { version = "0.2.5", optional = true }
+chrono = "0.4.39"

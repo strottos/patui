@@ -1419,6 +1419,7 @@ dependencies = [
  "assert_cmd",
  "assertor",
  "async-stream",
+ "chrono",
  "clap",
  "convert_case",
  "escargot",
@@ -1460,24 +1461,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "patui-template"
+name = "patui-template-expanded"
 version = "0.1.0"
 dependencies = [
  "assertor",
- "async-stream",
- "chrono",
- "clap",
  "criterion",
- "escargot",
- "eyre 0.6.12",
- "jaq-core",
  "patui-plugin",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
- "tracing-subscriber",
+ "tracing-test",
+ "uuid",
+]
+
+[[package]]
+name = "patui-testing-plugin"
+version = "0.1.0"
+dependencies = [
+ "assertor",
+ "criterion",
+ "patui-plugin",
  "tracing-test",
  "uuid",
 ]

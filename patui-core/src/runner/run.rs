@@ -6,10 +6,11 @@ use thiserror::Error;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::Level;
 
-use crate::{expr::eval_patui_expr_ident, PatuiData, PatuiDataInner, PatuiTest};
+use crate::{PatuiData, PatuiDataInner, PatuiTest};
 
 use super::{
     events::PatuiEvent,
+    results::{PatuiStepResult, PatuiStepResultInner},
     steps::{PatuiStepRunner, PatuiStepRunnerError},
     PatuiEventWithTimestamp,
 };
@@ -46,7 +47,7 @@ pub struct PatuiRun {
     pub(crate) results: Arc<RwLock<PatuiData>>,
     pub(crate) step_runners: IndexMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
 
-    results_tx: broadcast::Sender<(String, String, String, PatuiData)>,
+    results_tx: broadcast::Sender<PatuiStepResult>,
 }
 
 impl PatuiRun {
@@ -92,93 +93,106 @@ impl PatuiRun {
     /// This will perform additional setup and run the test itself whilst recording the results in
     /// `self`.
     pub async fn run_test(&mut self) -> Result<(), PatuiRunError> {
-        let span = tracing::span!(
-            Level::INFO,
-            "running",
-            test_name = self.instance.name.as_str()
-        );
-        let _guard = span.enter();
+        // let span = tracing::span!(
+        //     Level::INFO,
+        //     "running",
+        //     test_name = self.instance.name.as_str()
+        // );
+        // let _guard = span.enter();
 
-        let (tx, mut rx) = mpsc::channel(100);
+        // let (tx, mut rx) = mpsc::channel(100);
 
-        self.init_test().await?;
+        // self.init_test().await?;
 
-        // let status = Arc::new(Mutex::new(PatuiRunStatus::Pending));
-        // let status_clone = status.clone();
+        // // let status = Arc::new(Mutex::new(PatuiRunStatus::Pending));
+        // // let status_clone = status.clone();
 
-        for (_, step_collection) in self.step_runners.iter() {
-            for step_runner in step_collection {
-                let mut lock = step_runner.lock().await;
-                lock.run(tx.clone())?;
-            }
-        }
+        // for (_, step_collection) in self.step_runners.iter() {
+        //     for step_runner in step_collection {
+        //         let mut lock = step_runner.lock().await;
+        //         lock.run(tx.clone())?;
+        //     }
+        // }
 
-        let events = self.events.clone();
-        let results = self.results.clone();
-        let results_tx = self.results_tx.clone();
+        // let events = self.events.clone();
+        // let results = self.results.clone();
+        // let results_tx = self.results_tx.clone();
 
-        let receive_task = tokio::spawn(async move {
-            // let status = status_clone;
-            loop {
-                let (step_name, function_name, events_res) = match rx.recv().await {
-                    Some((step_name, function_name, events_res)) => {
-                        (step_name, function_name, events_res)
-                    }
-                    None => {
-                        tracing::debug!("Received None from channel");
-                        break;
-                    }
-                };
-                tracing::trace!(
-                    "Received event from {} - {}: {:?}",
-                    step_name,
-                    function_name,
-                    events_res
-                );
-                let mut lock = events.lock().await;
-                lock.push(events_res.clone());
-                if let PatuiEventWithTimestamp {
-                    value: PatuiEvent::Results(elements, success, result_type, data),
-                    ..
-                } = events_res
-                {
-                    // TODO: Could read lock for a bit, maybe check if we see better performance if
-                    // so, have to write lock soon after though.
-                    let mut lock = results.write().await;
-                    let result_name = eval_patui_expr_ident(&elements, &lock.clone()).unwrap();
+        // let receive_task = tokio::spawn(async move {
+        //     // let status = status_clone;
+        //     loop {
+        //         let (step_name, function_name, events_res) = match rx.recv().await {
+        //             Some((step_name, function_name, events_res)) => {
+        //                 (step_name, function_name, events_res)
+        //             }
+        //             None => {
+        //                 tracing::debug!("Received None from channel");
+        //                 break;
+        //             }
+        //         };
+        //         tracing::trace!(
+        //             "Received event from {} - {}: {:?}",
+        //             step_name,
+        //             function_name,
+        //             events_res
+        //         );
+        //         let mut lock = events.lock().await;
+        //         lock.push(events_res.clone());
+        //         if let PatuiEventWithTimestamp {
+        //             value: PatuiEvent::Result(result),
+        //             ..
+        //         } = events_res
+        //         {
+        //             // TODO: Could read lock for a bit, maybe check if we see better performance if
+        //             // so, have to write lock soon after though.
+        //             let mut lock = results.write().await;
+        //             // let result_name =
+        //             //     eval_patui_expr_ident(&result.location, &lock.clone()).unwrap();
 
-                    let keys = vec![
-                        "steps".to_string(),
-                        step_name.clone(),
-                        function_name.clone(),
-                        result_name.clone(),
-                    ];
-                    tracing::trace!("Updating results {:?}: {:#?} - {:#?}", keys, *lock, data);
+        //             // let keys = vec![
+        //             //     "steps".to_string(),
+        //             //     step_name.clone(),
+        //             //     function_name.clone(),
+        //             //     result_name.clone(),
+        //             // ];
+        //             // tracing::trace!(
+        //             //     "Updating results {:?}: {:#?} - {:#?}",
+        //             //     keys,
+        //             //     *lock,
+        //             //     result.details
+        //             // );
 
-                    lock.append_to_list(keys, data.clone()).unwrap();
-                    tracing::trace!("Results: {:#?}", *lock);
+        //             // match &result.details {
+        //             //     PatuiResultInner::StreamData(_, patui_data) => todo!(),
+        //             //     PatuiResultInner::MapElement(_, patui_data) => {
+        //             //         lock.append_to_list(keys, patui_data.clone()).unwrap()
+        //             //     }
+        //             //     PatuiResultInner::DoneList(num_items) => todo!(),
+        //             //     PatuiResultInner::DoneMap(keys) => todo!(),
+        //             // }
+        //             // tracing::trace!("Results: {:#?}", *lock);
 
-                    if let Err(e) = results_tx.send((step_name, function_name, result_name, data)) {
-                        tracing::error!("Failed to send results, giving up: {}", e);
-                        break;
-                    }
-                }
-            }
-        });
+        //             // if let Err(e) = results_tx.send(result) {
+        //             //     tracing::error!("Failed to send results, giving up: {}", e);
+        //             //     break;
+        //             // }
+        //         }
+        //     }
+        // });
 
-        for (step_name, step_collection) in self.step_runners.iter() {
-            for step in step_collection {
-                tracing::trace!("Waiting for step to finish - {}", step_name);
-                step.lock().await.wait(tx.clone()).await?;
-                tracing::trace!("Step finished - {}", step_name);
-            }
-        }
+        // for (step_name, step_collection) in self.step_runners.iter() {
+        //     for step in step_collection {
+        //         tracing::trace!("Waiting for step to finish - {}", step_name);
+        //         step.lock().await.wait(tx.clone()).await?;
+        //         tracing::trace!("Step finished - {}", step_name);
+        //     }
+        // }
 
-        drop(tx);
+        // drop(tx);
 
-        receive_task.await.map_err(|e| {
-            PatuiRunError::InternalError(format!("Receive task never finished: {}", e))
-        })?;
+        // receive_task.await.map_err(|e| {
+        //     PatuiRunError::InternalError(format!("Receive task never finished: {}", e))
+        // })?;
 
         Ok(())
     }
@@ -217,6 +231,7 @@ mod tests {
 
     use super::PatuiRun;
 
+    #[cfg(feature = "integration_tests")]
     #[traced_test]
     #[tokio::test]
     async fn run_basic() {

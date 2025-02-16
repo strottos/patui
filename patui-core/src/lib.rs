@@ -15,6 +15,7 @@ pub mod ptplugin {
 
 pub use expr::{eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiExpr, PatuiExprError};
 pub use runner::{
-    PatuiEvent, PatuiEventWithTimestamp, PatuiResultSuccess, PatuiResultType, PatuiRun,
+    PatuiEvent, PatuiEventWithTimestamp, PatuiRun, PatuiStepResult, PatuiStepResultInner,
+    PatuiStepResultStatus,
 };
 pub use templates::PatuiTest;

@@ -21,8 +21,8 @@ mod functions;
     r#type = "assertions",
     build_struct = (
         functions::Assertion,
-        functions::FileRead,
-        functions::StaticData,
+        // functions::FileRead,
+        // functions::StaticData,
     )
 )]
 fn main() -> ptplugin::Result<()> {

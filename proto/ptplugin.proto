@@ -22,23 +22,13 @@ message StepRunner {
   repeated string subscriptions = 5;
 }
 
-// The `bytes` field contains the encoded information for a `PatuiData` struct
+// The `bytes` field contains the encoded information for a `PatuiResult` struct
 // encoded with MsgPack.
-message PatuiDataEncoding { bytes bytes = 1; }
+message PatuiResultEncoding { bytes bytes = 1; }
 
 // The `bytes` field contains the encoded information for a `PatuiEvent` struct
 // encoded with MsgPack.
 message PatuiEventEncoding { bytes bytes = 1; }
-
-// What the results will do:
-// APPEND: Append the results to a list.
-// SET: Set the results in a dictionary.
-// CONFIRM: Confirm that the results are complete and set them all to known.
-enum ResultType {
-  APPEND = 0;
-  SET = 1;
-  CONFIRM = 2;
-}
 
 message GetInfo {
   message Request {}
@@ -67,13 +57,7 @@ message Run {
 // ReceiveResults will be sent a stream of `PatuiData` messages encoded with
 // MsgPack which are the results from other steps as they are obtained.
 message ReceiveResults {
-  message Request {
-    string step_name = 1;
-    string function_name = 2;
-    string result_name = 3;
-    ResultType type = 4;
-    PatuiDataEncoding results = 5;
-  }
+  message Request { PatuiResultEncoding result = 5; }
   message Response { repeated Diagnostic diagnostics = 1; }
 }
 

@@ -57,11 +57,27 @@ fn init_logging_function() -> TokenStream {
             };
             let filter = filter.map_or(EnvFilter::default(), EnvFilter::new);
 
+            let writer = match std::env::var("PATUI_LOG_FILE") {
+                Ok(path) if !path.is_empty() => {
+                    let now = ptplugin::chrono::offset::Local::now();
+                    let path = path
+                        .replace("${timestamp}", &now.timestamp().to_string())
+                        .replace("${datetime}", &now.format("%Y%m%d%H%M%S").to_string());
+                    let path = std::path::Path::new(&path);
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    ptplugin::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::sync::Arc::new(std::fs::File::create(path)?))
+                }
+                Err(_) => ptplugin::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr),
+            };
+
             let fmt_layer = ptplugin::tracing_subscriber::fmt::layer()
                 .with_file(false)
                 .with_line_number(false)
                 .with_target(true)
                 .with_ansi(false)
+                .with_writer(writer)
                 .without_time();
 
             Registry::default().with(filter).with(fmt_layer).init();

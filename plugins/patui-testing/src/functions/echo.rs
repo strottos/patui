@@ -5,11 +5,14 @@ use std::{
 
 use ptplugin::{
     eval_patui_expr,
-    tokio::{self, sync::mpsc},
-    FunctionService, PatuiData, PatuiEvent, PatuiExpr, PatuiResultType, WakerType,
+    tokio::{
+        self,
+        sync::{broadcast, mpsc, RwLock},
+    },
+    tonic::{self, Status},
+    tracing, FunctionService, PatuiData, PatuiEvent, PatuiExpr, PatuiResultType,
+    PatuiResultTypeConfirm, WakerType,
 };
-use tokio::sync::{broadcast, mpsc::Receiver, RwLock};
-use tonic::Status;
 
 pub(crate) struct Echo {
     results_fully_recieved: Arc<AtomicBool>,
@@ -31,17 +34,20 @@ impl FunctionService for Echo {
         results: Arc<RwLock<PatuiData>>,
         mut results_waker_rx: broadcast::Receiver<WakerType>,
     ) -> (
-        Receiver<Result<PatuiEvent, Status>>,
+        mpsc::Receiver<Result<PatuiEvent, Status>>,
         Option<tokio::task::JoinHandle<()>>,
     ) {
         let (produce_results_tx, produce_results_rx) = mpsc::channel(16);
 
+        // TODO: How do we know this is true? Need to make Patui very clear if it's when the
+        // receive_results socket drops. Conversely, it would be good to make it Patui's burden
+        // once rather than every plugins responsibility.
         let results_fully_recieved = self.results_fully_recieved.clone();
 
         let task = tokio::spawn(async move {
             let Some(r#in) = args.get("in") else {
                 produce_results_tx
-                    .send(Err(tonic::Status::invalid_argument(
+                    .send(Err(Status::invalid_argument(
                         "Missing required argument 'in'".to_string(),
                     )))
                     .await
@@ -53,7 +59,7 @@ impl FunctionService for Echo {
                 Ok(r) => r,
                 Err(e) => {
                     produce_results_tx
-                        .send(Err(tonic::Status::invalid_argument(format!(
+                        .send(Err(Status::invalid_argument(format!(
                             "Invalid argument 'in': {}",
                             e
                         ))))
@@ -85,12 +91,12 @@ impl FunctionService for Echo {
                             ptplugin::PatuiDataInner::List(patui_list) => {
                                 for item in patui_list.iter().skip(num_results_sent) {
                                     produce_results_tx
-                                        .send(Ok(PatuiEvent::Results(
+                                        .send(Ok(PatuiEvent::Result(
                                             format!("steps.{}.echo.out", step_name)
                                                 .try_into()
                                                 .unwrap(),
                                             true.into(),
-                                            PatuiResultType::Append,
+                                            PatuiResultType::List(num_results_sent),
                                             item.clone(),
                                         )))
                                         .await
@@ -156,7 +162,12 @@ impl FunctionService for Echo {
                 }
             }
 
-            produce_results_tx.send(Ok(PatuiEvent::Done)).await.unwrap();
+            produce_results_tx
+                .send(Ok(PatuiEvent::Done(PatuiResultTypeConfirm::List(
+                    num_results_sent,
+                ))))
+                .await
+                .unwrap();
         });
 
         (produce_results_rx, Some(task))

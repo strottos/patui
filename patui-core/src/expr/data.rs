@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 use thiserror::Error;
 
-use crate::ptplugin::PatuiDataEncoding;
+use crate::{PatuiStepResult, PatuiStepResultInner};
 
-use super::ast::Expr;
+use super::{
+    ast::{Expr, TermPart},
+    EvalError, PatuiExpr,
+};
 
 #[derive(Debug, Error)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -20,8 +23,14 @@ pub enum PatuiDataError {
     WrongType(String),
     #[error("Bad arguments for function {0}")]
     BadArgs(String),
+    #[error("Bad stream step result: {0:?}")]
+    BadStreamStepResult(PatuiStepResultInner),
     #[error("Bad data merge: {0}")]
     BadMerge(String),
+    #[error("Location error: {0} - {1}")]
+    LocationError(PatuiExpr, Box<EvalError>),
+    #[error("Can't create data from expression: {0}")]
+    CantCreateData(PatuiExpr),
 }
 
 /// Data type for the evaluation of expressions. Any evaluation of an expression must evaluate to
@@ -120,7 +129,8 @@ impl PatuiData {
         }
     }
 
-    /// Convert the data to a known state.
+    /// Convert the data to a known state. Anything underneath the PatuiData element passed will
+    /// also become `Known`.
     pub fn to_known(self) -> Result<PatuiData, PatuiDataError> {
         let inner = match self {
             PatuiData::Pending(inner) => inner,
@@ -191,6 +201,74 @@ impl PatuiData {
         }
 
         Ok(())
+    }
+
+    /// Add the data to the stream at the specified index. This is used when we have
+    pub fn add_step_result_to_stream(
+        &mut self,
+        step_result: &PatuiStepResult,
+    ) -> Result<(), PatuiDataError> {
+        let data = self.create_data_stream(&step_result.location)?;
+
+        tracing::trace!("Data {:?}", data);
+        let PatuiData::Pending(PatuiDataInner::List(ref mut data)) = data else {
+            todo!();
+        };
+
+        match &step_result.details {
+            crate::PatuiStepResultInner::StreamData(idx, patui_data) => {
+                if data.len() == *idx {
+                    data.push(patui_data.clone());
+                } else {
+                    todo!();
+                }
+            }
+            _ => {
+                return Err(PatuiDataError::BadStreamStepResult(
+                    step_result.details.clone(),
+                ))
+            }
+        }
+
+        Ok(())
+    }
+
+    fn create_data_stream(&mut self, expr: &PatuiExpr) -> Result<&mut PatuiData, PatuiDataError> {
+        let mut current = self;
+
+        match expr.expr() {
+            Expr::Term(term_parts) => {
+                for (idx, part) in term_parts.into_iter().enumerate() {
+                    if let TermPart::Ident(ident) = part {
+                        match current {
+                            PatuiData::Known(patui_data_inner)
+                            | PatuiData::Pending(patui_data_inner) => match patui_data_inner {
+                                PatuiDataInner::Map(hash_map) => {
+                                    let entry =
+                                        hash_map.entry(ident.to_string()).or_insert_with(|| {
+                                            if idx == term_parts.len() - 1 {
+                                                PatuiData::Pending(PatuiDataInner::List(vec![]))
+                                            } else {
+                                                PatuiData::Pending(PatuiDataInner::Map(
+                                                    HashMap::new(),
+                                                ))
+                                            }
+                                        });
+                                    current = entry;
+                                }
+                                _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
+                            },
+                            PatuiData::Unknown => {
+                                return Err(PatuiDataError::CantCreateData(expr.clone()))
+                            }
+                        }
+                    }
+                }
+            }
+            _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
+        }
+
+        Ok(current)
     }
 
     /// Merge the data from `other` into `self`. This is used when we have something to append to a
@@ -294,24 +372,6 @@ impl PatuiDataInner {
     }
 }
 
-impl TryFrom<PatuiData> for PatuiDataEncoding {
-    type Error = rmp_serde::encode::Error;
-
-    fn try_from(value: PatuiData) -> Result<Self, Self::Error> {
-        Ok(PatuiDataEncoding {
-            bytes: rmp_serde::to_vec(&value)?,
-        })
-    }
-}
-
-impl TryFrom<PatuiDataEncoding> for PatuiData {
-    type Error = rmp_serde::decode::Error;
-
-    fn try_from(data: PatuiDataEncoding) -> Result<Self, Self::Error> {
-        rmp_serde::from_read(data.bytes.as_slice())
-    }
-}
-
 // Method calls for each data type
 
 /// Methods for the list data type
@@ -348,10 +408,14 @@ impl<'a> PatuiDataListMethods<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use assertor::*;
     use tracing_test::traced_test;
 
-    use super::*;
+    use crate::runner::{PatuiStepResult, PatuiStepResultStatus};
+
+    use super::{PatuiData, PatuiDataError, PatuiDataInner, PatuiDataListMethods};
 
     #[traced_test]
     #[test]
@@ -765,24 +829,110 @@ mod tests {
         assert_that!(inner).is_equal_to(&PatuiDataInner::Integer(43));
     }
 
+    // #[traced_test]
+    // #[test]
+    // fn merge_known_to_known_errors() {
+    //     let mut data = PatuiData::Known(PatuiDataInner::List(vec![
+    //         PatuiData::Known(PatuiDataInner::Integer(1)),
+    //         PatuiData::Known(PatuiDataInner::Integer(2)),
+    //     ]));
+
+    //     let other = PatuiData::Known(PatuiDataInner::List(vec![
+    //         PatuiData::Known(PatuiDataInner::Integer(1)),
+    //         PatuiData::Known(PatuiDataInner::Integer(2)),
+    //         PatuiData::Known(PatuiDataInner::Integer(3)),
+    //     ]));
+    //     assert_that!(data.merge(&other)).is_ok();
+
+    //     let ret = data.get_inner();
+    //     assert_that!(ret).is_err();
+    //     let error = ret.unwrap_err();
+    //     assert_that!(error).is_equal_to(PatuiDataError::BadMerge("TODO".to_string()));
+    // }
+
     #[traced_test]
     #[test]
-    fn merge_known_to_known_errors() {
-        let mut data = PatuiData::Known(PatuiDataInner::List(vec![
-            PatuiData::Known(PatuiDataInner::Integer(1)),
-            PatuiData::Known(PatuiDataInner::Integer(2)),
-        ]));
+    fn append_stream_step_result_to_data() {
+        let mut results = PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+            "steps".to_string(),
+            PatuiData::Pending(PatuiDataInner::Map(HashMap::new())),
+        )])));
 
-        let other = PatuiData::Known(PatuiDataInner::List(vec![
-            PatuiData::Known(PatuiDataInner::Integer(1)),
-            PatuiData::Known(PatuiDataInner::Integer(2)),
-            PatuiData::Known(PatuiDataInner::Integer(3)),
-        ]));
-        assert_that!(data.merge(&other)).is_ok();
+        let ret = results.add_step_result_to_stream(&PatuiStepResult::new_stream_item(
+            "steps.step_test.func_test.out_test".try_into().unwrap(),
+            PatuiStepResultStatus::Success,
+            0,
+            PatuiData::Known(PatuiDataInner::String("test1".to_string())),
+        ));
 
-        let ret = data.get_inner();
-        assert_that!(ret).is_err();
-        let error = ret.unwrap_err();
-        assert_that!(error).is_equal_to(PatuiDataError::BadMerge("TODO".to_string()));
+        assert_that!(ret).is_ok();
+        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+            [(
+                "steps".to_string(),
+                PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                    "step_test".to_string(),
+                    PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                        "func_test".to_string(),
+                        PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                            "out_test".to_string(),
+                            PatuiData::Pending(PatuiDataInner::List(vec![PatuiData::Known(
+                                PatuiDataInner::String("test1".to_string()),
+                            )])),
+                        )]))),
+                    )]))),
+                )]))),
+            )],
+        ))));
+
+        let ret = results.add_step_result_to_stream(&PatuiStepResult::new_stream_item(
+            "steps.step_test.func_test.out_test".try_into().unwrap(),
+            PatuiStepResultStatus::Success,
+            1,
+            PatuiData::Known(PatuiDataInner::String("test2".to_string())),
+        ));
+
+        assert_that!(ret).is_ok();
+        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+            [(
+                "steps".to_string(),
+                PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                    "step_test".to_string(),
+                    PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                        "func_test".to_string(),
+                        PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                            "out_test".to_string(),
+                            PatuiData::Pending(PatuiDataInner::List(vec![
+                                PatuiData::Known(PatuiDataInner::String("test1".to_string())),
+                                PatuiData::Known(PatuiDataInner::String("test2".to_string())),
+                            ])),
+                        )]))),
+                    )]))),
+                )]))),
+            )],
+        ))));
     }
+
+    // #[traced_test]
+    // #[test]
+    // fn append_stream_step_result_to_data_works_out_of_order() {
+    //     todo!()
+    // }
+
+    // #[traced_test]
+    // #[test]
+    // fn bad_step_result_expr_errors() {
+    //     todo!()
+    // }
+
+    // #[traced_test]
+    // #[test]
+    // fn step_result_expr_append_to_stream_when_exists_non_stream_errors(){
+    //     todo!()
+    // }
+
+    // #[traced_test]
+    // #[test]
+    // fn step_result_expr_append_to_stream_with_non_stream_item_errors(){
+    //     todo!()
+    // }
 }

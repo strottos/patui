@@ -9,6 +9,10 @@ resolver = "2"
 name = "patui_core"
 crate-type = ["cdylib", "lib"]
 
+[features]
+default = []
+integration_tests = []
+
 [dependencies]
 async-stream = "0.3.6"
 bincode = "1.3.3"

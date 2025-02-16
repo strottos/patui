@@ -1,0 +1,25 @@
+[package]
+name = "patui-testing-plugin"
+version = "0.1.0"
+authors = ["Steven Trotter <stevetrot@gmail.com>"]
+edition = "2021"
+resolver = "2"
+
+[[bin]]
+name = "patui-testing-plugin"
+path = "src/main.rs"
+
+[[bench]]
+name = "load"
+path = "benches/load.rs"
+harness = false
+
+[dependencies]
+patui-plugin = { path = "../../patui-plugin" }
+
+[dev-dependencies]
+assertor = "0.0.3"
+criterion = "0.5.1"
+patui-plugin = { path = "../../patui-plugin", features = ["test"] }
+tracing-test = "0.2.5"
+uuid = { version = "1.13.1", features = ["v4", "fast-rng"] }

@@ -45,8 +45,11 @@ pub enum EvalError {
     #[error("Invalid results, must be a map")]
     ResultsNotMap,
     /// Data not found
-    #[error("Data not found")]
-    DataNotFound,
+    #[error("Data not found: {0}")]
+    DataNotFound(PatuiExpr),
+    /// Data not found
+    #[error("Dummy")]
+    DataNotFoundInner,
     /// Error evaluating data
     #[error("Invalid data {0}")]
     InvalidDataInner(#[from] PatuiDataError),
@@ -56,11 +59,18 @@ pub enum EvalError {
 }
 
 /// Evaluate the expression against some known results.
-pub fn eval(expr: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
-    tracing::trace!("Evaluating: {:?}", expr);
+pub fn eval(expr: &PatuiExpr, results: &PatuiData) -> Result<PatuiData, EvalError> {
+    eval_inner(expr.expr(), results).map_err(|e| match e {
+        EvalError::DataNotFoundInner => EvalError::DataNotFound(expr.clone()),
+        _ => e,
+    })
+}
+
+fn eval_inner(expr_to_eval: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
+    tracing::trace!("Evaluating: {:?}", expr_to_eval);
     tracing::trace!("Results: {:?}", results);
 
-    match expr {
+    match expr_to_eval {
         Expr::Term(term_parts) => eval_term(term_parts, results),
         Expr::UnOp(_, _) => todo!(),
         Expr::BinOp(op, lhs, rhs) => eval_binop(op, lhs, rhs, results),
@@ -68,22 +78,22 @@ pub fn eval(expr: &Expr, results: &PatuiData) -> Result<PatuiData, EvalError> {
     }
 }
 
-/// Evaluate the expression to it's minimal expression.
-/// TODO
-pub fn eval_ident(expr: &PatuiExpr, results: &PatuiData) -> Result<String, EvalError> {
-    match expr.expr() {
-        Expr::Term(vec) => {
-            if vec.len() != 1 {
-                todo!();
-            }
-            match &vec[0] {
-                TermPart::Ident(ident) => Ok(ident.to_string()),
-                _ => todo!(),
-            }
-        }
-        _ => todo!(),
-    }
-}
+// /// Evaluate the expression to it's minimal expression.
+// /// TODO
+// pub fn eval_ident(expr: &PatuiExpr, results: &PatuiData) -> Result<String, EvalError> {
+//     match expr.expr() {
+//         Expr::Term(vec) => {
+//             if vec.len() != 1 {
+//                 todo!();
+//             }
+//             match &vec[0] {
+//                 TermPart::Ident(ident) => Ok(ident.to_string()),
+//                 _ => todo!(),
+//             }
+//         }
+//         _ => todo!(),
+//     }
+// }
 
 fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, EvalError> {
     let mut data = None;
@@ -117,14 +127,14 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
                             PatuiDataInner::Decimal(_) => todo!(),
                             PatuiDataInner::List(_) => todo!(),
                             PatuiDataInner::Map(map) => {
-                                map.get(&key).ok_or(EvalError::DataNotFound)?.clone()
+                                map.get(&key).ok_or(EvalError::DataNotFoundInner)?.clone()
                             }
                             PatuiDataInner::Set(_) => todo!(),
                         };
                         data = Some(value.clone());
                     }
                     None => {
-                        let value = hash_map.get(&key).ok_or(EvalError::DataNotFound)?;
+                        let value = hash_map.get(&key).ok_or(EvalError::DataNotFoundInner)?;
                         data = Some(value.clone());
                     }
                 }
@@ -149,8 +159,8 @@ fn eval_binop(
     rhs: &Expr,
     results: &PatuiData,
 ) -> Result<PatuiData, EvalError> {
-    let lhs = eval(lhs, results)?;
-    let rhs = eval(rhs, results)?;
+    let lhs = eval_inner(lhs, results)?;
+    let rhs = eval_inner(rhs, results)?;
 
     let mut known = true;
     let lhs_inner = match lhs {
@@ -243,26 +253,26 @@ fn eval_lit(lit: &Lit, results: &PatuiData) -> Result<PatuiData, EvalError> {
         Lit::String(s) => Ok(PatuiData::Known(PatuiDataInner::String(s.clone()))),
         Lit::List(vec) => Ok(PatuiData::Known(PatuiDataInner::List(
             vec.iter()
-                .map(|expr| eval(expr, results))
+                .map(|expr| eval_inner(expr, results))
                 .collect::<Result<Vec<PatuiData>, EvalError>>()?,
         ))),
         Lit::Map(vec) => Ok(PatuiData::Known(PatuiDataInner::Map(
             vec.iter()
                 .map(|(key, expr)| {
-                    let value = eval(expr, results)?;
+                    let value = eval_inner(expr, results)?;
                     Ok((key.clone(), value))
                 })
                 .collect::<Result<HashMap<_, _>, EvalError>>()?,
         ))),
         Lit::Set(vec) => Ok(PatuiData::Known(PatuiDataInner::Set(
             vec.iter()
-                .map(|lit| eval(lit, results))
+                .map(|lit| eval_inner(lit, results))
                 .collect::<Result<Vec<_>, EvalError>>()?,
         ))),
         Lit::Wildcard => Err(EvalError::LitEvalUnsupported("Wildcard".to_string())),
         Lit::Range(i1, i2) => Ok(PatuiData::Known(PatuiDataInner::List(vec![
-            eval(i1, results)?,
-            eval(i2, results)?,
+            eval_inner(i1, results)?,
+            eval_inner(i2, results)?,
         ]))),
     }
 }
@@ -271,7 +281,7 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
     tracing::trace!("Index: {:?}", index);
     tracing::trace!("Base: {:?}", base);
 
-    let index = eval(index, results)?;
+    let index = eval_inner(index, results)?;
     let mut known = true;
 
     let index = match index {
@@ -299,7 +309,7 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
         PatuiDataInner::String(s) => match base_inner {
             PatuiDataInner::Map(hash_map) => {
                 let key = s.clone();
-                let value = hash_map.get(&key).ok_or(EvalError::DataNotFound)?;
+                let value = hash_map.get(&key).ok_or(EvalError::DataNotFoundInner)?;
                 match value {
                     PatuiData::Known(inner) if !known => Ok(PatuiData::Pending(inner.clone())),
                     _ => Ok(value.clone()),
@@ -347,7 +357,7 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
                         if !known {
                             return Ok(PatuiData::Unknown);
                         } else {
-                            return Err(EvalError::DataNotFound);
+                            return Err(EvalError::DataNotFoundInner);
                         }
                     }
                     // mod_floor is used to handle negative indices, indices above the length are
@@ -572,7 +582,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn simple_identity() {
-        for (eval_data, expected) in [
+        for (expr, expected) in [
             (
                 Expr::Term(vec![TermPart::Lit(Lit::Null)]),
                 PatuiData::Known(PatuiDataInner::Null),
@@ -611,7 +621,7 @@ mod tests {
             ),
         ] {
             let result = eval(
-                &eval_data,
+                &PatuiExpr::new_from_expr(expr),
                 &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
             );
             assert_that!(result).is_ok();
@@ -622,7 +632,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn simple_lit_index() {
-        for (eval_data, expected) in [
+        for (expr, expected) in [
             (
                 Expr::Term(vec![
                     TermPart::Lit(Lit::List(vec![
@@ -672,7 +682,7 @@ mod tests {
             ),
         ] {
             let result = eval(
-                &eval_data,
+                &PatuiExpr::new_from_expr(expr),
                 &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
             );
             assert_that!(result).is_ok();
@@ -683,7 +693,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn simple_errors() {
-        for (eval_data, expected) in [
+        for (expr, expected) in [
             (Expr::Term(vec![]), EvalError::InvalidTerm),
             (
                 Expr::Term(vec![TermPart::Index(Box::new(Expr::Term(vec![
@@ -693,7 +703,7 @@ mod tests {
             ),
         ] {
             let result = eval(
-                &eval_data,
+                &PatuiExpr::new_from_expr(expr),
                 &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
             );
             assert_that!(result).is_err();
@@ -704,7 +714,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn known_results() {
-        for (eval_data, lookup, expected) in [
+        for (expr, lookup, expected) in [
             (
                 Expr::Term(vec![TermPart::Ident("abc".to_string())]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([
@@ -746,7 +756,7 @@ mod tests {
                 PatuiData::Known(PatuiDataInner::Integer(4.into())),
             ),
         ] {
-            let result = eval(&eval_data, &lookup);
+            let result = eval(&PatuiExpr::new_from_expr(expr), &lookup);
             assert_that!(result).is_ok();
             assert_that!(result.unwrap()).is_equal_to(expected);
         }
@@ -755,7 +765,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn known_results_indexing() {
-        for (eval_data, lookup, expected) in [
+        for (expr, lookup, expected) in [
             (
                 Expr::Term(vec![
                     TermPart::Ident("abc".to_string()),
@@ -968,7 +978,7 @@ mod tests {
                 ])),
             ),
         ] {
-            let result = eval(&eval_data, &lookup);
+            let result = eval(&PatuiExpr::new_from_expr(expr), &lookup);
             assert_that!(result).is_ok();
             assert_that!(result.unwrap()).is_equal_to(expected);
         }
@@ -977,7 +987,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn pending_results() {
-        for (eval_data, lookup, expected) in [
+        for (expr, lookup, expected) in [
             (
                 Expr::Term(vec![TermPart::Ident("abc".to_string())]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([
@@ -1019,7 +1029,7 @@ mod tests {
                 PatuiData::Pending(PatuiDataInner::Integer(3.into())),
             ),
         ] {
-            let result = eval(&eval_data, &lookup);
+            let result = eval(&PatuiExpr::new_from_expr(expr), &lookup);
             assert_that!(result).is_ok();
             assert_that!(result.unwrap()).is_equal_to(expected);
         }
@@ -1028,7 +1038,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn unknown_results() {
-        for (eval_data, lookup, expected) in [
+        for (expr, lookup, expected) in [
             (
                 Expr::Term(vec![TermPart::Ident("def".to_string())]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([
@@ -1068,7 +1078,7 @@ mod tests {
                 PatuiData::Unknown,
             ),
         ] {
-            let result = eval(&eval_data, &lookup);
+            let result = eval(&PatuiExpr::new_from_expr(expr), &lookup);
             assert_that!(result).is_ok();
             assert_that!(result.unwrap()).is_equal_to(expected);
         }
@@ -1077,7 +1087,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn not_found_results() {
-        for (eval_data, lookup, expected) in [
+        for (expr, lookup, expected) in [
             (
                 Expr::Term(vec![TermPart::Ident("ghi".to_string())]),
                 PatuiData::Known(PatuiDataInner::Map(HashMap::from([
@@ -1090,7 +1100,9 @@ mod tests {
                         PatuiData::Known(PatuiDataInner::Integer(2.into())),
                     ),
                 ]))),
-                EvalError::DataNotFound,
+                EvalError::DataNotFound(PatuiExpr::new_from_expr(Expr::Term(vec![
+                    TermPart::Ident("ghi".to_string()),
+                ]))),
             ),
             (
                 Expr::Term(vec![
@@ -1113,10 +1125,18 @@ mod tests {
                         ])),
                     )]))),
                 )]))),
-                EvalError::DataNotFound,
+                EvalError::DataNotFound(PatuiExpr::new_from_expr(Expr::Term(vec![
+                    TermPart::Ident("abc".to_string()),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::String(
+                        "def".to_string(),
+                    ))]))),
+                    TermPart::Index(Box::new(Expr::Term(vec![TermPart::Lit(Lit::Integer(
+                        5.into(),
+                    ))]))),
+                ]))),
             ),
         ] {
-            let result = eval(&eval_data, &lookup);
+            let result = eval(&PatuiExpr::new_from_expr(expr), &lookup);
             assert_that!(result).is_err();
             assert_that!(result.unwrap_err()).is_equal_to(expected);
         }
@@ -1125,7 +1145,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn error_results_lookup() {
-        for (eval_data, lookup, expected) in [
+        for (expr, lookup, expected) in [
             (
                 Expr::Term(vec![
                     TermPart::Ident("abc".to_string()),
@@ -1242,7 +1262,7 @@ mod tests {
                 EvalError::BadIndexRange,
             ),
         ] {
-            let result = eval(&eval_data, &lookup);
+            let result = eval(&PatuiExpr::new_from_expr(expr), &lookup);
             assert_that!(result).is_err();
             assert_that!(result.unwrap_err()).is_equal_to(expected);
         }
@@ -1251,7 +1271,7 @@ mod tests {
     #[traced_test]
     #[test]
     fn simple_comparison() {
-        for (eval_data, expected) in [
+        for (expr, expected) in [
             (
                 Expr::BinOp(
                     BinOp::Equal,
@@ -1302,7 +1322,7 @@ mod tests {
             ),
         ] {
             let result = eval(
-                &eval_data,
+                &PatuiExpr::new_from_expr(expr),
                 &PatuiData::Known(PatuiDataInner::Map(HashMap::new())),
             );
             assert_that!(result).is_ok();

@@ -212,7 +212,7 @@ async fn transform_results_stream() {
     let event = PatuiEventWithTimestamp::try_from(data.unwrap());
     assert_that!(event).is_ok();
     let event = event.unwrap();
-    assert_that!(event.value()).is_equal_to(&PatuiEvent::Results(
+    assert_that!(event.value()).is_equal_to(&PatuiEvent::Result(
         PatuiExpr::try_from("out").unwrap(),
         true.into(),
         ResultType::Append.into(),

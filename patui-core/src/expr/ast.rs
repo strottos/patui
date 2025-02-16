@@ -53,6 +53,14 @@ impl PatuiExpr {
             expr: parse(value)?,
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn new_from_expr(expr: Expr) -> Self {
+        PatuiExpr {
+            raw: "".to_string(), // Tests should not rely on this, this is why it's for tests only
+            expr,
+        }
+    }
 }
 
 impl Display for PatuiExpr {

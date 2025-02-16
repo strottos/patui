@@ -2,13 +2,14 @@ use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
 use criterion::{criterion_group, criterion_main, Criterion};
-use tokio::time::timeout;
-use tonic::Request;
 
 use ptplugin::{
-    connect_plugin,
+    async_stream, connect_plugin,
     plugin_server::{plugin_service_client::PluginServiceClient, receive_results, run, ResultType},
-    shutdown_plugin, spawn_plugin, PatuiData, PatuiDataInner, PatuiEvent, PatuiResultType,
+    shutdown_plugin, spawn_plugin,
+    tokio::{self, time::timeout},
+    tonic::{self, Request},
+    tracing, PatuiData, PatuiDataInner, PatuiEvent, PatuiResultType, PatuiResultTypeConfirm,
 };
 use uuid::Uuid;
 
@@ -88,10 +89,10 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
         let event = data.unwrap().try_into();
         assert_that!(event).is_ok();
         let event = event.unwrap();
-        assert_that!(event).is_equal_to(PatuiEvent::Results(
+        assert_that!(event).is_equal_to(PatuiEvent::Result(
             format!("steps.bar_{}.echo.out", uuid).try_into().unwrap(),
             true.into(),
-            PatuiResultType::Append,
+            PatuiResultType::List(i - 1),
             PatuiData::Known(PatuiDataInner::String(format!("Hello, {}!", i))),
         ));
     }
@@ -109,7 +110,7 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
     let event = data.unwrap().try_into();
     assert_that!(event).is_ok();
     let event = event.unwrap();
-    assert_that!(event).is_equal_to(PatuiEvent::Done);
+    assert_that!(event).is_equal_to(PatuiEvent::Done(PatuiResultTypeConfirm::List(6)));
 }
 
 fn bench_ramp_load(c: &mut Criterion) {
@@ -124,12 +125,12 @@ fn bench_ramp_load(c: &mut Criterion) {
         .unwrap();
 
     let (child, client, port) = rt.block_on(async move {
-        let (child, port) = spawn_plugin("patui-template").await.unwrap();
+        let (child, port) = spawn_plugin("patui-testing-plugin").await.unwrap();
         let client = connect_plugin(port).await;
         (child, client, port)
     });
 
-    eprintln!("Setup patui-template: {:?}", child);
+    eprintln!("Setup patui-testing-plugin: {:?}", child);
 
     group.bench_function("ramp_load_1", |b| {
         b.iter(|| {
@@ -159,12 +160,12 @@ fn bench_ramp_load_sleep(c: &mut Criterion) {
         .unwrap();
 
     let (child, client, port) = rt.block_on(async move {
-        let (child, port) = spawn_plugin("patui-template").await.unwrap();
+        let (child, port) = spawn_plugin("patui-testing-plugin").await.unwrap();
         let client = connect_plugin(port).await;
         (child, client, port)
     });
 
-    eprintln!("Setup patui-template: {:?}", child);
+    eprintln!("Setup patui-testing-plugin: {:?}", child);
 
     group.bench_function("ramp_load_2", |b| {
         b.iter(|| {
