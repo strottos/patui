@@ -69,7 +69,7 @@ fn init_logging_function() -> TokenStream {
                     }
                     ptplugin::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::sync::Arc::new(std::fs::File::create(path)?))
                 }
-                Err(_) => ptplugin::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr),
+                _ => ptplugin::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr),
             };
 
             let fmt_layer = ptplugin::tracing_subscriber::fmt::layer()
@@ -313,18 +313,13 @@ fn init_server_structures(config: &Config) -> TokenStream {
                         };
                         ptplugin::tracing::trace!("Received results: {:?}", request);
 
-                        let data: ptplugin::PatuiData = request.results.unwrap().try_into().unwrap();
-                        ptplugin::tracing::debug!("Received data: {:?}", data);
+                        let result: ptplugin::PatuiStepResult = request.result.unwrap().try_into().unwrap();
+                        ptplugin::tracing::debug!("Received result: {:?}", result);
                         {
                             ptplugin::tracing::trace!("Locking write results");
                             let mut lock = results.write().await;
                             ptplugin::tracing::trace!("Locked write results: {:?}", results);
-                            match request.r#type.try_into() {
-                                Ok(ptplugin::plugin_server::ResultType::Append) => {
-                                    lock.append_to_list(vec!["steps".to_string(), request.step_name, request.function_name, request.result_name], data).unwrap();
-                                }
-                                _ => todo!(),
-                            }
+                            lock.add_step_result_to_stream(&result).unwrap();
                             ptplugin::tracing::trace!("New results: {:?}", lock);
 
                             // Important we send this before unlocking the results as otherwise we might

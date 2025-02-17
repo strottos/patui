@@ -9,9 +9,8 @@ use ptplugin::{
         self,
         sync::{broadcast, mpsc, RwLock},
     },
-    tonic::{self, Status},
-    tracing, FunctionService, PatuiData, PatuiEvent, PatuiExpr, PatuiResultType,
-    PatuiResultTypeConfirm, WakerType,
+    tonic::Status,
+    tracing, FunctionService, PatuiData, PatuiEvent, PatuiExpr, PatuiStepResult, WakerType,
 };
 
 pub(crate) struct Echo {
@@ -92,12 +91,14 @@ impl FunctionService for Echo {
                                 for item in patui_list.iter().skip(num_results_sent) {
                                     produce_results_tx
                                         .send(Ok(PatuiEvent::Result(
-                                            format!("steps.{}.echo.out", step_name)
-                                                .try_into()
-                                                .unwrap(),
-                                            true.into(),
-                                            PatuiResultType::List(num_results_sent),
-                                            item.clone(),
+                                            PatuiStepResult::new_stream_item(
+                                                format!("steps.{}.echo.out", step_name)
+                                                    .try_into()
+                                                    .unwrap(),
+                                                true.into(),
+                                                num_results_sent,
+                                                item.clone(),
+                                            ),
                                         )))
                                         .await
                                         .unwrap();
@@ -163,7 +164,9 @@ impl FunctionService for Echo {
             }
 
             produce_results_tx
-                .send(Ok(PatuiEvent::Done(PatuiResultTypeConfirm::List(
+                .send(Ok(PatuiEvent::Result(PatuiStepResult::done_stream(
+                    format!("steps.{}.echo.out", step_name).try_into().unwrap(),
+                    true.into(),
                     num_results_sent,
                 ))))
                 .await

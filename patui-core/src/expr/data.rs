@@ -217,6 +217,11 @@ impl PatuiData {
 
         match &step_result.details {
             crate::PatuiStepResultInner::StreamData(idx, patui_data) => {
+                tracing::trace!(
+                    "Adding data to stream at index {} with data length {}",
+                    idx,
+                    data.len()
+                );
                 if data.len() == *idx {
                     data.push(patui_data.clone());
                 } else {
