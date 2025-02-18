@@ -181,6 +181,18 @@ async fn echo_once() {
                     result: Some(result.try_into().unwrap()),
                 }
             }
+
+            let result = PatuiStepResult::done_stream(
+                "steps.foo.bar.results".try_into().unwrap(),
+                PatuiStepResultStatus::Success,
+                1,
+            );
+
+            tracing::trace!("Sending results to plugin: {:?}", result);
+
+            yield receive_results::Request {
+                result: Some(result.try_into().unwrap()),
+            }
         };
 
         client
@@ -263,6 +275,18 @@ async fn echo_multiple() {
                 yield receive_results::Request {
                     result: Some(result.try_into().unwrap()),
                 }
+            }
+
+            let result = PatuiStepResult::done_stream(
+                "steps.foo.bar.results".try_into().unwrap(),
+                PatuiStepResultStatus::Success,
+                5,
+            );
+
+            tracing::trace!("Sending results to plugin: {:?}", result);
+
+            yield receive_results::Request {
+                result: Some(result.try_into().unwrap()),
             }
         };
 
@@ -348,6 +372,115 @@ async fn produce_before_run() {
                 yield receive_results::Request {
                     result: Some(result.try_into().unwrap()),
                 }
+            }
+
+            let result = PatuiStepResult::done_stream(
+                "steps.foo.bar.results".try_into().unwrap(),
+                PatuiStepResultStatus::Success,
+                5,
+            );
+
+            tracing::trace!("Sending results to plugin: {:?}", result);
+
+            yield receive_results::Request {
+                result: Some(result.try_into().unwrap()),
+            }
+        };
+
+        client
+            .receive_results(Request::new(outbound))
+            .await
+            .unwrap()
+            .into_inner()
+    });
+
+    // Wait for the results to be sent to the plugin
+    let ret = results_to_plugin_task.await;
+    assert_that!(ret).is_ok();
+    let ret = ret.unwrap();
+    drop(ret);
+
+    // Run the plugin
+    let res = timeout(
+        Duration::from_secs(1),
+        client.run(run::Request {
+            step_name: "bar".to_string(),
+            function: "echo".to_string(),
+            args: HashMap::from([("in".to_string(), "steps.foo.bar.results".to_string())]),
+        }),
+    )
+    .await;
+    assert_that!(res).is_ok();
+    let res = res.unwrap();
+    assert_that!(res).is_ok();
+    let mut subscription_rx = res.unwrap().into_inner();
+
+    for i in 1..6 {
+        let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
+        tracing::info!("Got response from plugin: {:?}", response);
+        let event = check_event_response(response).await;
+        assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
+            "steps.bar.echo.out".try_into().unwrap(),
+            true.into(),
+            i - 1,
+            PatuiData::Known(PatuiDataInner::String(format!("Hello, {}!", i))),
+        )));
+    }
+
+    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
+    tracing::info!("Got response from plugin: {:?}", response);
+    let event = check_event_response(response).await;
+    assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
+        "steps.bar.echo.out".try_into().unwrap(),
+        true.into(),
+        5,
+    )));
+
+    shutdown_plugin(child, client).await;
+}
+
+#[traced_test]
+#[tokio::test]
+async fn out_of_order_results() {
+    let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
+
+    let client_clone = client.clone();
+
+    // Send results to the plugin
+    let results_to_plugin_task = tokio::spawn(async move {
+        let mut client = client_clone;
+        let outbound = async_stream::stream! {
+            for (i, data) in [
+                PatuiData::Known(PatuiDataInner::String("Hello, 1!".to_string())),
+                PatuiData::Known(PatuiDataInner::String("Hello, 2!".to_string())),
+                PatuiData::Known(PatuiDataInner::String("Hello, 3!".to_string())),
+                PatuiData::Known(PatuiDataInner::String("Hello, 4!".to_string())),
+                PatuiData::Known(PatuiDataInner::String("Hello, 5!".to_string())),
+            ].into_iter().enumerate() {
+                let result = PatuiStepResult::new_stream_item(
+                    "steps.foo.bar.results".try_into().unwrap(),
+                    PatuiStepResultStatus::Success,
+                    i,
+                    data
+                );
+
+                tracing::trace!("Sending results to plugin: {:?}", result);
+
+                yield receive_results::Request {
+                    result: Some(result.try_into().unwrap()),
+                }
+            }
+
+            let result = PatuiStepResult::done_stream(
+                "steps.foo.bar.results".try_into().unwrap(),
+                PatuiStepResultStatus::Success,
+                5,
+            );
+
+            tracing::trace!("Sending results to plugin: {:?}", result);
+
+            yield receive_results::Request {
+                result: Some(result.try_into().unwrap()),
             }
         };
 

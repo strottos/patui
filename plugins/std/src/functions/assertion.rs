@@ -5,12 +5,14 @@ use std::{
 
 use ptplugin::{
     eval_patui_expr,
-    tokio::{self, sync::mpsc},
-    EvalError, FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr, PatuiResultType,
-    PatuiResultTypeConfirm, Result, WakerType,
+    tokio::{
+        self,
+        sync::{broadcast, mpsc, RwLock},
+    },
+    tonic::Status,
+    tracing, EvalError, FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr,
+    PatuiStepResult, WakerType,
 };
-use tokio::sync::{broadcast, RwLock};
-use tonic::Status;
 
 pub(crate) struct Assertion {
     results_fully_recieved: Arc<AtomicBool>,

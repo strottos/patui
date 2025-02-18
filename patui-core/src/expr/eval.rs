@@ -104,8 +104,9 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
             TermPart::Lit(lit) => data = Some(eval_lit(lit, results)?),
             TermPart::Ident(ident) => {
                 let hash_map = match results {
-                    PatuiData::Known(PatuiDataInner::Map(hash_map)) => hash_map,
-                    PatuiData::Pending(PatuiDataInner::Map(hash_map)) => hash_map,
+                    PatuiData::Known(PatuiDataInner::Map(hash_map))
+                    | PatuiData::PendingFixed(PatuiDataInner::Map(hash_map))
+                    | PatuiData::Pending(PatuiDataInner::Map(hash_map)) => hash_map,
                     _ => return Err(EvalError::ResultsNotMap),
                 };
                 let key = ident.clone();
@@ -114,8 +115,9 @@ fn eval_term(term_parts: &[TermPart], results: &PatuiData) -> Result<PatuiData, 
                     Some(existing) => {
                         tracing::trace!("Existing ident lookup: {:?}", existing);
                         let existing_inner = match existing {
-                            PatuiData::Known(inner) => inner,
-                            PatuiData::Pending(inner) => inner,
+                            PatuiData::Known(inner)
+                            | PatuiData::PendingFixed(inner)
+                            | PatuiData::Pending(inner) => inner,
                             PatuiData::Unknown => return Ok(PatuiData::Unknown),
                         };
                         let value = match existing_inner {
@@ -162,23 +164,21 @@ fn eval_binop(
     let lhs = eval_inner(lhs, results)?;
     let rhs = eval_inner(rhs, results)?;
 
-    let mut known = true;
-    let lhs_inner = match lhs {
-        PatuiData::Known(inner) => inner,
-        PatuiData::Pending(inner) => {
-            known = false;
-            inner
-        }
-        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    let (lhs_is_known, lhs_inner) = match lhs.get_inner() {
+        Ok(inner) => inner,
+        Err(e) => match e {
+            PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+            _ => unreachable!(),
+        },
     };
-    let rhs_inner = match rhs {
-        PatuiData::Known(inner) => inner,
-        PatuiData::Pending(inner) => {
-            known = false;
-            inner
-        }
-        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    let (rhs_is_known, rhs_inner) = match rhs.get_inner() {
+        Ok(inner) => inner,
+        Err(e) => match e {
+            PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+            _ => unreachable!(),
+        },
     };
+    let known = lhs_is_known && rhs_is_known;
 
     match op {
         BinOp::Add => todo!(),
@@ -202,9 +202,9 @@ fn eval_binop(
             };
 
             let res = if op == &BinOp::And {
-                lhs_bool && rhs_bool
+                *lhs_bool && *rhs_bool
             } else {
-                lhs_bool || rhs_bool
+                *lhs_bool || *rhs_bool
             };
 
             tracing::trace!(
@@ -282,30 +282,29 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
     tracing::trace!("Base: {:?}", base);
 
     let index = eval_inner(index, results)?;
-    let mut known = true;
 
-    let index = match index {
-        PatuiData::Known(inner) => inner,
-        PatuiData::Pending(inner) => {
-            known = false;
-            inner
-        }
-        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    let (index_known, index_inner) = match index.get_inner() {
+        Ok(res) => res,
+        Err(e) => match e {
+            PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+            _ => unreachable!(),
+        },
     };
 
-    let base_inner = match base {
-        PatuiData::Known(inner) => inner,
-        PatuiData::Pending(inner) => {
-            known = false;
-            inner
-        }
-        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    let (base_known, base_inner) = match base.get_inner() {
+        Ok(res) => res,
+        Err(e) => match e {
+            PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+            _ => unreachable!(),
+        },
     };
 
-    tracing::trace!("Evaluated Index: {:?}", index);
+    let known = base_known && index_known;
+
+    tracing::trace!("Evaluated Index: {:?}", index_inner);
     tracing::trace!("Evaluated Base inner: {:?}", base_inner);
 
-    match index {
+    match index_inner {
         PatuiDataInner::String(s) => match base_inner {
             PatuiDataInner::Map(hash_map) => {
                 let key = s.clone();
@@ -418,15 +417,14 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
                 tracing::trace!("No first elements in list index");
                 return Err(EvalError::BadIndexRange);
             };
-            let i1 = match i1 {
-                PatuiData::Known(inner) => inner,
-                PatuiData::Pending(inner) => {
-                    known = false;
-                    inner
-                }
-                PatuiData::Unknown => return Ok(PatuiData::Unknown),
+            let (_, i1_inner) = match i1.get_inner() {
+                Ok(res) => res,
+                Err(e) => match e {
+                    PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+                    _ => unreachable!(),
+                },
             };
-            let i1 = match i1 {
+            let i1 = match i1_inner {
                 PatuiDataInner::Integer(i) => i.to_isize().ok_or(EvalError::BadIndexSize)?,
                 _ => return Err(EvalError::BadIndexRange),
             };
@@ -435,15 +433,14 @@ fn eval_index(base: &PatuiData, index: &Expr, results: &PatuiData) -> Result<Pat
                 tracing::trace!("No second elements in list index");
                 return Err(EvalError::BadIndexRange);
             };
-            let i2 = match i2 {
-                PatuiData::Known(inner) => inner,
-                PatuiData::Pending(inner) => {
-                    known = false;
-                    inner
-                }
-                PatuiData::Unknown => return Ok(PatuiData::Unknown),
+            let (_, i2_inner) = match i2.get_inner() {
+                Ok(res) => res,
+                Err(e) => match e {
+                    PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+                    _ => unreachable!(),
+                },
             };
-            let i2 = match i2 {
+            let i2 = match i2_inner {
                 PatuiDataInner::Integer(i) => i.to_isize().ok_or(EvalError::BadIndexSize)?,
                 _ => return Err(EvalError::BadIndexRange),
             };
@@ -531,13 +528,15 @@ fn eval_call(
         args
     );
 
-    let (known, existing) = match existing {
-        PatuiData::Known(inner) => (true, inner),
-        PatuiData::Pending(inner) => (false, inner),
-        PatuiData::Unknown => return Ok(PatuiData::Unknown),
+    let (known, existing_inner) = match existing.get_inner() {
+        Ok(res) => res,
+        Err(e) => match e {
+            PatuiDataError::UnknownData => return Ok(PatuiData::Unknown),
+            _ => unreachable!(),
+        },
     };
 
-    let res = match existing {
+    let res = match existing_inner {
         PatuiDataInner::Null => todo!(),
         PatuiDataInner::Bool(_) => todo!(),
         PatuiDataInner::Bytes(_) => todo!(),

@@ -80,6 +80,7 @@ impl FunctionService for Echo {
                 match eval_patui_expr(&r#in, &results_clone) {
                     Ok(eval) => match eval {
                         PatuiData::Known(patui_data_inner)
+                        | PatuiData::PendingFixed(patui_data_inner)
                         | PatuiData::Pending(patui_data_inner) => match patui_data_inner {
                             ptplugin::PatuiDataInner::Null => todo!(),
                             ptplugin::PatuiDataInner::Bool(_) => todo!(),
@@ -129,6 +130,7 @@ impl FunctionService for Echo {
                     match eval_patui_expr(&expr, &results_clone) {
                         Ok(eval) => match eval {
                             PatuiData::Known(patui_data_inner)
+                            | PatuiData::PendingFixed(patui_data_inner)
                             | PatuiData::Pending(patui_data_inner) => match patui_data_inner {
                                 ptplugin::PatuiDataInner::Integer(len) => {
                                     if len != num_results_sent as i64 {

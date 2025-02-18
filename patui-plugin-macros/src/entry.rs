@@ -319,7 +319,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
                             ptplugin::tracing::trace!("Locking write results");
                             let mut lock = results.write().await;
                             ptplugin::tracing::trace!("Locked write results: {:?}", results);
-                            lock.add_step_result_to_stream(&result).unwrap();
+                            lock.add_step_result(&result).unwrap();
                             ptplugin::tracing::trace!("New results: {:?}", lock);
 
                             // Important we send this before unlocking the results as otherwise we might

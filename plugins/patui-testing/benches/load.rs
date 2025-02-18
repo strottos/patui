@@ -5,11 +5,11 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use ptplugin::{
     async_stream, connect_plugin,
-    plugin_server::{plugin_service_client::PluginServiceClient, receive_results, run, ResultType},
+    plugin_server::{plugin_service_client::PluginServiceClient, receive_results, run},
     shutdown_plugin, spawn_plugin,
     tokio::{self, time::timeout},
     tonic::{self, Request},
-    tracing, PatuiData, PatuiDataInner, PatuiEvent, PatuiResultType, PatuiResultTypeConfirm,
+    tracing, PatuiData, PatuiDataInner, PatuiEvent, PatuiStepResult, PatuiStepResultStatus,
 };
 use uuid::Uuid;
 
@@ -26,21 +26,24 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
         let mut client = client_clone;
         let outbound = async_stream::stream! {
             let uuid = uuid;
-            for results in [
+            for (i, data) in [
                 PatuiData::Known(PatuiDataInner::String("Hello, 1!".to_string())),
                 PatuiData::Known(PatuiDataInner::String("Hello, 2!".to_string())),
                 PatuiData::Known(PatuiDataInner::String("Hello, 3!".to_string())),
                 PatuiData::Known(PatuiDataInner::String("Hello, 4!".to_string())),
                 PatuiData::Known(PatuiDataInner::String("Hello, 5!".to_string())),
-            ] {
-                tracing::trace!("Sending results to plugin: {:?}", results);
+            ].into_iter().enumerate() {
+                let result = PatuiStepResult::new_stream_item(
+                    format!("steps.foo_{uuid}.bar.results").try_into().unwrap(),
+                    PatuiStepResultStatus::Success,
+                    i,
+                    data
+                );
+
+                tracing::trace!("Sending results to plugin: {:?}", result);
 
                 yield receive_results::Request {
-                    step_name: format!("foo_{}", uuid),
-                    function_name: "bar".to_string(),
-                    result_name: "results".to_string(),
-                    r#type: ResultType::Append.into(),
-                    results: Some(results.try_into().unwrap()),
+                    result: Some(result.try_into().unwrap()),
                 };
 
                 tokio::time::sleep(Duration::from_millis(sleep)).await;
@@ -89,12 +92,12 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
         let event = data.unwrap().try_into();
         assert_that!(event).is_ok();
         let event = event.unwrap();
-        assert_that!(event).is_equal_to(PatuiEvent::Result(
-            format!("steps.bar_{}.echo.out", uuid).try_into().unwrap(),
+        assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
+            format!("steps.bar_{uuid}.echo.out").try_into().unwrap(),
             true.into(),
-            PatuiResultType::List(i - 1),
+            i - 1,
             PatuiData::Known(PatuiDataInner::String(format!("Hello, {}!", i))),
-        ));
+        )));
     }
 
     let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
@@ -110,7 +113,11 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
     let event = data.unwrap().try_into();
     assert_that!(event).is_ok();
     let event = event.unwrap();
-    assert_that!(event).is_equal_to(PatuiEvent::Done(PatuiResultTypeConfirm::List(6)));
+    assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
+        format!("steps.bar_{uuid}.echo.out").try_into().unwrap(),
+        true.into(),
+        6,
+    )));
 }
 
 fn bench_ramp_load(c: &mut Criterion) {
