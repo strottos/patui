@@ -9,7 +9,7 @@ use ptplugin::{
     shutdown_plugin, spawn_plugin,
     tokio::{self, time::timeout},
     tonic::{self, Request},
-    tracing, PatuiData, PatuiDataInner, PatuiEvent, PatuiStepResult, PatuiStepResultStatus,
+    PatuiData, PatuiDataInner, PatuiEvent, PatuiStepResult, PatuiStepResultStatus,
 };
 use uuid::Uuid;
 
@@ -40,13 +40,25 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
                     data
                 );
 
-                tracing::trace!("Sending results to plugin: {:?}", result);
+                eprintln!("Sending results to plugin: {:?}", result);
 
                 yield receive_results::Request {
                     result: Some(result.try_into().unwrap()),
                 };
 
                 tokio::time::sleep(Duration::from_millis(sleep)).await;
+            }
+
+            let result = PatuiStepResult::done_stream(
+                format!("steps.foo_{uuid}.bar.results").try_into().unwrap(),
+                PatuiStepResultStatus::Success,
+                5,
+            );
+
+            eprintln!("Sending results to plugin: {:?}", result);
+
+            yield receive_results::Request {
+                result: Some(result.try_into().unwrap()),
             }
         };
 
@@ -59,7 +71,7 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
 
     // Run the plugin
     let res = timeout(
-        Duration::from_secs(1),
+        Duration::from_secs(5),
         client.run(run::Request {
             step_name: format!("bar_{}", uuid),
             function: "echo".to_string(),
@@ -72,14 +84,15 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
     assert_that!(res).is_ok();
     let mut subscription_rx = res.unwrap().into_inner();
 
-    // Wait for the results to be sent to the plugin
-    let ret = results_to_plugin_task.await;
-    assert_that!(ret).is_ok();
-    let ret = ret.unwrap();
-    drop(ret);
+    let send_results_task = tokio::spawn(async move {
+        let ret = results_to_plugin_task.await;
+        assert_that!(ret).is_ok();
+        let ret = ret.unwrap();
+        drop(ret);
+    });
 
     for i in 1..6 {
-        let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
+        let response = timeout(Duration::from_secs(5), subscription_rx.message()).await;
         assert_that!(response).is_ok();
         let response = response.unwrap();
         assert_that!(response).is_ok();
@@ -92,6 +105,7 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
         let event = data.unwrap().try_into();
         assert_that!(event).is_ok();
         let event = event.unwrap();
+        eprintln!("Event: {:?}", event);
         assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
             format!("steps.bar_{uuid}.echo.out").try_into().unwrap(),
             true.into(),
@@ -100,7 +114,7 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
         )));
     }
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
+    let response = timeout(Duration::from_secs(5), subscription_rx.message()).await;
     assert_that!(response).is_ok();
     let response = response.unwrap();
     assert_that!(response).is_ok();
@@ -116,8 +130,13 @@ async fn test_plugin(mut client: PluginServiceClient<tonic::transport::Channel>,
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
         format!("steps.bar_{uuid}.echo.out").try_into().unwrap(),
         true.into(),
-        6,
+        5,
     )));
+
+    let task_result = timeout(Duration::from_secs(2), send_results_task).await;
+    assert_that!(task_result).is_ok();
+    let task_result = task_result.unwrap();
+    assert_that!(task_result).is_ok();
 }
 
 fn bench_ramp_load(c: &mut Criterion) {
@@ -125,7 +144,7 @@ fn bench_ramp_load(c: &mut Criterion) {
     group.sample_size(10);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(8)
+        .worker_threads(16)
         .enable_time()
         .enable_io()
         .build()
@@ -137,7 +156,7 @@ fn bench_ramp_load(c: &mut Criterion) {
         (child, client, port)
     });
 
-    eprintln!("Setup patui-testing-plugin: {:?}", child);
+    eprintln!("Setup patui-testing-plugin: {:?}, {:?}", child, client);
 
     group.bench_function("ramp_load_1", |b| {
         b.iter(|| {

@@ -122,7 +122,7 @@ impl FunctionService for Assertion {
                         }
                     }
                     Err(e) => {
-                        if let EvalError::DataNotFound = e {
+                        if let EvalError::DataNotFound(_) = e {
                             if results.is_known() {
                                 tracing::debug!(
                                     "Results are known, but data not found, failing and bailing"

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, RwLock},
+};
 
 // Re-export modules for use in the generated code.
 pub use async_stream;
@@ -13,11 +16,12 @@ use tonic::Status;
 pub use tracing;
 pub use tracing_subscriber;
 
-use tokio::sync::{broadcast, mpsc::Receiver, RwLock};
+use tokio::sync::{broadcast, mpsc::Receiver};
 
 pub use patui_core::{
-    eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiEvent, PatuiEventWithTimestamp,
-    PatuiExpr, PatuiStepResult, PatuiStepResultInner, PatuiStepResultStatus,
+    eval_patui_expr, get_expr_terms, EvalError, PatuiData, PatuiDataInner, PatuiEvent,
+    PatuiEventWithTimestamp, PatuiExpr, PatuiStepResult, PatuiStepResultInner,
+    PatuiStepResultStatus,
 };
 pub use patui_plugin_macros::main;
 
@@ -38,8 +42,9 @@ pub trait FunctionService {
     fn run(
         &self,
         step_name: String,
-        args: HashMap<String, String>,
+        args: HashMap<String, PatuiExpr>,
         results: Arc<RwLock<PatuiData>>,
+        results_needed: Arc<Mutex<Vec<PatuiExpr>>>,
         waker_rx: broadcast::Receiver<WakerType>,
     ) -> (
         Receiver<Result<PatuiEvent, Status>>,
@@ -109,7 +114,7 @@ mod tests {
     }
 
     pub async fn connect_plugin(port: u16) -> PluginServiceClient<Channel> {
-        for _ in 0..50 {
+        for _ in 0..100 {
             let addr = format!("http://[::1]:{}", port);
             let client = PluginServiceClient::connect(addr).await;
             match client {
@@ -150,6 +155,7 @@ mod tests {
         }
 
         child.kill().unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         panic!("Failed to shutdown the plugin");
     }
 
@@ -167,6 +173,7 @@ mod tests {
         assert_that!(data).is_some();
         let event = data.unwrap().try_into();
         assert_that!(event).is_ok();
+        tracing::info!("Got event: {:?}", event);
         event.unwrap()
     }
 }

@@ -2,11 +2,7 @@ use thiserror::Error;
 
 use crate::expr::visitor::PatuiExprVisitorError;
 
-use super::{
-    ast::{Expr, TermPart},
-    visitor::Visitor,
-    PatuiExpr,
-};
+use super::{ast::TermPart, visitor::Visitor, PatuiExpr};
 
 /// Error type for querying a `PatuiExpr`.
 #[derive(Error, Debug)]
@@ -16,7 +12,9 @@ pub enum PatuiExprQueryError {
     Visitor(#[from] PatuiExprVisitorError),
 }
 
-pub(crate) fn get_terms(expr: &PatuiExpr) -> Result<Vec<Vec<TermPart>>, PatuiExprQueryError> {
+/// Given a `PatuiExpr`, get a list of every terms in the expression. Used to be able to figure
+/// things out about an expression like what results does it depend on.
+pub fn get_terms(expr: &PatuiExpr) -> Result<Vec<Vec<TermPart>>, PatuiExprQueryError> {
     struct TermsVisitor {
         terms: Vec<Vec<TermPart>>,
     }
@@ -38,7 +36,7 @@ pub(crate) fn get_terms(expr: &PatuiExpr) -> Result<Vec<Vec<TermPart>>, PatuiExp
 
 #[cfg(test)]
 mod tests {
-    use crate::expr::ast::{Lit, TermPart};
+    use crate::expr::ast::{Expr, Lit, TermPart};
 
     use super::*;
 

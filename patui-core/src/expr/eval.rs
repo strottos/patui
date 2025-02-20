@@ -248,8 +248,8 @@ fn eval_lit(lit: &Lit, results: &PatuiData) -> Result<PatuiData, EvalError> {
         Lit::Null => Ok(PatuiData::Known(PatuiDataInner::Null)),
         Lit::Bool(b) => Ok(PatuiData::Known(PatuiDataInner::Bool(*b))),
         Lit::Bytes(bytes) => Ok(PatuiData::Known(PatuiDataInner::Bytes(bytes.clone()))),
-        Lit::Integer(integer) => Ok(PatuiData::Known(PatuiDataInner::Integer(integer.clone()))),
-        Lit::Decimal(float) => Ok(PatuiData::Known(PatuiDataInner::Decimal(float.clone()))),
+        Lit::Integer(integer) => Ok(PatuiData::Known(PatuiDataInner::Integer(*integer))),
+        Lit::Decimal(float) => Ok(PatuiData::Known(PatuiDataInner::Decimal(*float))),
         Lit::String(s) => Ok(PatuiData::Known(PatuiDataInner::String(s.clone()))),
         Lit::List(vec) => Ok(PatuiData::Known(PatuiDataInner::List(
             vec.iter()

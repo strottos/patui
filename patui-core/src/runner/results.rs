@@ -79,6 +79,17 @@ pub enum PatuiStepResultInner {
     DoneMap(Vec<String>),
 }
 
+impl PatuiStepResultInner {
+    /// Returns true if the result is a DoneStream and the size of the stream, otherwise returns
+    /// false and 0.
+    pub fn is_done_stream(&self) -> (bool, usize) {
+        match self {
+            PatuiStepResultInner::DoneStream(stream_len) => (true, *stream_len),
+            _ => (false, 0),
+        }
+    }
+}
+
 /// A result from running a step.
 ///
 /// The PatuiExpr is the list to append/set results for. ResultSuccess indicates whether we should
@@ -87,7 +98,7 @@ pub enum PatuiStepResultInner {
 /// result we are setting.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct PatuiStepResult {
-    pub(crate) location: PatuiExpr,
+    pub(crate) expr: PatuiExpr,
     pub(crate) success: PatuiStepResultStatus,
     pub(crate) details: PatuiStepResultInner,
 }
@@ -101,7 +112,7 @@ impl PatuiStepResult {
         data: PatuiData,
     ) -> Self {
         PatuiStepResult {
-            location: expr,
+            expr,
             success,
             details: PatuiStepResultInner::StreamData(index, data),
         }
@@ -115,7 +126,7 @@ impl PatuiStepResult {
         data: PatuiData,
     ) -> Self {
         PatuiStepResult {
-            location: expr,
+            expr,
             success,
             details: PatuiStepResultInner::MapElement(key, data),
         }
@@ -124,7 +135,7 @@ impl PatuiStepResult {
     /// Create a new list done result
     pub fn done_stream(expr: PatuiExpr, success: PatuiStepResultStatus, size: usize) -> Self {
         PatuiStepResult {
-            location: expr,
+            expr,
             success,
             details: PatuiStepResultInner::DoneStream(size),
         }
@@ -133,7 +144,7 @@ impl PatuiStepResult {
     /// Create a new map done result
     pub fn done_map(expr: PatuiExpr, success: PatuiStepResultStatus, keys: Vec<String>) -> Self {
         PatuiStepResult {
-            location: expr,
+            expr,
             success,
             details: PatuiStepResultInner::DoneMap(keys),
         }
@@ -141,7 +152,7 @@ impl PatuiStepResult {
 
     /// Get the expression from the result
     pub fn expr(&self) -> &PatuiExpr {
-        &self.location
+        &self.expr
     }
 
     /// Get the success from the result

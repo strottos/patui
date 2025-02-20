@@ -18,6 +18,9 @@ pub enum PatuiExprError {
     /// Error parsing expression
     #[error("Error parsing expression: {0}")]
     ExprParseError(#[from] super::parser::ExprParseError),
+    /// Unsupported TermPart to try and build a PatuiExpr from
+    #[error("Unsupported TermPart to try and build a PatuiExpr from: {0:?}")]
+    UnsupportedTermPartTryFrom(TermPart),
 }
 
 /// PatuiExpr is the type used for expressions in Patui. This is the entry point for the AST for
@@ -60,6 +63,19 @@ impl PatuiExpr {
             raw: "".to_string(), // Tests should not rely on this, this is why it's for tests only
             expr,
         }
+    }
+
+    fn try_from_term_parts(value: &[TermPart]) -> Result<PatuiExpr, PatuiExprError> {
+        let raw = value
+            .iter()
+            .map(|part| match part {
+                TermPart::Ident(ident) => Ok(ident.clone()),
+                _ => Err(PatuiExprError::UnsupportedTermPartTryFrom(part.clone())),
+            })
+            .collect::<Result<Vec<String>, PatuiExprError>>()?
+            .join(".");
+
+        PatuiExpr::try_from(raw)
     }
 }
 
@@ -105,6 +121,30 @@ impl From<&PatuiExpr> for String {
     }
 }
 
+impl TryFrom<Vec<TermPart>> for PatuiExpr {
+    type Error = PatuiExprError;
+
+    fn try_from(value: Vec<TermPart>) -> Result<Self, Self::Error> {
+        PatuiExpr::try_from_term_parts(&value)
+    }
+}
+
+impl TryFrom<&[TermPart]> for PatuiExpr {
+    type Error = PatuiExprError;
+
+    fn try_from(value: &[TermPart]) -> Result<Self, Self::Error> {
+        PatuiExpr::try_from_term_parts(value)
+    }
+}
+
+impl TryFrom<&Vec<TermPart>> for PatuiExpr {
+    type Error = PatuiExprError;
+
+    fn try_from(value: &Vec<TermPart>) -> Result<Self, Self::Error> {
+        PatuiExpr::try_from_term_parts(value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Lit {
     Null,
@@ -127,6 +167,12 @@ pub enum TermPart {
     Lit(Lit),
     /// Function Call: (function_name, args)
     Call(String, Vec<Expr>),
+}
+
+impl TermPart {
+    pub fn is_ident(&self, value: String) -> bool {
+        *self == TermPart::Ident(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -13,7 +13,10 @@ pub mod ptplugin {
     tonic::include_proto!("ptplugin");
 }
 
-pub use expr::{eval_patui_expr, EvalError, PatuiData, PatuiDataInner, PatuiExpr, PatuiExprError};
+pub use expr::{
+    eval_patui_expr, get_expr_terms, EvalError, PatuiData, PatuiDataInner, PatuiExpr,
+    PatuiExprError,
+};
 pub use runner::{
     PatuiEvent, PatuiEventWithTimestamp, PatuiRun, PatuiStepResult, PatuiStepResultInner,
     PatuiStepResultStatus,

@@ -1,21 +1,21 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use ptplugin::{
     tokio::{
         self,
-        sync::{broadcast, mpsc, RwLock},
+        sync::{broadcast, mpsc},
     },
     tonic::Status,
-    FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiStepResult, WakerType,
+    FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr, PatuiStepResult, WakerType,
 };
 
 pub(crate) struct UnorderedList;
 
 impl UnorderedList {
-    pub fn new(_results_fully_recieved: Arc<AtomicBool>) -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -24,9 +24,10 @@ impl FunctionService for UnorderedList {
     fn run(
         &self,
         step_name: String,
-        _args: HashMap<String, String>,
+        _args: HashMap<String, PatuiExpr>,
         _results: Arc<RwLock<PatuiData>>,
-        _waker_rx: broadcast::Receiver<WakerType>,
+        _results_needed: Arc<Mutex<Vec<PatuiExpr>>>,
+        _results_waker_rx: broadcast::Receiver<WakerType>,
     ) -> (
         mpsc::Receiver<Result<PatuiEvent, Status>>,
         Option<tokio::task::JoinHandle<()>>,

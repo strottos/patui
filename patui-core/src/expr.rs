@@ -24,6 +24,7 @@ mod visitor;
 pub use ast::{PatuiExpr, PatuiExprError};
 pub use data::{PatuiData, PatuiDataInner};
 pub use eval::EvalError;
+pub use query::get_terms as get_expr_terms;
 
 /// Evaluate a PatuiExpr against a PatuiData.
 ///

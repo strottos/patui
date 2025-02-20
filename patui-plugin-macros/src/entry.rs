@@ -128,11 +128,14 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 .to_case(convert_case::Case::Snake);
             quote! {
                 #name => {
-                    let args = request.args;
-                    let args = args.into_iter().collect::<std::collections::HashMap<_, _>>();
-
-                    let obj = #path::new(self.results_fully_recieved.clone());
-                    obj.run(request.step_name, args, results, produced_results_waker_rx)
+                    let obj = #path::new();
+                    obj.run(
+                        request.step_name,
+                        args,
+                        results,
+                        results_needed,
+                        produced_results_waker_rx,
+                    )
                 },
             }
         })
@@ -141,14 +144,16 @@ fn init_server_structures(config: &Config) -> TokenStream {
     quote! {
         #[derive(Debug)]
         pub(crate) struct #plugin_server_struct_name {
-            shutdown_signal: ptplugin::tokio::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
+            shutdown_signal: std::sync::Mutex<Option<ptplugin::tokio::sync::oneshot::Sender<()>>>,
 
-            results_fully_recieved: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            results_needed:
+                std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<Vec<ptplugin::PatuiExpr>>>>>>,
+            results_done: std::sync::Arc<std::sync::Mutex<Vec<ptplugin::PatuiExpr>>>,
 
-            results: std::sync::Arc<ptplugin::tokio::sync::RwLock<ptplugin::PatuiData>>,
-            produced_results: std::sync::Arc<ptplugin::tokio::sync::RwLock<Vec<ptplugin::PatuiEvent>>>,
+            results: std::sync::Arc<std::sync::RwLock<ptplugin::PatuiData>>,
+            produced_results: std::sync::Arc<std::sync::RwLock<Vec<ptplugin::PatuiEvent>>>,
             produced_results_waker:
-                ptplugin::tokio::sync::Mutex<Option<(
+                std::sync::Mutex<Option<(
                     ptplugin::tokio::sync::broadcast::Sender<ptplugin::WakerType>,
                     ptplugin::tokio::sync::broadcast::Receiver<ptplugin::WakerType>
                 )>>,
@@ -157,15 +162,16 @@ fn init_server_structures(config: &Config) -> TokenStream {
         impl #plugin_server_struct_name {
             pub fn new(shutdown_signal: ptplugin::tokio::sync::oneshot::Sender<()>) -> Self {
                 Self {
-                    shutdown_signal: ptplugin::tokio::sync::Mutex::new(Some(shutdown_signal)),
+                    shutdown_signal: std::sync::Mutex::new(Some(shutdown_signal)),
 
-                    results_fully_recieved: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    results_needed: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+                    results_done: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
 
-                    results: std::sync::Arc::new(ptplugin::tokio::sync::RwLock::new(ptplugin::PatuiData::Pending(
+                    results: std::sync::Arc::new(std::sync::RwLock::new(ptplugin::PatuiData::Pending(
                         ptplugin::PatuiDataInner::Map(std::collections::HashMap::new()),
                     ))),
-                    produced_results: std::sync::Arc::new(ptplugin::tokio::sync::RwLock::new(Vec::new())),
-                    produced_results_waker: ptplugin::tokio::sync::Mutex::new(Some(ptplugin::tokio::sync::broadcast::channel(16))),
+                    produced_results: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+                    produced_results_waker: std::sync::Mutex::new(Some(ptplugin::tokio::sync::broadcast::channel(256))),
                 }
             }
         }
@@ -218,12 +224,67 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 ptplugin::tracing::info!("Request run {}", request.function);
 
                 let (send_patui_results_tx, send_patui_results_rx) = ptplugin::tokio::sync::mpsc::channel(16);
+                let produced_results = self.produced_results.clone();
                 let results = self.results.clone();
+
+                let mut args: std::collections::HashMap<String, ptplugin::PatuiExpr> = std::collections::HashMap::new();
+                let mut results_needed: Vec<ptplugin::PatuiExpr> = Vec::new();
+
+                for (name, arg) in request.args {
+                    let arg: ptplugin::PatuiExpr = match arg.clone().try_into() {
+                        Ok(arg) => arg,
+                        Err(e) => {
+                            return Err(ptplugin::tonic::Status::invalid_argument(format!(
+                                "Invalid argument {arg}, error: {e}",
+                            )));
+                        }
+                    };
+                    let terms = match ptplugin::get_expr_terms(&arg) {
+                        Ok(terms) => terms,
+                        Err(e) => {
+                            ptplugin::tracing::error!("Error: {:?}", e);
+                            return Err(ptplugin::tonic::Status::invalid_argument(format!(
+                                "Invalid argument {arg}, error: {e}",
+                            )));
+                        }
+                    };
+
+                    for term in terms {
+                        if let Some(first_element) = term.first() {
+                            if first_element.is_ident("steps".to_string()) {
+                                if term.len() < 4 {
+                                    return Err(ptplugin::tonic::Status::invalid_argument(
+                                        "Invalid steps term, should be at least 4 elements".to_string(),
+                                    ));
+                                }
+                                let expr: ptplugin::PatuiExpr = (&term[0..4]).try_into().unwrap();
+                                results_needed.push(expr);
+                            }
+                        }
+                    }
+
+                    args.insert(name, arg);
+                }
+
+                ptplugin::tracing::trace!("Results needed: {:?}", results_needed);
+                let results_needed = std::sync::Arc::new(std::sync::Mutex::new(results_needed));
+
+                {
+                    let mut results_needed_lock = self.results_needed.lock().unwrap();
+                    let results_done_lock = self.results_done.lock().unwrap();
+                    let mut results_needed_step_lock = results_needed.lock().unwrap();
+                    for result in results_done_lock.iter() {
+                        if results_needed_step_lock.contains(result) {
+                            results_needed_step_lock.retain(|r| r != result);
+                        }
+                    }
+                    results_needed_lock.insert(request.step_name.clone(), results_needed.clone());
+                }
 
                 let produced_results_waker_rx = self
                     .produced_results_waker
                     .lock()
-                    .await
+                    .unwrap()
                     .as_ref()
                     .unwrap()
                     .0
@@ -243,20 +304,23 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 // TODO: Assert this finishes after we get a Done event/in shutdown?
                 ptplugin::tokio::spawn(async move {
                     let send_patui_results_tx = send_patui_results_tx;
-                    // let mut produced_results = self.produced_results.clone();
+                    let produced_results = produced_results.clone();
                     let mut produce_results_rx = produce_results_rx;
 
                     while let Some(event_res) = produce_results_rx.recv().await {
                         {
-                            // TODO: Add results into self.produced_results/self.results?
                             let result = match event_res {
-                                Ok(event) => Ok(ptplugin::plugin_server::run::Response {
-                                    data: Some(
-                                        (&event)
-                                            .try_into()
-                                            .expect("Should be able to encode any event"),
-                                    ),
-                                }),
+                                Ok(event) => {
+                                    produced_results.write().unwrap().push(event.clone());
+
+                                    Ok(ptplugin::plugin_server::run::Response {
+                                        data: Some(
+                                            (&event)
+                                                .try_into()
+                                                .expect("Should be able to encode any event"),
+                                        ),
+                                    })
+                                }
                                 Err(e) => Err(ptplugin::tonic::Status::internal(format!("Error: {}", e))),
                             };
 
@@ -291,14 +355,15 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 let produced_results_waker_tx = self
                     .produced_results_waker
                     .lock()
-                    .await
+                    .unwrap()
                     .as_ref()
                     .unwrap()
                     .0
                     .clone();
                 let mut stream = request.into_inner();
                 let results = self.results.clone();
-                let results_fully_recieved = self.results_fully_recieved.clone();
+                let results_needed = self.results_needed.clone();
+                let results_done = self.results_done.clone();
 
                 let output = ptplugin::async_stream::try_stream! {
                     ptplugin::tracing::trace!("Setup receive results streams");
@@ -317,7 +382,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
                         ptplugin::tracing::debug!("Received result: {:?}", result);
                         {
                             ptplugin::tracing::trace!("Locking write results");
-                            let mut lock = results.write().await;
+                            let mut lock = results.write().unwrap();
                             ptplugin::tracing::trace!("Locked write results: {:?}", results);
                             lock.add_step_result(&result).unwrap();
                             ptplugin::tracing::trace!("New results: {:?}", lock);
@@ -329,6 +394,21 @@ fn init_server_structures(config: &Config) -> TokenStream {
                             ptplugin::tracing::trace!("Unlocking write results");
                         }
 
+                        let (is_done_stream, _) = result.details().is_done_stream();
+                        if is_done_stream {
+                            let expr = result.expr();
+                            ptplugin::tracing::debug!("Done stream, removing from results needed: {:?}", expr);
+                            let mut results_needed_lock = results_needed.lock().unwrap();
+                            let mut results_done_lock = results_done.lock().unwrap();
+                            ptplugin::tracing::trace!("Results needed before: {:?}", results_needed_lock);
+                            for value in results_needed_lock.values_mut() {
+                                let mut value = value.lock().unwrap();
+                                value.retain(|u| { u != expr });
+                            }
+                            ptplugin::tracing::trace!("Results needed after: {:?}", results_needed_lock);
+                            results_done_lock.push(expr.clone());
+                        }
+
                         let result = ptplugin::plugin_server::receive_results::Response {
                             diagnostics: vec![],
                         };
@@ -336,7 +416,6 @@ fn init_server_structures(config: &Config) -> TokenStream {
                         yield result.clone();
                     }
                     ptplugin::tracing::trace!("Finished receive results streams");
-                    results_fully_recieved.store(true, std::sync::atomic::Ordering::SeqCst);
                     produced_results_waker_tx.send(ptplugin::WakerType::Done).unwrap();
                 };
 
@@ -351,7 +430,7 @@ fn init_server_structures(config: &Config) -> TokenStream {
             ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::shutdown::Response>, ptplugin::tonic::Status> {
                 ptplugin::tracing::info!("Requesting shutdown: {:?}", request.remote_addr());
 
-                let shutdown_tx = self.shutdown_signal.lock().await.take().unwrap();
+                let shutdown_tx = self.shutdown_signal.lock().unwrap().take().unwrap();
                 if let Err(e) = shutdown_tx.send(()) {
                     panic!("Error sending shutdown signal: {:?}", e);
                 }

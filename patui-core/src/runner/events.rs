@@ -35,15 +35,6 @@ pub enum PatuiEvent {
 }
 
 impl PatuiEvent {
-    /// Get the results from the event
-    #[cfg(test)]
-    pub fn as_results(&self) -> Result<&PatuiStepResult, PatuiEventError> {
-        match self {
-            PatuiEvent::Result(result) => Ok(result),
-            _ => Err(PatuiEventError::NotResult),
-        }
-    }
-
     /// Check if the event is of type Results
     pub fn is_results(&self) -> bool {
         matches!(self, PatuiEvent::Result(_))

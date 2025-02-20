@@ -211,7 +211,7 @@ impl PatuiData {
                 Some(data) => Ok((known, data)),
                 None => Err(PatuiDataError::UnknownData),
             },
-            _ => Err(PatuiDataError::WrongType("Expected Map".to_string())),
+            _ => Err(PatuiDataError::WrongType("Map".to_string())),
         }
     }
 
@@ -219,10 +219,10 @@ impl PatuiData {
     pub fn add_step_result(&mut self, step_result: &PatuiStepResult) -> Result<(), PatuiDataError> {
         match &step_result.details {
             PatuiStepResultInner::StreamData(idx, patui_data) => {
-                self.append_to_stream(&step_result.location, *idx, patui_data)?;
+                self.append_to_stream(&step_result.expr, *idx, patui_data)?;
             }
             PatuiStepResultInner::DoneStream(len) => {
-                self.done_stream(&step_result.location, *len)?;
+                self.done_stream(&step_result.expr, *len)?;
             }
             _ => {
                 return Err(PatuiDataError::BadStreamStepResult(
@@ -259,6 +259,32 @@ impl PatuiData {
             }
             std::cmp::Ordering::Greater => {
                 let _ = std::mem::replace(&mut vec[idx], value.clone());
+                match expr.expr() {
+                    Expr::Term(term_parts) => {
+                        let mut parts_iter = term_parts.iter();
+                        match parts_iter.next() {
+                            Some(TermPart::Ident(f)) => {
+                                if f != "steps" {
+                                    return Err(PatuiDataError::UnknownData);
+                                }
+                            }
+                            _ => return Err(PatuiDataError::UnknownData),
+                        }
+                        let mut current = self.get_key_mut("steps")?.1;
+
+                        for part in parts_iter {
+                            match part {
+                                TermPart::Ident(ident) => {
+                                    current = current.get_key_mut(ident)?.1;
+                                }
+                                _ => panic!("TODO: Code {:?}", part),
+                            }
+                        }
+
+                        *current = current.clone().to_known()?;
+                    }
+                    _ => return Err(PatuiDataError::WrongType("Term".to_string())),
+                }
             }
         }
 
@@ -358,8 +384,8 @@ impl PatuiData {
     /// If we find any new keys in maps we create them.
     pub(crate) fn merge(&mut self, other: &PatuiData) -> Result<(), PatuiDataError> {
         match self {
-            PatuiData::Known(patui_data_inner) => todo!(),
-            PatuiData::PendingFixed(patui_data_inner) => todo!(),
+            PatuiData::Known(_) => todo!(),
+            PatuiData::PendingFixed(_) => todo!(),
             PatuiData::Pending(_) => {
                 if other.is_unknown() {
                     return Err(PatuiDataError::BadMerge("TODO".to_string()));
@@ -506,7 +532,7 @@ mod tests {
 
     use crate::runner::{PatuiStepResult, PatuiStepResultStatus};
 
-    use super::{PatuiData, PatuiDataError, PatuiDataInner, PatuiDataListMethods};
+    use super::{PatuiData, PatuiDataInner, PatuiDataListMethods};
 
     #[traced_test]
     #[test]
@@ -1136,6 +1162,34 @@ mod tests {
             )],
         ))));
 
+        let ret = results.add_step_result(&PatuiStepResult::done_stream(
+            "steps.step_test.func_test.out_test".try_into().unwrap(),
+            PatuiStepResultStatus::Success,
+            4,
+        ));
+
+        assert_that!(ret).is_ok();
+        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+            [(
+                "steps".to_string(),
+                PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                    "step_test".to_string(),
+                    PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                        "func_test".to_string(),
+                        PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                            "out_test".to_string(),
+                            PatuiData::PendingFixed(PatuiDataInner::List(vec![
+                                PatuiData::Unknown,
+                                PatuiData::Known(PatuiDataInner::String("test1".to_string())),
+                                PatuiData::Unknown,
+                                PatuiData::Unknown,
+                            ])),
+                        )]))),
+                    )]))),
+                )]))),
+            )],
+        ))));
+
         let ret = results.add_step_result(&PatuiStepResult::new_stream_item(
             "steps.step_test.func_test.out_test".try_into().unwrap(),
             PatuiStepResultStatus::Success,
@@ -1153,7 +1207,7 @@ mod tests {
                         "func_test".to_string(),
                         PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
                             "out_test".to_string(),
-                            PatuiData::Pending(PatuiDataInner::List(vec![
+                            PatuiData::PendingFixed(PatuiDataInner::List(vec![
                                 PatuiData::Unknown,
                                 PatuiData::Known(PatuiDataInner::String("test1".to_string())),
                                 PatuiData::Unknown,
@@ -1182,8 +1236,37 @@ mod tests {
                         "func_test".to_string(),
                         PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
                             "out_test".to_string(),
-                            PatuiData::Pending(PatuiDataInner::List(vec![
+                            PatuiData::PendingFixed(PatuiDataInner::List(vec![
                                 PatuiData::Unknown,
+                                PatuiData::Known(PatuiDataInner::String("test1".to_string())),
+                                PatuiData::Known(PatuiDataInner::String("test2".to_string())),
+                                PatuiData::Known(PatuiDataInner::String("test3".to_string())),
+                            ])),
+                        )]))),
+                    )]))),
+                )]))),
+            )],
+        ))));
+
+        let ret = results.add_step_result(&PatuiStepResult::new_stream_item(
+            "steps.step_test.func_test.out_test".try_into().unwrap(),
+            PatuiStepResultStatus::Success,
+            0,
+            PatuiData::Known(PatuiDataInner::String("test0".to_string())),
+        ));
+
+        assert_that!(ret).is_ok();
+        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+            [(
+                "steps".to_string(),
+                PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                    "step_test".to_string(),
+                    PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                        "func_test".to_string(),
+                        PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                            "out_test".to_string(),
+                            PatuiData::Known(PatuiDataInner::List(vec![
+                                PatuiData::Known(PatuiDataInner::String("test0".to_string())),
                                 PatuiData::Known(PatuiDataInner::String("test1".to_string())),
                                 PatuiData::Known(PatuiDataInner::String("test2".to_string())),
                                 PatuiData::Known(PatuiDataInner::String("test3".to_string())),

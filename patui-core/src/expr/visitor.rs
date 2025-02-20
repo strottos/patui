@@ -78,10 +78,10 @@ impl Expr {
                 expr1.visit(visitor)?;
                 expr2.visit(visitor)?;
             }
-            Expr::UnOp(un_op, expr) => {
+            Expr::UnOp(_, expr) => {
                 expr.visit(visitor)?;
             }
-            Expr::BinOp(bin_op, expr, expr1) => {
+            Expr::BinOp(_, expr, expr1) => {
                 expr.visit(visitor)?;
                 expr1.visit(visitor)?;
             }
@@ -93,8 +93,6 @@ impl Expr {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use crate::expr::ast::{BinOp, UnOp};
 
     use super::*;

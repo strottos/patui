@@ -57,7 +57,7 @@ message Run {
 // ReceiveResults will be sent a stream of `PatuiData` messages encoded with
 // MsgPack which are the results from other steps as they are obtained.
 message ReceiveResults {
-  message Request { PatuiResultEncoding result = 5; }
+  message Request { PatuiResultEncoding result = 1; }
   message Response { repeated Diagnostic diagnostics = 1; }
 }
 
