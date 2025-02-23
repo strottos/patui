@@ -69,14 +69,15 @@ impl From<bool> for PatuiStepResultStatus {
 /// Patui will mark the test having errored.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum PatuiStepResultInner {
-    /// Set the results in a list, argument is the index.
+    /// Set the results in a list, argument is the index. This is useful for when we want to stream
+    /// results.
     StreamData(usize, PatuiData),
-    /// Set the results as a map, argument is the key.
-    MapElement(String, PatuiData),
+    /// Set the results, argument is the key. This is useful for when it's a oneshot binary thing
+    /// like assertions. If any changes are needed everything must be sent through again, including
+    /// changing from Pending to Known and similar such changes.
+    SetElement(PatuiData),
     /// Confirm the expected size of the list.
     DoneStream(usize),
-    /// Confirm the keys expected to have been set for a map.
-    DoneMap(Vec<String>),
 }
 
 impl PatuiStepResultInner {
@@ -119,16 +120,11 @@ impl PatuiStepResult {
     }
 
     /// Create a new map item result
-    pub fn new_map_item(
-        expr: PatuiExpr,
-        success: PatuiStepResultStatus,
-        key: String,
-        data: PatuiData,
-    ) -> Self {
+    pub fn set_item(expr: PatuiExpr, success: PatuiStepResultStatus, data: PatuiData) -> Self {
         PatuiStepResult {
             expr,
             success,
-            details: PatuiStepResultInner::MapElement(key, data),
+            details: PatuiStepResultInner::SetElement(data),
         }
     }
 
@@ -138,15 +134,6 @@ impl PatuiStepResult {
             expr,
             success,
             details: PatuiStepResultInner::DoneStream(size),
-        }
-    }
-
-    /// Create a new map done result
-    pub fn done_map(expr: PatuiExpr, success: PatuiStepResultStatus, keys: Vec<String>) -> Self {
-        PatuiStepResult {
-            expr,
-            success,
-            details: PatuiStepResultInner::DoneMap(keys),
         }
     }
 

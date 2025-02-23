@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     env::{self, current_exe},
-    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use thiserror::Error;
@@ -48,11 +48,11 @@ pub enum PatuiStepRunnerError {
 
 #[derive(Debug)]
 pub(crate) struct PatuiStepRunner {
-    step: PatuiStep,
+    pub(crate) step: PatuiStep,
 
     tasks: Vec<JoinHandle<()>>,
 
-    plugin_process: Option<Arc<Mutex<Child>>>,
+    plugin_process: Option<Child>,
     client_socket: Option<PluginServiceClient<Channel>>,
 }
 
@@ -71,7 +71,6 @@ impl PatuiStepRunner {
     pub(crate) async fn init(
         &mut self,
         _current_step_name: &str,
-        _step_runners: HashMap<String, Vec<Arc<Mutex<PatuiStepRunner>>>>,
     ) -> Result<(), PatuiStepRunnerError> {
         let span = tracing::info_span!("init", step_name = self.step.name);
         let _guard = span.enter();
@@ -113,7 +112,7 @@ impl PatuiStepRunner {
 
         tracing::trace!("Running step '{}'", self.step.name);
 
-        let (receive_results_tx, receive_results_rx) = mpsc::channel(256);
+        let (receive_events_tx, receive_events_rx) = mpsc::channel(256);
 
         // // let run_tx = self.run_tx.take().unwrap();
         let step = self.step.clone();
@@ -171,14 +170,15 @@ impl PatuiStepRunner {
                     let result = match result {
                         Ok(Some(result)) => result,
                         _ => {
-                            panic!("TODO: Results stream ended: {:?}", result);
+                            tracing::debug!("Results stream ended");
+                            break;
                         }
                     };
                     tracing::trace!("Got result from plugin: {:?}", result);
 
                     let event = result.data.unwrap().try_into().unwrap();
-                    tracing::trace!("Got event from plugin: {:?}", event);
-                    if let Err(e) = receive_results_tx.send(event).await {
+                    tracing::debug!("Got event from plugin: {:?}", event);
+                    if let Err(e) = receive_events_tx.send(event).await {
                         tracing::error!("Failed to send event: {}", e);
                         break;
                     }
@@ -209,68 +209,91 @@ impl PatuiStepRunner {
             .instrument(span),
         ));
 
-        Ok(receive_results_rx)
+        Ok(receive_events_rx)
     }
 
-    // pub(crate) async fn wait(
-    //     &mut self,
-    //     tx: mpsc::Sender<(String, String, PatuiEventWithTimestamp)>,
-    // ) -> Result<(), PatuiStepRunnerError> {
-    //     // let span = tracing::info_span!("wait", step_name = self.step.name);
-    //     // let _guard = span.enter();
-    //     // drop(tx);
+    pub(crate) async fn wait(&mut self) -> Result<(), PatuiStepRunnerError> {
+        let span = tracing::info_span!("wait", step_name = self.step.name);
+        let _guard = span.enter();
 
-    //     // self.run_rx.take().unwrap().await.map_err(|e| {
-    //     //     PatuiStepRunnerError::InternalError(format!(
-    //     //         "Run step never finished to allow wait to proceed: {}",
-    //     //         e
-    //     //     ))
-    //     // })?;
+        //     // self.run_rx.take().unwrap().await.map_err(|e| {
+        //     //     PatuiStepRunnerError::InternalError(format!(
+        //     //         "Run step never finished to allow wait to proceed: {}",
+        //     //         e
+        //     //     ))
+        //     // })?;
 
-    //     // tracing::trace!("{} - Waiting", self.step.name);
+        tracing::trace!("{} - Waiting", self.step.name);
 
-    //     // let request = Request::new(ptplugin::wait::Request { client_id: 1 });
+        //     // let request = Request::new(ptplugin::wait::Request { client_id: 1 });
 
-    //     // let mut client_socket = self.client_socket.as_ref().unwrap().clone();
-    //     // let response = client_socket.wait(request).await?.into_inner();
-    //     // tracing::trace!("{} - Plugin wait response: {:?}", self.step.name, response);
-    //     // if !response.diagnostics.is_empty() {
-    //     //     tracing::error!(
-    //     //         "{} - Diagnostics: {:?}",
-    //     //         self.step.name,
-    //     //         response.diagnostics
-    //     //     );
-    //     //     todo!();
-    //     // }
+        //     // let mut client_socket = self.client_socket.as_ref().unwrap().clone();
+        //     // let response = client_socket.wait(request).await?.into_inner();
+        //     // tracing::trace!("{} - Plugin wait response: {:?}", self.step.name, response);
+        //     // if !response.diagnostics.is_empty() {
+        //     //     tracing::error!(
+        //     //         "{} - Diagnostics: {:?}",
+        //     //         self.step.name,
+        //     //         response.diagnostics
+        //     //     );
+        //     //     todo!();
+        //     // }
 
-    //     // let Some(plugin_process) = self.plugin_process.take() else {
-    //     //     return Err(PatuiStepRunnerError::InternalError(
-    //     //         "Plugin process not found".to_string(),
-    //     //     ));
-    //     // };
+        //     // let Some(plugin_process) = self.plugin_process.take() else {
+        //     //     return Err(PatuiStepRunnerError::InternalError(
+        //     //         "Plugin process not found".to_string(),
+        //     //     ));
+        //     // };
 
-    //     // plugin_process.lock().await.kill().await.unwrap();
+        //     // plugin_process.lock().await.kill().await.unwrap();
 
-    //     // tracing::trace!("{} - Awaiting process completion", self.step.name);
-    //     // plugin_process.lock().await.wait().await.unwrap();
-    //     // tracing::trace!("{} - Process complete", self.step.name);
+        //     // tracing::trace!("{} - Awaiting process completion", self.step.name);
+        //     // plugin_process.lock().await.wait().await.unwrap();
+        //     // tracing::trace!("{} - Process complete", self.step.name);
 
-    //     // drop(client_socket);
-    //     // self.client_socket = None;
+        //     // drop(client_socket);
+        //     // self.client_socket = None;
 
-    //     // for task in self.tasks.drain(..) {
-    //     //     task.await
-    //     //         .map_err(|e| PatuiStepRunnerError::InternalError(format!("Task failed: {}", e)))?;
-    //     // }
+        for task in self.tasks.drain(..) {
+            task.await
+                .map_err(|e| PatuiStepRunnerError::InternalError(format!("Task failed: {}", e)))?;
+        }
 
-    //     // tracing::debug!(
-    //     //     "Plugin '{}/{}' complete",
-    //     //     self.step.plugin,
-    //     //     self.step.function
-    //     // );
+        tracing::debug!(
+            "Plugin '{}/{}' complete",
+            self.step.plugin,
+            self.step.function
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> Result<(), PatuiStepRunnerError> {
+        let request = Request::new(ptplugin::shutdown::Request {});
+
+        let response = self
+            .client_socket
+            .as_mut()
+            .unwrap()
+            .shutdown(request)
+            .await?;
+
+        tracing::debug!("Plugin shutdown response: {:?}", response.into_inner());
+
+        let Some(mut plugin_process) = self.plugin_process.take() else {
+            return Err(PatuiStepRunnerError::InternalError(
+                "Plugin process not found".to_string(),
+            ));
+        };
+
+        tokio::time::timeout(Duration::from_secs(5), plugin_process.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        //     // tracing::trace!("{} - Process complete", self.step.name);
+
+        Ok(())
+    }
 
     async fn spawn_process(&mut self, port: u16) -> Result<(), PatuiStepRunnerError> {
         let program = self.get_plugin_location(&self.step.plugin)?;
@@ -309,7 +332,7 @@ impl PatuiStepRunner {
             .instrument(span),
         );
 
-        self.plugin_process = Some(Arc::new(Mutex::new(spawn)));
+        self.plugin_process = Some(spawn);
 
         Ok(())
     }
@@ -328,7 +351,7 @@ impl PatuiStepRunner {
                 }
                 Err(_) => {
                     tracing::trace!("Failed to connect to plugin, retrying in 5ms...");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+                    tokio::time::sleep(Duration::from_millis(5)).await;
                 }
             }
         }
@@ -436,11 +459,7 @@ mod tests {
             depends_on: vec![],
         });
 
-        let res = timeout(
-            Duration::from_secs(2),
-            step_runner.init("main", HashMap::new()),
-        )
-        .await;
+        let res = timeout(Duration::from_secs(2), step_runner.init("main")).await;
         assert_that!(res).is_ok();
         assert_that!(res.unwrap()).is_ok();
 
@@ -450,7 +469,7 @@ mod tests {
         let run_res = step_runner.run(send_res_rx);
         assert_that!(run_res).is_ok();
         // Patui receiving new results from the plugin
-        let mut receive_results_rx = run_res.unwrap();
+        let mut receive_events_rx = run_res.unwrap();
 
         for (idx, expected_recv) in [
             PatuiDataInner::Map(HashMap::from([(
@@ -469,7 +488,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let recv = timeout(Duration::from_secs(2), receive_results_rx.recv()).await;
+            let recv = timeout(Duration::from_secs(2), receive_events_rx.recv()).await;
             assert_that!(recv).is_ok();
             let recv = recv.unwrap();
             assert_that!(recv).is_some();
@@ -484,7 +503,7 @@ mod tests {
             )));
         }
 
-        let recv = timeout(Duration::from_secs(2), receive_results_rx.recv()).await;
+        let recv = timeout(Duration::from_secs(2), receive_events_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_some();
@@ -496,12 +515,18 @@ mod tests {
             true.into(),
             3,
         )));
+
+        let res = timeout(Duration::from_secs(2), step_runner.wait()).await;
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap()).is_ok();
+
+        step_runner.shutdown().await.unwrap();
     }
 
     #[cfg(feature = "integration_tests")]
     #[traced_test]
     #[tokio::test]
-    async fn run_simple_known_true_assertion_step() {
+    async fn run_with_other_step_results() {
         let mut step_runner = PatuiStepRunner::new(&PatuiStep {
             name: "static_data_test".to_string(),
             plugin: "testing-plugin".to_string(),
@@ -514,21 +539,17 @@ mod tests {
             depends_on: vec![],
         });
 
-        let res = timeout(
-            Duration::from_secs(2),
-            step_runner.init("main", HashMap::new()),
-        )
-        .await;
+        let res = timeout(Duration::from_secs(2), step_runner.init("main")).await;
         assert_that!(res).is_ok();
         assert_that!(res.unwrap()).is_ok();
 
         // Patui sending results to the plugin
-        let (send_res_tx, mut send_res_rx) = mpsc::channel(32);
+        let (send_res_tx, send_res_rx) = mpsc::channel(32);
 
         let run_res = step_runner.run(send_res_rx);
         assert_that!(run_res).is_ok();
         // Patui receiving new results from the plugin
-        let mut receive_results_rx = run_res.unwrap();
+        let mut receive_events_rx = run_res.unwrap();
 
         let task = tokio::spawn(async move {
             send_res_tx
@@ -579,7 +600,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let recv = timeout(Duration::from_secs(2), receive_results_rx.recv()).await;
+            let recv = timeout(Duration::from_secs(2), receive_events_rx.recv()).await;
             assert_that!(recv).is_ok();
             let recv = recv.unwrap();
             assert_that!(recv).is_some();
@@ -594,7 +615,7 @@ mod tests {
             )));
         }
 
-        let recv = timeout(Duration::from_secs(2), receive_results_rx.recv()).await;
+        let recv = timeout(Duration::from_secs(2), receive_events_rx.recv()).await;
         assert_that!(recv).is_ok();
         let recv = recv.unwrap();
         assert_that!(recv).is_some();
@@ -607,6 +628,12 @@ mod tests {
             3,
         )));
 
-        panic!("logs");
+        task.await.unwrap();
+
+        let res = timeout(Duration::from_secs(2), step_runner.wait()).await;
+        assert_that!(res).is_ok();
+        assert_that!(res.unwrap()).is_ok();
+
+        step_runner.shutdown().await.unwrap();
     }
 }

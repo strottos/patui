@@ -98,9 +98,9 @@ pub enum PatuiDataInner {
     /// Integer data type. This is used when we have an integer value. Only signed 64-bit integers
     /// are supported at present.
     Integer(i64),
-    /// Decimal data type. This is used when we have a decimal value. Only 64-bit floating point
-    /// numbers are supported at present.
-    Decimal(f64),
+    // /// Decimal data type. This is used when we have a decimal value. Only 64-bit floating point
+    // /// numbers are supported at present.
+    // Decimal(f64),
     /// List data type. This is an ordered list of `PatuiData` elements.
     List(Vec<PatuiData>),
     /// Map data type. This is an unordered map of `PatuiData` elements with keys as strings.
@@ -224,10 +224,8 @@ impl PatuiData {
             PatuiStepResultInner::DoneStream(len) => {
                 self.done_stream(&step_result.expr, *len)?;
             }
-            _ => {
-                return Err(PatuiDataError::BadStreamStepResult(
-                    step_result.details.clone(),
-                ))
+            PatuiStepResultInner::SetElement(patui_data) => {
+                self.set_item(&step_result.expr, patui_data)?;
             }
         }
 
@@ -291,6 +289,30 @@ impl PatuiData {
         Ok(())
     }
 
+    fn set_item(&mut self, expr: &PatuiExpr, data: &PatuiData) -> Result<(), PatuiDataError> {
+        let item = self.create_data_endpoint(expr)?;
+
+        let Expr::Term(term_parts) = expr.expr() else {
+            return Err(PatuiDataError::CantCreateData(expr.clone()));
+        };
+
+        let TermPart::Ident(ident) = term_parts.last().unwrap() else {
+            return Err(PatuiDataError::CantCreateData(expr.clone()));
+        };
+
+        match item {
+            PatuiDataInner::Map(hash_map) => {
+                let entry = hash_map
+                    .entry(ident.to_string())
+                    .or_insert_with(|| PatuiData::Unknown);
+                *entry = data.clone();
+            }
+            _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
+        };
+
+        Ok(())
+    }
+
     fn done_stream(&mut self, expr: &PatuiExpr, list_len: usize) -> Result<(), PatuiDataError> {
         self.create_data_stream(expr)?;
 
@@ -334,7 +356,7 @@ impl PatuiData {
         Ok(())
     }
 
-    fn create_data_stream(
+    fn create_data_endpoint(
         &mut self,
         expr: &PatuiExpr,
     ) -> Result<&mut PatuiDataInner, PatuiDataError> {
@@ -343,22 +365,22 @@ impl PatuiData {
         match expr.expr() {
             Expr::Term(term_parts) => {
                 for (idx, part) in term_parts.iter().enumerate() {
-                    if let TermPart::Ident(ident) = part {
-                        inner = match inner {
-                            PatuiDataInner::Map(hash_map) => {
-                                let entry =
-                                    hash_map.entry(ident.to_string()).or_insert_with(|| {
-                                        if idx == term_parts.len() - 1 {
-                                            PatuiData::Pending(PatuiDataInner::List(vec![]))
-                                        } else {
-                                            PatuiData::Pending(PatuiDataInner::Map(HashMap::new()))
-                                        }
-                                    });
-                                entry.get_inner_mut()?.1
-                            }
-                            _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
-                        };
+                    let TermPart::Ident(ident) = part else {
+                        return Err(PatuiDataError::CantCreateData(expr.clone()));
+                    };
+
+                    if idx == term_parts.len() - 1 {
+                        break;
                     }
+                    inner = match inner {
+                        PatuiDataInner::Map(hash_map) => {
+                            let entry = hash_map.entry(ident.to_string()).or_insert_with(|| {
+                                PatuiData::Pending(PatuiDataInner::Map(HashMap::new()))
+                            });
+                            entry.get_inner_mut()?.1
+                        }
+                        _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
+                    };
                 }
             }
             _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
@@ -367,40 +389,31 @@ impl PatuiData {
         Ok(inner)
     }
 
-    /// Merge the data from `other` into `self`. This is used when we have something to append to a
-    /// `results` data structure and we want to add the new data to the existing data.
-    ///
-    /// The rules for merging are as follows:
-    /// - If this data is known and the other data is known then they must be equal, if they are
-    ///   equal then we keep the data as known, if they are not equal then we error out.
-    /// - If this data is known and the other data is either pending or unknown then we must throw
-    ///   an error.
-    /// - If this data is pending and the other data is known or pending then we merge the new data
-    ///   into the existing data as known.
-    /// - If this data is pending and the other data is unknown then we throw an error. TODO: Any
-    ///   conceivable use case for this to not error?
-    /// - If this data is unknown then we merge the new data into the existing data trivially.
-    ///
-    /// If we find any new keys in maps we create them.
-    pub(crate) fn merge(&mut self, other: &PatuiData) -> Result<(), PatuiDataError> {
-        match self {
-            PatuiData::Known(_) => todo!(),
-            PatuiData::PendingFixed(_) => todo!(),
-            PatuiData::Pending(_) => {
-                if other.is_unknown() {
-                    return Err(PatuiDataError::BadMerge("TODO".to_string()));
-                }
-                *self = other.clone();
-            }
-            PatuiData::Unknown => {
-                if other.is_unknown() {
-                    return Ok(());
-                };
-                *self = other.clone();
-            }
-        }
+    fn create_data_stream(
+        &mut self,
+        expr: &PatuiExpr,
+    ) -> Result<&mut PatuiDataInner, PatuiDataError> {
+        let mut inner = self.create_data_endpoint(expr)?;
 
-        Ok(())
+        let Expr::Term(term_parts) = expr.expr() else {
+            return Err(PatuiDataError::CantCreateData(expr.clone()));
+        };
+
+        let TermPart::Ident(ident) = term_parts.last().unwrap() else {
+            return Err(PatuiDataError::CantCreateData(expr.clone()));
+        };
+
+        inner = match inner {
+            PatuiDataInner::Map(hash_map) => {
+                let entry = hash_map
+                    .entry(ident.to_string())
+                    .or_insert_with(|| PatuiData::Pending(PatuiDataInner::List(vec![])));
+                entry.get_inner_mut()?.1
+            }
+            _ => return Err(PatuiDataError::CantCreateData(expr.clone())),
+        };
+
+        Ok(inner)
     }
 }
 
@@ -937,7 +950,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -963,7 +976,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -976,6 +989,61 @@ mod tests {
                                 PatuiData::Known(PatuiDataInner::String("test1".to_string())),
                                 PatuiData::Known(PatuiDataInner::String("test2".to_string())),
                             ])),
+                        )]))),
+                    )]))),
+                )]))),
+            )],
+        ))));
+    }
+
+    #[traced_test]
+    #[test]
+    fn set_step_result_in_data() {
+        let mut results = PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+            "steps".to_string(),
+            PatuiData::Pending(PatuiDataInner::Map(HashMap::new())),
+        )])));
+
+        let ret = results.add_step_result(&PatuiStepResult::set_item(
+            "steps.step_test.func_test.out_test".try_into().unwrap(),
+            PatuiStepResultStatus::Success,
+            PatuiData::Pending(PatuiDataInner::Bool(false)),
+        ));
+
+        assert_that!(ret).is_ok();
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+            [(
+                "steps".to_string(),
+                PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                    "step_test".to_string(),
+                    PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                        "func_test".to_string(),
+                        PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                            "out_test".to_string(),
+                            PatuiData::Pending(PatuiDataInner::Bool(false)),
+                        )]))),
+                    )]))),
+                )]))),
+            )],
+        ))));
+
+        let ret = results.add_step_result(&PatuiStepResult::set_item(
+            "steps.step_test.func_test.out_test".try_into().unwrap(),
+            PatuiStepResultStatus::Success,
+            PatuiData::Known(PatuiDataInner::Bool(true)),
+        ));
+
+        assert_that!(ret).is_ok();
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+            [(
+                "steps".to_string(),
+                PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                    "step_test".to_string(),
+                    PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                        "func_test".to_string(),
+                        PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
+                            "out_test".to_string(),
+                            PatuiData::Known(PatuiDataInner::Bool(true)),
                         )]))),
                     )]))),
                 )]))),
@@ -1011,7 +1079,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1060,7 +1128,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1105,7 +1173,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1143,7 +1211,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1169,7 +1237,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1198,7 +1266,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1227,7 +1295,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(
@@ -1256,7 +1324,7 @@ mod tests {
         ));
 
         assert_that!(ret).is_ok();
-        assert_that!(results).is_equal_to(&PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
+        assert_that!(results).is_equal_to(PatuiData::Pending(PatuiDataInner::Map(HashMap::from(
             [(
                 "steps".to_string(),
                 PatuiData::Pending(PatuiDataInner::Map(HashMap::from([(

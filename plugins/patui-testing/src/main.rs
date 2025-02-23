@@ -12,7 +12,12 @@ mod functions;
     name = "testing",
     description = "Patui testing plugin. Used by Patui to test its own plugin system.",
     r#type = "testing",
-    build_struct = (functions::Echo, functions::UnorderedList),
+    functions = (
+        functions::Assertion,
+        functions::Echo,
+        functions::Json,
+        functions::UnorderedList,
+    ),
 )]
 fn main() -> ptplugin::Result<()> {
     Ok(())

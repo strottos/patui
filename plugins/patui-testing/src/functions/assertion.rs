@@ -1,28 +1,24 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use ptplugin::{
     eval_patui_expr,
     tokio::{
         self,
-        sync::{broadcast, mpsc, RwLock},
+        sync::{broadcast, mpsc},
     },
     tonic::Status,
     tracing, EvalError, FunctionService, PatuiData, PatuiDataInner, PatuiEvent, PatuiExpr,
-    WakerType,
+    PatuiStepResult, WakerType,
 };
 
-pub(crate) struct Assertion {
-    results_fully_recieved: Arc<AtomicBool>,
-}
+pub(crate) struct Assertion;
 
 impl Assertion {
-    pub fn new(results_fully_recieved: Arc<AtomicBool>) -> Self {
-        Self {
-            results_fully_recieved,
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -30,8 +26,9 @@ impl FunctionService for Assertion {
     fn run(
         &self,
         step_name: String,
-        args: HashMap<String, String>,
+        mut args: HashMap<String, PatuiExpr>,
         results: Arc<RwLock<PatuiData>>,
+        results_needed: Arc<Mutex<Vec<PatuiExpr>>>,
         mut results_waker_rx: broadcast::Receiver<WakerType>,
     ) -> (
         mpsc::Receiver<Result<PatuiEvent, Status>>,
@@ -39,26 +36,21 @@ impl FunctionService for Assertion {
     ) {
         let (produce_results_tx, produce_results_rx) = mpsc::channel(16);
 
-        let results_fully_recieved = self.results_fully_recieved.clone();
-
         let task = tokio::spawn(async move {
-            let Some(expr) = &args.get("expr") else {
+            let Some(expr) = args.remove("expr") else {
                 produce_results_tx
                     .send(Err(Status::invalid_argument(
-                        "Missing expr argument".to_string(),
+                        "Missing required argument 'expr'".to_string(),
                     )))
                     .await
                     .unwrap();
-
                 return;
             };
-
-            let mut num_results_sent = 0;
 
             loop {
                 tracing::debug!("Evaluating assertion: {:?}", expr);
 
-                let results = results.read().await.clone();
+                let results = results.read().unwrap().clone();
 
                 tracing::debug!("Results: {:?}", results);
 
@@ -71,36 +63,29 @@ impl FunctionService for Assertion {
                             result
                         );
                         let result = match result {
-                            PatuiData::Known(inner) => match inner {
-                                PatuiDataInner::Bool(b) => PatuiEvent::Result(
-                                    PatuiExpr::try_from("assertion").unwrap(),
+                            PatuiData::Known(patui_data_inner)
+                            | PatuiData::PendingFixed(patui_data_inner)
+                            | PatuiData::Pending(patui_data_inner) => match patui_data_inner {
+                                PatuiDataInner::Bool(b) => PatuiStepResult::set_item(
+                                    format!("steps.{}.assertion.result", step_name)
+                                        .try_into()
+                                        .unwrap(),
                                     b.into(),
-                                    PatuiResultType::List(num_results_sent),
-                                    PatuiData::Known(PatuiDataInner::Bool(b)),
-                                ),
-                                _ => PatuiEvent::Error(format!(
-                                    "Assertion error, evaluated to type {}: {}",
-                                    inner, expr,
-                                )),
-                            },
-                            PatuiData::Pending(inner) => match inner {
-                                PatuiDataInner::Bool(b) => {
-                                    // We know the result, after it's sent we're done
-                                    if b {
-                                        PatuiEvent::Log("assertion expected to pass".to_string())
+                                    if finished {
+                                        PatuiData::Known(PatuiDataInner::Bool(b))
                                     } else {
-                                        PatuiEvent::Log("assertion expected to faile".to_string())
-                                    }
-                                }
-                                _ => PatuiEvent::Error(format!(
-                                    "Assertion error, evaluated to type {}: {}",
-                                    inner, expr,
-                                )),
+                                        PatuiData::Pending(PatuiDataInner::Bool(b))
+                                    },
+                                ),
+                                _ => todo!(),
                             },
-                            PatuiData::Unknown => PatuiEvent::Error("Data not found".to_string()),
+                            PatuiData::Unknown => todo!(),
                         };
 
-                        produce_results_tx.send(Ok(result)).await.unwrap();
+                        produce_results_tx
+                            .send(Ok(PatuiEvent::Result(result)))
+                            .await
+                            .unwrap();
 
                         if finished {
                             tracing::trace!("Sent assertion response");
@@ -124,10 +109,17 @@ impl FunctionService for Assertion {
                                 );
                             }
                         } else {
-                            panic!("Error evaluating expr with unhandled eval error: {:?}", e);
+                            produce_results_tx
+                                .send(Err(Status::invalid_argument(format!(
+                                    "Error evaluating 'expr': {}",
+                                    e
+                                ))))
+                                .await
+                                .unwrap();
+                            return;
                         }
                     }
-                };
+                }
 
                 match results_waker_rx.recv().await {
                     Ok(waker_type) => match waker_type {
@@ -143,18 +135,9 @@ impl FunctionService for Assertion {
                         panic!("Error receiving waker: {:?}", e);
                     }
                 }
-
-                num_results_sent += 1;
             }
 
             tracing::info!("Finished assertion function");
-
-            produce_results_tx
-                .send(Ok(PatuiEvent::Done(PatuiResultTypeConfirm::List(
-                    num_results_sent,
-                ))))
-                .await
-                .unwrap();
         });
 
         (produce_results_rx, Some(task))

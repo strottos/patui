@@ -79,7 +79,7 @@ fn parse_expr(
         match token {
             Token::Null
             | Token::Integer(_)
-            | Token::Decimal(_)
+            // | Token::Decimal(_)
             | Token::Bool(_)
             | Token::String(_)
             | Token::BytesPrefix
@@ -250,10 +250,10 @@ fn parse_term(
             let int = parse_integer(int)?;
             ident_parts.push(TermPart::Lit(Lit::Integer(int)))
         }
-        Token::Decimal(ref dec) => {
-            let dec = f64::from_str(dec)?;
-            ident_parts.push(TermPart::Lit(Lit::Decimal(dec)))
-        }
+        // Token::Decimal(ref dec) => {
+        //     let dec = f64::from_str(dec)?;
+        //     ident_parts.push(TermPart::Lit(Lit::Decimal(dec)))
+        // }
         Token::String(ref s) => {
             parse_string(s).map(|s| ident_parts.push(TermPart::Lit(Lit::String(s))))?
         }
@@ -648,10 +648,10 @@ mod tests {
                 "123",
                 Expr::Term(vec![TermPart::Lit(Lit::Integer(123.into()))]),
             ),
-            (
-                "123.45",
-                Expr::Term(vec![TermPart::Lit(Lit::Decimal(123.45))]),
-            ),
+            // (
+            //     "123.45",
+            //     Expr::Term(vec![TermPart::Lit(Lit::Decimal(123.45))]),
+            // ),
             ("true", Expr::Term(vec![TermPart::Lit(Lit::Bool(true))])),
             ("false", Expr::Term(vec![TermPart::Lit(Lit::Bool(false))])),
             (

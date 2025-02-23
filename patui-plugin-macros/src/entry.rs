@@ -555,7 +555,7 @@ fn build_config(args: AttributeArgs) -> Result<Config, syn::Error> {
             .to_lowercase();
 
         match &ident[..] {
-            "build_struct" => match &name_value.value {
+            "functions" => match &name_value.value {
                 syn::Expr::Paren(syn::ExprParen { expr, .. }) => {
                     if let syn::Expr::Path(syn::ExprPath { path, .. }) = &**expr {
                         function_names.push(path.clone());

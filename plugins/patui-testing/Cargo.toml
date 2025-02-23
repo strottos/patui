@@ -16,6 +16,7 @@ harness = false
 
 [dependencies]
 patui-plugin = { path = "../../patui-plugin" }
+serde_json = "1.0.139"
 
 [dev-dependencies]
 assertor = "0.0.3"

@@ -4,7 +4,10 @@
 //! point for the AST. Any time someone writes an expression we convert their string into the
 //! defined AST in this file.
 
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    hash::{Hash, Hasher},
+};
 
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -27,7 +30,7 @@ pub enum PatuiExprError {
 /// expressions in Patui. They are mostly built from strings.
 ///
 /// See documentation TODO: Link.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub struct PatuiExpr {
     raw: String,
     expr: Expr,
@@ -82,6 +85,12 @@ impl PatuiExpr {
 impl Display for PatuiExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.raw)
+    }
+}
+
+impl Hash for PatuiExpr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.expr.hash(state);
     }
 }
 
@@ -145,13 +154,14 @@ impl TryFrom<&Vec<TermPart>> for PatuiExpr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Lit {
     Null,
     Bool(bool),
     Bytes(Bytes),
     Integer(i64),
-    Decimal(f64),
+    // TODO: Add Decimal support: https://crates.io/crates/rust_decimal?
+    // Decimal(f64),
     String(String),
     List(Vec<Expr>),
     Map(Vec<(String, Expr)>),
@@ -160,7 +170,7 @@ pub enum Lit {
     Range(Box<Expr>, Box<Expr>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum TermPart {
     Ident(String),
     Index(Box<Expr>),
@@ -173,15 +183,22 @@ impl TermPart {
     pub fn is_ident(&self, value: String) -> bool {
         *self == TermPart::Ident(value)
     }
+
+    pub fn as_ident_string(&self) -> Result<String, PatuiExprError> {
+        match self {
+            TermPart::Ident(value) => Ok(value.clone()),
+            _ => Err(PatuiExprError::UnsupportedTermPartTryFrom(self.clone())),
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum UnOp {
     Neg,
     Not,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BinOp {
     Add,
     Subtract,
@@ -223,7 +240,7 @@ impl Display for BinOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
     /// Abstract Term
     Term(Vec<TermPart>),

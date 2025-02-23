@@ -19,7 +19,7 @@ mod functions;
     name = "std",
     description = "The standard plugin for the `patui` CLI for commonly used utilities.",
     r#type = "assertions",
-    build_struct = (
+    functions = (
         functions::Assertion,
         // functions::FileRead,
         // functions::StaticData,

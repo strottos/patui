@@ -16,7 +16,7 @@ mod functions;
     name = "jq",
     description = "Perform transforms on JSON data similar to the `jq` CLI tool.",
     r#type = "transform",
-    build_struct = (functions::Transform),
+    functions = (functions::Transform),
 )]
 fn main() -> ptplugin::Result<()> {
     Ok(())

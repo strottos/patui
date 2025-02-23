@@ -65,7 +65,7 @@ impl FunctionService for Echo {
                             ptplugin::PatuiDataInner::Bytes(_) => todo!(),
                             ptplugin::PatuiDataInner::String(_) => todo!(),
                             ptplugin::PatuiDataInner::Integer(_) => todo!(),
-                            ptplugin::PatuiDataInner::Decimal(_) => todo!(),
+                            //ptplugin::PatuiDataInner::Decimal(_) => todo!(),
                             ptplugin::PatuiDataInner::List(patui_list) => {
                                 for item in patui_list.iter().skip(num_results_sent) {
                                     produce_results_tx

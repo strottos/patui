@@ -36,9 +36,9 @@ pub enum Token {
     #[regex(r"-?[1-9][0-9_]*|0|0[xX][0-9a-fA-F]+|0[bB][01]+", priority = 6, callback = |lex| lex.slice().to_lowercase())]
     Integer(String),
 
-    #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)|-?(?:0|[1-9]\d*)(?:[eE][+-]?\d+)|-?(?:0|[1-9]\d*)(?:\.\d+)(?:[eE][+-]?\d+)", priority = 8, callback = |lex| lex.slice().to_string())]
-    Decimal(String),
-
+    // #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)|-?(?:0|[1-9]\d*)(?:[eE][+-]?\d+)|-?(?:0|[1-9]\d*)(?:\.\d+)(?:[eE][+-]?\d+)", priority = 8, callback = |lex| lex.slice().to_string())]
+    // Decimal(String),
+    //
     #[regex(r"-?[1-9][0-9]*[a-zA-Z_][0-9a-zA-Z_]*|0[xX][0-9a-fA-F]+[g-zG-Z_][0-9a-zA-Z_]*|0[bB][01]+[2-9a-zA-Z_][0-9a-zA-Z_]*", priority = 7, callback = |lex| Err(LexingError::BadNumberOrIdent(lex.slice().to_string())))]
     BadNumberOrIdent(String),
 
@@ -263,18 +263,18 @@ mod tests {
     #[test]
     fn lex_number() {
         single_successful_lex("123", Token::Integer("123".to_string()), 0..3, "123");
-        single_successful_lex(
-            "123.45",
-            Token::Decimal("123.45".to_string()),
-            0..6,
-            "123.45",
-        );
-        single_successful_lex(
-            "123e45",
-            Token::Decimal("123e45".to_string()),
-            0..6,
-            "123e45",
-        );
+        // single_successful_lex(
+        //     "123.45",
+        //     Token::Decimal("123.45".to_string()),
+        //     0..6,
+        //     "123.45",
+        // );
+        // single_successful_lex(
+        //     "123e45",
+        //     Token::Decimal("123e45".to_string()),
+        //     0..6,
+        //     "123e45",
+        // );
         single_successful_lex(
             "0b00110001",
             Token::Integer("0b00110001".to_string()),
