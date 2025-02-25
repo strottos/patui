@@ -53,13 +53,16 @@ pub trait FunctionService {
 }
 
 #[cfg(feature = "test")]
-pub use tests::{check_event_response, connect_plugin, run_plugin, shutdown_plugin, spawn_plugin};
+pub use tests::{
+    check_event_response, connect_plugin, run_plugin, run_results_test_server, shutdown_plugin,
+    shutdown_results_test_server, spawn_plugin,
+};
 
 #[cfg(feature = "test")]
 mod tests {
     use std::{
         env,
-        net::TcpListener,
+        net::{SocketAddr, TcpListener},
         process::{Child, Command},
         time::Duration,
     };
@@ -68,7 +71,11 @@ mod tests {
     use escargot::CargoBuild;
     use eyre::Result;
     use patui_core::{
-        ptplugin::{plugin_service_client::PluginServiceClient, run, shutdown},
+        ptplugin::{
+            plugin_service_client::PluginServiceClient,
+            result_service_server::{ResultService, ResultServiceServer},
+            run, send_result, shutdown,
+        },
         PatuiEvent,
     };
     use tokio::time::timeout;
@@ -175,5 +182,62 @@ mod tests {
         assert_that!(event).is_ok();
         tracing::info!("Got event: {:?}", event);
         event.unwrap()
+    }
+
+    #[derive(Debug)]
+    pub struct ResultsTestServer {
+        sender: tokio::sync::mpsc::Sender<PatuiEvent>,
+    }
+
+    #[tonic::async_trait]
+    impl ResultService for ResultsTestServer {
+        async fn send_result(
+            &self,
+            request: tonic::Request<send_result::Request>,
+        ) -> std::result::Result<tonic::Response<send_result::Response>, tonic::Status> {
+            let request = request.into_inner();
+            self.sender
+                .send(request.data.unwrap().try_into().unwrap())
+                .await
+                .unwrap();
+            Ok(tonic::Response::new(send_result::Response {
+                diagnostics: vec![],
+            }))
+        }
+    }
+
+    pub async fn run_results_test_server(
+        sender: tokio::sync::mpsc::Sender<PatuiEvent>,
+    ) -> Result<(
+        String, // address
+        tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+        tokio::sync::oneshot::Sender<()>,
+    )> {
+        let port = get_unused_localhost_port()?;
+        let addr = format!("[::1]:{}", port);
+        let addr_parsed = addr.parse().unwrap();
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+        let body = async move {
+            let result_service = ResultsTestServer { sender };
+            tonic::transport::Server::builder()
+                .add_service(ResultServiceServer::new(result_service))
+                .serve_with_shutdown(addr_parsed, async {
+                    shutdown_rx.await.ok();
+                    tracing::info!("Shutting down");
+                })
+                .await
+        };
+
+        Ok((addr, tokio::spawn(body), shutdown_tx))
+    }
+
+    pub async fn shutdown_results_test_server(
+        handle: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+        shutdown_tx: tokio::sync::oneshot::Sender<()>,
+    ) {
+        shutdown_tx.send(()).unwrap();
+        handle.await.unwrap().unwrap();
     }
 }

@@ -138,19 +138,24 @@ impl PatuiRun {
         for (step_name, step_collection) in self.step_runners.iter() {
             for step_runner in step_collection {
                 let (tx, rx) = mpsc::channel(100);
-                tracing::trace!("STEEEEEEVE: {}", step_name);
+                tracing::trace!("Setting up step `{}`: {:?}", step_name, tx);
 
                 let mut lock = step_runner.lock().await;
 
                 for dependency_step_name in dependencies.remove(step_name).unwrap_or_default() {
+                    tracing::trace!("Found dependency on `{}`", dependency_step_name);
                     let entry = self.results.entry(dependency_step_name).or_default();
                     entry.push(tx.clone());
                 }
 
                 // results.insert(lock.expr.clone(), tx);
-                receivers.push((step_name, lock.run(rx)?));
+                let receiver = lock.run(rx)?;
+                tracing::trace!("Got receiver: {:?}", receiver);
+                receivers.push((step_name, receiver));
             }
         }
+        tracing::trace!("Results setup: {:?}", self.results);
+        tracing::trace!("Receivers: {:?}", receivers);
 
         let events = self.events.clone();
         let results = self.results.clone();

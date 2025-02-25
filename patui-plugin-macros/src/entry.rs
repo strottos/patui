@@ -62,7 +62,7 @@ fn init_logging_function() -> TokenStream {
                     let now = ptplugin::chrono::offset::Local::now();
                     let path = path
                         .replace("${timestamp}", &now.timestamp().to_string())
-                        .replace("${datetime}", &now.format("%Y%m%d%H%M%S").to_string());
+                        .replace("${datetime}", &now.format("%Y%m%d%H%M%S%.f").to_string());
                     let path = std::path::Path::new(&path);
                     if let Some(parent) = path.parent() {
                         let _ = std::fs::create_dir_all(parent);
@@ -77,8 +77,8 @@ fn init_logging_function() -> TokenStream {
                 .with_line_number(false)
                 .with_target(true)
                 .with_ansi(false)
-                .with_writer(writer)
-                .without_time();
+                .with_writer(writer);
+                //.without_time();
 
             Registry::default().with(filter).with(fmt_layer).init();
 
@@ -258,7 +258,9 @@ fn init_server_structures(config: &Config) -> TokenStream {
                                     ));
                                 }
                                 let expr: ptplugin::PatuiExpr = (&term[0..4]).try_into().unwrap();
-                                results_needed.push(expr);
+                                if !results_needed.contains(&expr) {
+                                    results_needed.push(expr);
+                                }
                             }
                         }
                     }
@@ -308,28 +310,27 @@ fn init_server_structures(config: &Config) -> TokenStream {
                     let mut produce_results_rx = produce_results_rx;
 
                     while let Some(event_res) = produce_results_rx.recv().await {
-                        {
-                            let result = match event_res {
-                                Ok(event) => {
-                                    produced_results.write().unwrap().push(event.clone());
+                        let result = match event_res {
+                            Ok(event) => {
+                                ptplugin::tracing::debug!("Producing event: {:?}", event);
+                                produced_results.write().unwrap().push(event.clone());
 
-                                    Ok(ptplugin::plugin_server::run::Response {
-                                        data: Some(
-                                            (&event)
-                                                .try_into()
-                                                .expect("Should be able to encode any event"),
-                                        ),
-                                    })
-                                }
-                                Err(e) => Err(ptplugin::tonic::Status::internal(format!("Error: {}", e))),
-                            };
-
-                            ptplugin::tracing::debug!("Sending event details: {:?}", result);
-
-                            if let Err(e) = send_patui_results_tx.send(result).await {
-                                ptplugin::tracing::error!("Error sending result: {:?}", e);
-                                break;
+                                Ok(ptplugin::plugin_server::run::Response {
+                                    data: Some(
+                                        (&event)
+                                            .try_into()
+                                            .expect("Should be able to encode any event"),
+                                    ),
+                                })
                             }
+                            Err(e) => Err(ptplugin::tonic::Status::internal(format!("Error: {}", e))),
+                        };
+
+                        ptplugin::tracing::trace!("Sending event details: {:?}", result);
+
+                        if let Err(e) = send_patui_results_tx.send(result).await {
+                            ptplugin::tracing::error!("Error sending result: {:?}", e);
+                            break;
                         }
                     }
                 });
@@ -339,19 +340,13 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 ))
             }
 
-            type ReceiveResultsStream = std::pin::Pin<
-                Box<
-                    dyn ptplugin::tokio_stream::Stream<
-                            Item = std::result::Result<ptplugin::plugin_server::receive_results::Response, ptplugin::tonic::Status>,
-                        > + Send
-                        + 'static,
-                >,
-            >;
-
             async fn receive_results(
                 &self,
-                request: ptplugin::tonic::Request<ptplugin::tonic::Streaming<ptplugin::plugin_server::receive_results::Request>>,
-            ) -> std::result::Result<ptplugin::tonic::Response<Self::ReceiveResultsStream>, ptplugin::tonic::Status> {
+                request: ptplugin::tonic::Request<ptplugin::plugin_server::receive_results::Request>,
+            ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::receive_results::Response>, ptplugin::tonic::Status> {
+                let request = request.into_inner();
+                ptplugin::tracing::trace!("Received results: {:?}", request);
+
                 let produced_results_waker_tx = self
                     .produced_results_waker
                     .lock()
@@ -360,68 +355,54 @@ fn init_server_structures(config: &Config) -> TokenStream {
                     .unwrap()
                     .0
                     .clone();
-                let mut stream = request.into_inner();
                 let results = self.results.clone();
                 let results_needed = self.results_needed.clone();
                 let results_done = self.results_done.clone();
 
-                let output = ptplugin::async_stream::try_stream! {
-                    ptplugin::tracing::trace!("Setup receive results streams");
-                    loop {
-                        let request = match stream.next().await {
-                            Some(Ok(r)) => r,
-                            Some(Err(e)) => {
-                                ptplugin::tracing::error!("Error receiving results: {:?}", e);
-                                break;
-                            }
-                            None => break,
-                        };
-                        ptplugin::tracing::trace!("Received results: {:?}", request);
+                let result: ptplugin::PatuiStepResult = request.result.unwrap().try_into().unwrap();
+                ptplugin::tracing::debug!("Received result: {:?}", result);
 
-                        let result: ptplugin::PatuiStepResult = request.result.unwrap().try_into().unwrap();
-                        ptplugin::tracing::debug!("Received result: {:?}", result);
-                        {
-                            ptplugin::tracing::trace!("Locking write results");
-                            let mut lock = results.write().unwrap();
-                            ptplugin::tracing::trace!("Locked write results: {:?}", results);
-                            lock.add_step_result(&result).unwrap();
-                            ptplugin::tracing::trace!("New results: {:?}", lock);
+                let (is_done_stream, _) = result.details().is_done_stream();
 
-                            // Important we send this before unlocking the results as otherwise we might
-                            // get a race condition trying to lock the results stream.
-                            produced_results_waker_tx.send(ptplugin::WakerType::Results).unwrap();
+                {
+                    ptplugin::tracing::trace!("Locking write results");
+                    let mut lock = results.write().unwrap();
+                    ptplugin::tracing::trace!("Locked write results: {:?}", results);
+                    lock.add_step_result(&result).unwrap();
+                    ptplugin::tracing::trace!("New results: {:?}", lock);
 
-                            ptplugin::tracing::trace!("Unlocking write results");
-                        }
-
-                        let (is_done_stream, _) = result.details().is_done_stream();
-                        if is_done_stream {
-                            let expr = result.expr();
-                            ptplugin::tracing::debug!("Done stream, removing from results needed: {:?}", expr);
-                            let mut results_needed_lock = results_needed.lock().unwrap();
-                            let mut results_done_lock = results_done.lock().unwrap();
-                            ptplugin::tracing::trace!("Results needed before: {:?}", results_needed_lock);
-                            for value in results_needed_lock.values_mut() {
-                                let mut value = value.lock().unwrap();
-                                value.retain(|u| { u != expr });
-                            }
-                            ptplugin::tracing::trace!("Results needed after: {:?}", results_needed_lock);
-                            results_done_lock.push(expr.clone());
-                        }
-
-                        let result = ptplugin::plugin_server::receive_results::Response {
-                            diagnostics: vec![],
-                        };
-
-                        yield result.clone();
+                    // Important we send this before unlocking the results as otherwise we might
+                    // get a race condition trying to lock the results stream.
+                    if !is_done_stream {
+                        produced_results_waker_tx.send(ptplugin::WakerType::Results).unwrap();
                     }
-                    ptplugin::tracing::trace!("Finished receive results streams");
+
+                    ptplugin::tracing::trace!("Unlocking write results");
+                }
+
+                if is_done_stream {
+                    let expr = result.expr();
+                    ptplugin::tracing::debug!("Done stream, removing from results needed: {:?}", expr);
+                    let mut results_needed_lock = results_needed.lock().unwrap();
+                    let mut results_done_lock = results_done.lock().unwrap();
+                    ptplugin::tracing::trace!("Results needed before: {:?}", results_needed_lock);
+                    for value in results_needed_lock.values_mut() {
+                        let mut value = value.lock().unwrap();
+                        value.retain(|u| { u != expr });
+                    }
+                    ptplugin::tracing::trace!("Results needed after: {:?}", results_needed_lock);
+                    results_done_lock.push(expr.clone());
+
                     produced_results_waker_tx.send(ptplugin::WakerType::Done).unwrap();
+                }
+
+                let result = ptplugin::plugin_server::receive_results::Response {
+                    diagnostics: vec![],
                 };
 
-                Ok(ptplugin::tonic::Response::new(
-                    Box::pin(output) as Self::ReceiveResultsStream
-                ))
+                Ok(ptplugin::tonic::Response::new(ptplugin::plugin_server::receive_results::Response {
+                    diagnostics: vec![],
+                }))
             }
 
             async fn shutdown(

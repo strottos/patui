@@ -2,12 +2,11 @@ use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
 use ptplugin::{
-    async_stream, check_event_response,
-    plugin_server::{receive_results, run},
-    run_plugin, shutdown_plugin,
-    tokio::{self, time::timeout},
-    tonic::Request,
-    tracing, PatuiData, PatuiDataInner, PatuiEvent, PatuiStepResult, PatuiStepResultStatus,
+    check_event_response,
+    plugin_server::run,
+    run_plugin, run_results_test_server, shutdown_plugin, shutdown_results_test_server,
+    tokio::{self, sync::mpsc, time::timeout},
+    tracing, PatuiData, PatuiDataInner, PatuiEvent, PatuiStepResult,
 };
 use tracing_test::traced_test;
 
@@ -16,26 +15,10 @@ use tracing_test::traced_test;
 async fn unordered_test() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let client_clone = client.clone();
+    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
 
-    // Send results to the plugin
-    let results_to_plugin_task = tokio::spawn(async move {
-        let mut client = client_clone;
-        let outbound = async_stream::stream! {
-            for result in [] {
-                let result: PatuiStepResult = result;
-                yield receive_results::Request {
-                    result: Some(result.try_into().unwrap()),
-                }
-            }
-        };
-
-        client
-            .receive_results(Request::new(outbound))
-            .await
-            .unwrap()
-            .into_inner()
-    });
+    let (result_server_address, result_server_task, result_server_shutdown_tx) =
+        run_results_test_server(results_receive_tx).await.unwrap();
 
     // Run the plugin
     let res = timeout(
@@ -44,6 +27,7 @@ async fn unordered_test() {
             step_name: "bar".to_string(),
             function: "unordered_list".to_string(),
             args: HashMap::from([]),
+            result_server_address,
         }),
     )
     .await;
@@ -51,12 +35,6 @@ async fn unordered_test() {
     let res = res.unwrap();
     assert_that!(res).is_ok();
     let mut subscription_rx = res.unwrap().into_inner();
-
-    // Wait for the results to be sent to the plugin
-    let ret = results_to_plugin_task.await;
-    assert_that!(ret).is_ok();
-    let ret = ret.unwrap();
-    drop(ret);
 
     let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
     tracing::info!("Got response from plugin: {:?}", response);
@@ -118,4 +96,5 @@ async fn unordered_test() {
     )));
 
     shutdown_plugin(child, client).await;
+    shutdown_results_test_server(result_server_task, result_server_shutdown_tx).await;
 }

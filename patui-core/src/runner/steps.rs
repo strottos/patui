@@ -103,13 +103,6 @@ impl PatuiStepRunner {
         &mut self,
         mut results_rx: mpsc::Receiver<PatuiStepResult>,
     ) -> Result<mpsc::Receiver<PatuiEventWithTimestamp>, PatuiStepRunnerError> {
-        let span = tracing::info_span!(
-            "run",
-            step_name = self.step.name,
-            plugin = self.step.plugin,
-            function = self.step.function
-        );
-
         tracing::trace!("Running step '{}'", self.step.name);
 
         let (receive_events_tx, receive_events_rx) = mpsc::channel(256);
@@ -119,14 +112,25 @@ impl PatuiStepRunner {
         let client_socket = self.client_socket.as_ref().unwrap().clone();
         // let mut results_rx = self.results_rx.take().unwrap();
 
+        let span = tracing::info_span!(
+            "run",
+            step_name = self.step.name,
+            plugin = self.step.plugin,
+            function = self.step.function
+        );
+
         self.tasks.push(tokio::spawn(
             async move {
                 tracing::info!("Running plugin request: {:?}", step.function);
 
                 let mut client_socket = client_socket.clone();
 
+                let client_socket_clone = client_socket.clone();
+
                 // Plugin receiving results from Patui
-                let outbound = async_stream::stream! {
+                let outbound_task = tokio::spawn(async move {
+                    let mut client_socket = client_socket_clone;
+
                     loop {
                         let result = match results_rx.recv().await {
                             Some(result) => result,
@@ -136,17 +140,17 @@ impl PatuiStepRunner {
                         };
                         tracing::trace!("Sending plugin result to plugin: {:?}", result);
 
-                        yield ptplugin::receive_results::Request {
-                            result: Some(result.try_into().unwrap()),
-                        }
-                    }
-                };
+                        let ret = client_socket
+                            .receive_results(Request::new(ptplugin::receive_results::Request {
+                                result: Some(result.try_into().unwrap()),
+                            }))
+                            .await
+                            .unwrap()
+                            .into_inner();
 
-                let receive_results_stream = client_socket
-                    .receive_results(Request::new(outbound))
-                    .await
-                    .unwrap()
-                    .into_inner();
+                        tracing::trace!("Plugin result response: {:?}", ret);
+                    }
+                });
 
                 let step_name = step.name;
                 let function_name = step.function;
@@ -159,6 +163,7 @@ impl PatuiStepRunner {
                         .iter()
                         .map(|(k, v)| (k.clone(), v.raw().to_string()))
                         .collect::<HashMap<_, _>>(),
+                    result_server_address: "http://[::1]:0".to_string(),
                 });
 
                 tracing::trace!("Sending run request");
@@ -183,6 +188,8 @@ impl PatuiStepRunner {
                         break;
                     }
                 }
+
+                outbound_task.await.unwrap();
 
                 //         //         // TODO: Handle errors
                 //         //         loop {
@@ -345,7 +352,7 @@ impl PatuiStepRunner {
             let client = PluginServiceClient::connect(addr).await;
             match client {
                 Ok(c) => {
-                    tracing::trace!("Connected");
+                    tracing::trace!("Connected: {}", port);
                     self.client_socket = Some(c);
                     return Ok(());
                 }

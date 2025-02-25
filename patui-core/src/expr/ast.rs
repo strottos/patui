@@ -45,6 +45,11 @@ impl PatuiExpr {
         new_expr.try_into()
     }
 
+    /// Check if the expression is of the form Term(Vec<TermPart::Ident>)
+    pub fn expr_is_ident_parts(&self) -> bool {
+        matches!(self.expr(), Expr::Term(parts) if parts.iter().all(|part| matches!(part, TermPart::Ident(_))))
+    }
+
     pub(crate) fn expr(&self) -> &Expr {
         &self.expr
     }
