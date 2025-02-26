@@ -2,7 +2,6 @@ use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
 use ptplugin::{
-    check_event_response,
     plugin_server::run,
     run_plugin, run_results_test_server, shutdown_plugin, shutdown_results_test_server,
     tokio::{self, sync::mpsc, time::timeout},
@@ -15,7 +14,7 @@ use tracing_test::traced_test;
 async fn assert_static_truth() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -34,10 +33,12 @@ async fn assert_static_truth() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::set_item(
         "steps.bar.assertion.result".try_into().unwrap(),
@@ -54,7 +55,7 @@ async fn assert_static_truth() {
 async fn assert_static_false() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -73,10 +74,12 @@ async fn assert_static_false() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::set_item(
         "steps.bar.assertion.result".try_into().unwrap(),

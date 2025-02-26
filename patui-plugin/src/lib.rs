@@ -32,6 +32,13 @@ pub mod plugin_server {
     };
 }
 
+pub mod result_server {
+    pub use patui_core::ptplugin::{
+        result_service_client, result_service_client::ResultServiceClient,
+        result_service_server::*, send_result,
+    };
+}
+
 #[derive(Clone, Debug)]
 pub enum WakerType {
     Results,
@@ -54,7 +61,7 @@ pub trait FunctionService {
 
 #[cfg(feature = "test")]
 pub use tests::{
-    check_event_response, connect_plugin, run_plugin, run_results_test_server, shutdown_plugin,
+    connect_plugin, run_plugin, run_results_test_server, shutdown_plugin,
     shutdown_results_test_server, spawn_plugin,
 };
 
@@ -166,24 +173,6 @@ mod tests {
         panic!("Failed to shutdown the plugin");
     }
 
-    pub async fn check_event_response(
-        response: Result<Result<Option<run::Response>, tonic::Status>, tokio::time::error::Elapsed>,
-    ) -> PatuiEvent {
-        assert_that!(response).is_ok();
-        let response = response.unwrap();
-        assert_that!(response).is_ok();
-        let response = response.unwrap();
-        assert_that!(response).is_some();
-        let response = response.unwrap();
-        assert_that!(response.data).is_some();
-        let data = response.data;
-        assert_that!(data).is_some();
-        let event = data.unwrap().try_into();
-        assert_that!(event).is_ok();
-        tracing::info!("Got event: {:?}", event);
-        event.unwrap()
-    }
-
     #[derive(Debug)]
     pub struct ResultsTestServer {
         sender: tokio::sync::mpsc::Sender<PatuiEvent>,
@@ -230,7 +219,7 @@ mod tests {
                 .await
         };
 
-        Ok((addr, tokio::spawn(body), shutdown_tx))
+        Ok((format!("http://{}", addr), tokio::spawn(body), shutdown_tx))
     }
 
     pub async fn shutdown_results_test_server(

@@ -52,7 +52,7 @@ message Run {
     map<string, string> args = 3;
     string result_server_address = 4;
   }
-  message Response { PatuiEventEncoding data = 1; }
+  message Response { repeated Diagnostic diagnostics = 1; }
 }
 
 // ReceiveResults will be sent several `PatuiData` requests encoded with MsgPack
@@ -71,9 +71,9 @@ service PluginService {
   rpc GetInfo(GetInfo.Request) returns (GetInfo.Response) {}
   rpc Init(Init.Request) returns (Init.Response) {}
   // This produces events to send back to Patui.
-  rpc Run(Run.Request) returns (stream Run.Response) {}
-  // This stream is used to send the results of other steps as they are obtained
-  // and relevant to the plugin in question.
+  rpc Run(Run.Request) returns (Run.Response) {}
+  // This is used to send the results of other steps as they are obtained and
+  // relevant to the plugin in question.
   rpc ReceiveResults(ReceiveResults.Request) returns (ReceiveResults.Response) {
   }
   rpc Shutdown(Shutdown.Request) returns (Shutdown.Response) {}

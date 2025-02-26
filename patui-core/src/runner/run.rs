@@ -348,7 +348,7 @@ mod tests {
             ],
         });
 
-        let ret = timeout(Duration::from_secs(5), test_runner.run_test()).await;
+        let ret = timeout(Duration::from_secs(10), test_runner.run_test()).await;
         assert_that!(ret).is_ok();
         assert_that!(ret.unwrap()).is_ok();
 

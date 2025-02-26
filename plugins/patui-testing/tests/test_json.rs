@@ -2,7 +2,6 @@ use std::{collections::HashMap, time::Duration};
 
 use assertor::*;
 use ptplugin::{
-    check_event_response,
     plugin_server::{receive_results, run},
     run_plugin, run_results_test_server, shutdown_plugin, shutdown_results_test_server,
     tokio::{self, sync::mpsc, time::timeout},
@@ -16,7 +15,7 @@ use tracing_test::traced_test;
 async fn transform_expr_string() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -35,11 +34,13 @@ async fn transform_expr_string() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
     // Wait for the results to be sent to the plugin
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
         "steps.bar.json.out".try_into().unwrap(),
@@ -57,8 +58,11 @@ async fn transform_expr_string() {
         ]))),
     )));
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
         "steps.bar.json.out".try_into().unwrap(),
@@ -75,7 +79,7 @@ async fn transform_expr_string() {
 async fn transform_multiple_expr_strings() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -97,7 +101,6 @@ async fn transform_multiple_expr_strings() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
     for (i, expected_data) in [
         PatuiData::Known(PatuiDataInner::Map(HashMap::from([(
@@ -116,8 +119,11 @@ async fn transform_multiple_expr_strings() {
     .into_iter()
     .enumerate()
     {
-        let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-        let event = check_event_response(response).await;
+        let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+        assert_that!(response).is_ok();
+        let response = response.unwrap();
+        assert_that!(response).is_some();
+        let event = response.unwrap();
         tracing::info!("Got event from plugin: {:?}", event);
         assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
             "steps.bar.json.out".try_into().unwrap(),
@@ -127,8 +133,11 @@ async fn transform_multiple_expr_strings() {
         )));
     }
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
         "steps.bar.json.out".try_into().unwrap(),
@@ -145,7 +154,7 @@ async fn transform_multiple_expr_strings() {
 async fn transform_single_result() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -170,13 +179,14 @@ async fn transform_single_result() {
 
             tracing::trace!("Sending results to plugin: {:?}", result);
 
-            client
-                .receive_results(receive_results::Request {
+            let resp = client
+                .receive_results(Request::new(receive_results::Request {
                     result: Some(result.try_into().unwrap()),
-                })
-                .await
-                .unwrap()
-                .into_inner();
+                }))
+                .await;
+            assert_that!(resp).is_ok();
+            let resp = resp.unwrap().into_inner();
+            assert_that!(resp.diagnostics).is_empty();
         }
 
         let result = PatuiStepResult::done_stream(
@@ -187,13 +197,14 @@ async fn transform_single_result() {
 
         tracing::trace!("Sending results to plugin: {:?}", result);
 
-        client
-            .receive_results(receive_results::Request {
+        let resp = client
+            .receive_results(Request::new(receive_results::Request {
                 result: Some(result.try_into().unwrap()),
-            })
-            .await
-            .unwrap()
-            .into_inner()
+            }))
+            .await;
+        assert_that!(resp).is_ok();
+        let resp = resp.unwrap().into_inner();
+        assert_that!(resp.diagnostics).is_empty();
     });
 
     // Run the plugin
@@ -210,18 +221,18 @@ async fn transform_single_result() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
     // Wait for the results to be sent to the plugin
     let send_results_task = tokio::spawn(async move {
         let ret = results_to_plugin_task.await;
         assert_that!(ret).is_ok();
-        let ret = ret.unwrap();
-        drop(ret);
     });
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
         "steps.bar.json.out".try_into().unwrap(),
@@ -233,8 +244,11 @@ async fn transform_single_result() {
         )]))),
     )));
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
         "steps.bar.json.out".try_into().unwrap(),
@@ -256,7 +270,7 @@ async fn transform_single_result() {
 async fn transform_multiple_result() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -283,13 +297,14 @@ async fn transform_multiple_result() {
 
             tracing::trace!("Sending results to plugin: {:?}", result);
 
-            client
-                .receive_results(receive_results::Request {
+            let resp = client
+                .receive_results(Request::new(receive_results::Request {
                     result: Some(result.try_into().unwrap()),
-                })
-                .await
-                .unwrap()
-                .into_inner();
+                }))
+                .await;
+            assert_that!(resp).is_ok();
+            let resp = resp.unwrap().into_inner();
+            assert_that!(resp.diagnostics).is_empty();
         }
 
         let result = PatuiStepResult::done_stream(
@@ -300,13 +315,14 @@ async fn transform_multiple_result() {
 
         tracing::trace!("Sending results to plugin: {:?}", result);
 
-        client
-            .receive_results(receive_results::Request {
+        let resp = client
+            .receive_results(Request::new(receive_results::Request {
                 result: Some(result.try_into().unwrap()),
-            })
-            .await
-            .unwrap()
-            .into_inner();
+            }))
+            .await;
+        assert_that!(resp).is_ok();
+        let resp = resp.unwrap().into_inner();
+        assert_that!(resp.diagnostics).is_empty();
     });
 
     // Run the plugin
@@ -323,7 +339,6 @@ async fn transform_multiple_result() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
     // Wait for the results to be sent to the plugin
     let send_results_task = tokio::spawn(async move {
@@ -348,8 +363,11 @@ async fn transform_multiple_result() {
     .into_iter()
     .enumerate()
     {
-        let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-        let event = check_event_response(response).await;
+        let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+        assert_that!(response).is_ok();
+        let response = response.unwrap();
+        assert_that!(response).is_some();
+        let event = response.unwrap();
         tracing::info!("Got event from plugin: {:?}", event);
         assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
             "steps.bar.json.out".try_into().unwrap(),
@@ -359,8 +377,11 @@ async fn transform_multiple_result() {
         )));
     }
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
         "steps.bar.json.out".try_into().unwrap(),
@@ -382,7 +403,7 @@ async fn transform_multiple_result() {
 async fn transform_multiple_result_with_waits() {
     let (child, mut client) = run_plugin("patui-testing-plugin").await.unwrap();
 
-    let (results_receive_tx, results_receive_rx) = mpsc::channel(16);
+    let (results_receive_tx, mut results_receive_rx) = mpsc::channel(16);
 
     let (result_server_address, result_server_task, result_server_shutdown_tx) =
         run_results_test_server(results_receive_tx).await.unwrap();
@@ -409,13 +430,14 @@ async fn transform_multiple_result_with_waits() {
 
             tracing::trace!("Sending results to plugin: {:?}", result);
 
-            client
+            let resp = client
                 .receive_results(Request::new(receive_results::Request {
                     result: Some(result.try_into().unwrap()),
                 }))
-                .await
-                .unwrap()
-                .into_inner();
+                .await;
+            assert_that!(resp).is_ok();
+            let resp = resp.unwrap().into_inner();
+            assert_that!(resp.diagnostics).is_empty();
 
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -428,13 +450,14 @@ async fn transform_multiple_result_with_waits() {
 
         tracing::trace!("Sending results to plugin: {:?}", result);
 
-        client
+        let resp = client
             .receive_results(Request::new(receive_results::Request {
                 result: Some(result.try_into().unwrap()),
             }))
-            .await
-            .unwrap()
-            .into_inner();
+            .await;
+        assert_that!(resp).is_ok();
+        let resp = resp.unwrap().into_inner();
+        assert_that!(resp.diagnostics).is_empty();
     });
 
     // Run the plugin
@@ -451,7 +474,6 @@ async fn transform_multiple_result_with_waits() {
     assert_that!(res).is_ok();
     let res = res.unwrap();
     assert_that!(res).is_ok();
-    let mut subscription_rx = res.unwrap().into_inner();
 
     // Wait for the results to be sent to the plugin
     let send_results_task = tokio::spawn(async move {
@@ -476,9 +498,11 @@ async fn transform_multiple_result_with_waits() {
     .into_iter()
     .enumerate()
     {
-        let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-        tracing::info!("Got response plugin: {:?}", response);
-        let event = check_event_response(response).await;
+        let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+        assert_that!(response).is_ok();
+        let response = response.unwrap();
+        assert_that!(response).is_some();
+        let event = response.unwrap();
         tracing::info!("Got event from plugin: {:?}", event);
         assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::new_stream_item(
             "steps.bar.json.out".try_into().unwrap(),
@@ -488,9 +512,11 @@ async fn transform_multiple_result_with_waits() {
         )));
     }
 
-    let response = timeout(Duration::from_secs(2), subscription_rx.message()).await;
-    tracing::info!("Got response plugin: {:?}", response);
-    let event = check_event_response(response).await;
+    let response = timeout(Duration::from_secs(2), results_receive_rx.recv()).await;
+    assert_that!(response).is_ok();
+    let response = response.unwrap();
+    assert_that!(response).is_some();
+    let event = response.unwrap();
     tracing::info!("Got event from plugin: {:?}", event);
     assert_that!(event).is_equal_to(PatuiEvent::Result(PatuiStepResult::done_stream(
         "steps.bar.json.out".try_into().unwrap(),

@@ -8,7 +8,7 @@ use thiserror::Error;
 use tokio::{
     io::AsyncBufReadExt,
     process::{Child, Command},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
     task::JoinHandle,
 };
 use tonic::{transport::Channel, Request};
@@ -16,12 +16,17 @@ use tracing::Instrument;
 
 use crate::{
     expr::PatuiExprError,
-    ptplugin::{self, plugin_service_client::PluginServiceClient},
+    ptplugin::{
+        self,
+        plugin_service_client::PluginServiceClient,
+        result_service_server::{ResultService, ResultServiceServer},
+        send_result, PatuiEventEncoding,
+    },
     templates::PatuiStep,
     utils::get_unused_localhost_port,
 };
 
-use super::{results::PatuiStepResult, PatuiEventWithTimestamp};
+use super::{results::PatuiStepResult, PatuiEvent, PatuiEventWithTimestamp};
 
 #[cfg(target_os = "windows")]
 const PATH_SEPARATOR: char = ';';
@@ -47,6 +52,32 @@ pub enum PatuiStepRunnerError {
 }
 
 #[derive(Debug)]
+pub(crate) struct PatuiStepRunnerResultServer {
+    sender: mpsc::Sender<PatuiEventEncoding>,
+}
+
+impl PatuiStepRunnerResultServer {
+    pub(crate) fn new(sender: mpsc::Sender<PatuiEventEncoding>) -> Self {
+        Self { sender }
+    }
+}
+
+#[tonic::async_trait]
+impl ResultService for PatuiStepRunnerResultServer {
+    async fn send_result(
+        &self,
+        request: tonic::Request<send_result::Request>,
+    ) -> std::result::Result<tonic::Response<send_result::Response>, tonic::Status> {
+        tracing::trace!("Received request: {:?}", request);
+        let request = request.into_inner();
+        self.sender.send(request.data.unwrap()).await.unwrap();
+        Ok(tonic::Response::new(send_result::Response {
+            diagnostics: vec![],
+        }))
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct PatuiStepRunner {
     pub(crate) step: PatuiStep,
 
@@ -54,10 +85,18 @@ pub(crate) struct PatuiStepRunner {
 
     plugin_process: Option<Child>,
     client_socket: Option<PluginServiceClient<Channel>>,
+
+    result_server_port: Option<u16>,
+    shutdown_result_server_tx: Option<tokio::sync::oneshot::Sender<()>>,
+
+    run_finished_tx: Option<oneshot::Sender<()>>,
+    run_finished_rx: Option<oneshot::Receiver<()>>,
 }
 
 impl PatuiStepRunner {
     pub(crate) fn new(step: &PatuiStep) -> Self {
+        let (tx, rx) = oneshot::channel();
+
         Self {
             step: step.clone(),
 
@@ -65,6 +104,12 @@ impl PatuiStepRunner {
 
             plugin_process: None,
             client_socket: None,
+
+            result_server_port: None,
+            shutdown_result_server_tx: None,
+
+            run_finished_tx: Some(tx),
+            run_finished_rx: Some(rx),
         }
     }
 
@@ -78,6 +123,7 @@ impl PatuiStepRunner {
         tracing::trace!("Initializing step runner: {:?}", self);
 
         let port = get_unused_localhost_port().await?;
+        self.result_server_port = Some(get_unused_localhost_port().await?);
 
         self.spawn_process(port).await?;
         self.connect_to_plugin(port).await?;
@@ -112,12 +158,50 @@ impl PatuiStepRunner {
         let client_socket = self.client_socket.as_ref().unwrap().clone();
         // let mut results_rx = self.results_rx.take().unwrap();
 
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        self.shutdown_result_server_tx = Some(shutdown_tx);
+
+        let result_server_port = self.result_server_port.unwrap();
+        let addr = format!("[::1]:{}", result_server_port);
+        let result_server_address = format!("http://{}", addr);
+        self.tasks.push(tokio::spawn(async move {
+            let addr = addr.parse().unwrap();
+
+            let (tx, mut rx) = mpsc::channel(256);
+
+            let result_service = PatuiStepRunnerResultServer::new(tx);
+
+            let task = tokio::spawn(async move {
+                while let Some(encoded_event) = rx.recv().await {
+                    let event: PatuiEvent = encoded_event.try_into().unwrap();
+                    tracing::debug!("Sending event: {:?}", event);
+                    receive_events_tx.send(event.into()).await.unwrap();
+                }
+                tracing::debug!("Stopped sending events");
+            });
+
+            tracing::trace!("Serving results service on address {}", addr);
+
+            tonic::transport::Server::builder()
+                .add_service(ResultServiceServer::new(result_service))
+                .serve_with_shutdown(addr, async {
+                    shutdown_rx.await.ok();
+                    tracing::info!("Shutting down");
+                })
+                .await
+                .unwrap();
+
+            task.await.unwrap();
+        }));
+
         let span = tracing::info_span!(
             "run",
             step_name = self.step.name,
             plugin = self.step.plugin,
             function = self.step.function
         );
+
+        let run_finished_tx = self.run_finished_tx.take().unwrap();
 
         self.tasks.push(tokio::spawn(
             async move {
@@ -163,33 +247,19 @@ impl PatuiStepRunner {
                         .iter()
                         .map(|(k, v)| (k.clone(), v.raw().to_string()))
                         .collect::<HashMap<_, _>>(),
-                    result_server_address: "http://[::1]:0".to_string(),
+                    result_server_address,
                 });
 
                 tracing::trace!("Sending run request");
-                let mut run_results_stream = client_socket.run(request).await.unwrap().into_inner();
-                tracing::trace!("Plugin run response: {:?}", run_results_stream);
-
-                loop {
-                    let result = run_results_stream.message().await;
-                    let result = match result {
-                        Ok(Some(result)) => result,
-                        _ => {
-                            tracing::debug!("Results stream ended");
-                            break;
-                        }
-                    };
-                    tracing::trace!("Got result from plugin: {:?}", result);
-
-                    let event = result.data.unwrap().try_into().unwrap();
-                    tracing::debug!("Got event from plugin: {:?}", event);
-                    if let Err(e) = receive_events_tx.send(event).await {
-                        tracing::error!("Failed to send event: {}", e);
-                        break;
-                    }
-                }
+                let run_resp = match client_socket.run(request).await {
+                    Ok(resp) => resp.into_inner(),
+                    Err(e) => panic!("Error running plugin: {:?}", e),
+                };
+                tracing::trace!("Plugin run response: {:?}", run_resp);
 
                 outbound_task.await.unwrap();
+
+                run_finished_tx.send(()).unwrap();
 
                 //         //         // TODO: Handle errors
                 //         //         loop {
@@ -232,6 +302,15 @@ impl PatuiStepRunner {
 
         tracing::trace!("{} - Waiting", self.step.name);
 
+        let run_finished_rx = self.run_finished_rx.take().unwrap();
+
+        run_finished_rx.await.map_err(|e| {
+            PatuiStepRunnerError::InternalError(format!(
+                "Run step never finished to allow wait to proceed: {}",
+                e
+            ))
+        })?;
+
         //     // let request = Request::new(ptplugin::wait::Request { client_id: 1 });
 
         //     // let mut client_socket = self.client_socket.as_ref().unwrap().clone();
@@ -261,17 +340,6 @@ impl PatuiStepRunner {
         //     // drop(client_socket);
         //     // self.client_socket = None;
 
-        for task in self.tasks.drain(..) {
-            task.await
-                .map_err(|e| PatuiStepRunnerError::InternalError(format!("Task failed: {}", e)))?;
-        }
-
-        tracing::debug!(
-            "Plugin '{}/{}' complete",
-            self.step.plugin,
-            self.step.function
-        );
-
         Ok(())
     }
 
@@ -286,6 +354,23 @@ impl PatuiStepRunner {
             .await?;
 
         tracing::debug!("Plugin shutdown response: {:?}", response.into_inner());
+
+        self.shutdown_result_server_tx
+            .take()
+            .unwrap()
+            .send(())
+            .unwrap();
+
+        for task in self.tasks.drain(..) {
+            task.await
+                .map_err(|e| PatuiStepRunnerError::InternalError(format!("Task failed: {}", e)))?;
+        }
+
+        tracing::debug!(
+            "Plugin '{}/{}' complete",
+            self.step.plugin,
+            self.step.function
+        );
 
         let Some(mut plugin_process) = self.plugin_process.take() else {
             return Err(PatuiStepRunnerError::InternalError(
@@ -527,7 +612,8 @@ mod tests {
         assert_that!(res).is_ok();
         assert_that!(res.unwrap()).is_ok();
 
-        step_runner.shutdown().await.unwrap();
+        let res = step_runner.shutdown().await;
+        assert_that!(res).is_ok();
     }
 
     #[cfg(feature = "integration_tests")]
@@ -641,6 +727,7 @@ mod tests {
         assert_that!(res).is_ok();
         assert_that!(res.unwrap()).is_ok();
 
-        step_runner.shutdown().await.unwrap();
+        let res = step_runner.shutdown().await;
+        assert_that!(res).is_ok();
     }
 }

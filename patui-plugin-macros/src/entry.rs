@@ -209,26 +209,23 @@ fn init_server_structures(config: &Config) -> TokenStream {
                 }))
             }
 
-            type RunStream = ptplugin::tokio_stream::wrappers::ReceiverStream<
-                std::result::Result<ptplugin::plugin_server::run::Response, ptplugin::tonic::Status>,
-            >;
-
             async fn run(
                 &self,
                 request: ptplugin::tonic::Request<ptplugin::plugin_server::run::Request>,
-            ) -> std::result::Result<ptplugin::tonic::Response<Self::RunStream>, ptplugin::tonic::Status> {
+            ) -> std::result::Result<ptplugin::tonic::Response<ptplugin::plugin_server::run::Response>, ptplugin::tonic::Status> {
                 use ptplugin::FunctionService;
 
                 let request = request.into_inner();
 
                 ptplugin::tracing::info!("Request run {}", request.function);
 
-                let (send_patui_results_tx, send_patui_results_rx) = ptplugin::tokio::sync::mpsc::channel(16);
                 let produced_results = self.produced_results.clone();
                 let results = self.results.clone();
 
                 let mut args: std::collections::HashMap<String, ptplugin::PatuiExpr> = std::collections::HashMap::new();
                 let mut results_needed: Vec<ptplugin::PatuiExpr> = Vec::new();
+
+                let mut results_client = ptplugin::result_server::ResultServiceClient::connect(request.result_server_address).await.unwrap();
 
                 for (name, arg) in request.args {
                     let arg: ptplugin::PatuiExpr = match arg.clone().try_into() {
@@ -305,39 +302,35 @@ fn init_server_structures(config: &Config) -> TokenStream {
 
                 // TODO: Assert this finishes after we get a Done event/in shutdown?
                 ptplugin::tokio::spawn(async move {
-                    let send_patui_results_tx = send_patui_results_tx;
                     let produced_results = produced_results.clone();
                     let mut produce_results_rx = produce_results_rx;
 
                     while let Some(event_res) = produce_results_rx.recv().await {
-                        let result = match event_res {
+                        let result_request = match event_res {
                             Ok(event) => {
                                 ptplugin::tracing::debug!("Producing event: {:?}", event);
                                 produced_results.write().unwrap().push(event.clone());
 
-                                Ok(ptplugin::plugin_server::run::Response {
+                                ptplugin::result_server::send_result::Request {
                                     data: Some(
                                         (&event)
                                             .try_into()
                                             .expect("Should be able to encode any event"),
                                     ),
-                                })
+                                }
                             }
-                            Err(e) => Err(ptplugin::tonic::Status::internal(format!("Error: {}", e))),
+                            Err(e) => panic!("TODO: Handle error: {}", e)
                         };
 
-                        ptplugin::tracing::trace!("Sending event details: {:?}", result);
-
-                        if let Err(e) = send_patui_results_tx.send(result).await {
-                            ptplugin::tracing::error!("Error sending result: {:?}", e);
-                            break;
+                        if let Err(e) = results_client.send_result(result_request).await {
+                            panic!("TODO: Error sending result, need to handle: {:?}", e);
                         }
                     }
                 });
 
-                Ok(ptplugin::tonic::Response::new(
-                    ptplugin::tokio_stream::wrappers::ReceiverStream::new(send_patui_results_rx),
-                ))
+                Ok(ptplugin::tonic::Response::new(ptplugin::plugin_server::run::Response {
+                    diagnostics: vec![],
+                }))
             }
 
             async fn receive_results(
